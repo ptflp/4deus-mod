@@ -10,7 +10,7 @@ import { KEYBOARD_SETTINGS_ROUTE, ModsPanel } from "./ui/ModsPanel";
 
 export default definePlugin(() => {
   const settings = new SettingsStore();
-  const sendSystemKey = callable<[string, boolean], boolean>(
+  const sendSystemKey = callable<[string, boolean, boolean], boolean>(
     "send_system_key",
   );
   const host = new ModuleHost([
