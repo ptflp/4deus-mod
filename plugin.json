@@ -1,0 +1,11 @@
+{
+  "name": "4deus Mod",
+  "author": "Petr Filippov",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["utility", "keyboard", "tweaks"],
+    "description": "A modular collection of Steam Deck fixes and customizations.",
+    "image": "https://raw.githubusercontent.com/ptflp/4deus-mod/main/logo.png"
+  }
+}

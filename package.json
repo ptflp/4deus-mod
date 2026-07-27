@@ -1,0 +1,41 @@
+{
+  "name": "4deus-mod",
+  "version": "0.1.0",
+  "description": "A modular collection of Steam Deck fixes and customizations",
+  "type": "module",
+  "packageManager": "pnpm@11.17.0",
+  "scripts": {
+    "build": "rollup -c",
+    "check": "tsc --noEmit",
+    "watch": "rollup -c -w"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ptflp/4deus-mod.git"
+  },
+  "keywords": [
+    "decky",
+    "steam-deck",
+    "keyboard",
+    "plugin",
+    "tweaks"
+  ],
+  "author": "Petr Filippov <globallinkliberty@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ptflp/4deus-mod/issues"
+  },
+  "homepage": "https://github.com/ptflp/4deus-mod#readme",
+  "devDependencies": {
+    "@decky/rollup": "1.0.2",
+    "@decky/ui": "4.11.1",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "rollup": "4.59.0",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@decky/api": "1.1.3",
+    "react-icons": "5.5.0"
+  }
+}
