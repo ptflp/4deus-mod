@@ -23,6 +23,27 @@ customizations.
 Secondary labels are visual only. Steam remains responsible for the active
 layout and text input.
 
+### Why dual-language labels matter
+
+Remote desktop clients such as Parsec and RustDesk can forward keyboard
+positions or scan codes while the local or remote operating system applies the
+active language layout. In that setup, the Steam keyboard may display English
+keys even though the target system is typing Russian.
+
+Switching Steam's own on-screen keyboard to Russian is not a reliable
+workaround inside Gamescope or Nested Desktop. Users have reported a failure
+where every letter produces `1` while number keys continue to work. RustDesk
+also documents the distinction between position-based `Map 1:1` input and
+character-oriented `Translate` input.
+
+4deus Mod keeps Steam's stable primary keyboard layout active and adds the
+secondary layout as visual labels. The remote or desktop system remains
+responsible for language switching, while every key shows the character that
+the active secondary layout will produce.
+
+- [Nested Desktop report: letter keys produce `1`](https://www.reddit.com/r/SteamDeck/comments/1jdd0e1/nested_desktop_keyboard_problem/)
+- [RustDesk keyboard translation modes](https://github.com/rustdesk/rustdesk/wiki/FAQ#keyboard-translation-modes)
+
 ## Interface
 
 The Quick Access panel provides one activation row per mod. Detailed options
