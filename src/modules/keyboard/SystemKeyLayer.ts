@@ -91,6 +91,10 @@ export class SystemKeyLayer {
   private functionLayer = false;
   private controlActive = false;
   private holdTimer?: number;
+  private heldKey?: HTMLElement;
+  private heldInSystemMode = false;
+  private longPressTriggered = false;
+  private passThroughTouch?: HTMLElement;
   private suppressNextClick?: HTMLElement;
 
   bind(
@@ -101,9 +105,18 @@ export class SystemKeyLayer {
     this.keyboard = keyboard;
     this.input = input;
     const document = keyboard.ownerDocument;
-    document.addEventListener("pointerdown", this.onPointerDown, true);
-    document.addEventListener("pointerup", this.onPointerEnd, true);
-    document.addEventListener("pointercancel", this.onPointerEnd, true);
+    document.addEventListener("touchstart", this.onTouchStart, {
+      capture: true,
+      passive: false,
+    });
+    document.addEventListener("touchend", this.onTouchEnd, {
+      capture: true,
+      passive: false,
+    });
+    document.addEventListener("touchcancel", this.onTouchCancel, {
+      capture: true,
+      passive: false,
+    });
     document.addEventListener("click", this.onClick, true);
     this.render();
   }
@@ -113,9 +126,9 @@ export class SystemKeyLayer {
     this.releaseControl();
     if (this.keyboard) {
       const document = this.keyboard.ownerDocument;
-      document.removeEventListener("pointerdown", this.onPointerDown, true);
-      document.removeEventListener("pointerup", this.onPointerEnd, true);
-      document.removeEventListener("pointercancel", this.onPointerEnd, true);
+      document.removeEventListener("touchstart", this.onTouchStart, true);
+      document.removeEventListener("touchend", this.onTouchEnd, true);
+      document.removeEventListener("touchcancel", this.onTouchCancel, true);
       document.removeEventListener("click", this.onClick, true);
       this.clearPresentation();
     }
@@ -123,6 +136,7 @@ export class SystemKeyLayer {
     this.input = undefined;
     this.systemMode = false;
     this.functionLayer = false;
+    this.passThroughTouch = undefined;
     this.suppressNextClick = undefined;
   }
 
@@ -137,26 +151,63 @@ export class SystemKeyLayer {
     this.render();
   }
 
-  private readonly onPointerDown = (event: PointerEvent): void => {
+  private readonly onTouchStart = (event: TouchEvent): void => {
     if (!this.enabled)
       return;
 
     const key = this.getKey(event.target);
-    if (!key || key.dataset.key !== EMOJI_KEY)
+    if (!key || key === this.passThroughTouch)
+      return;
+    const isEmoji = key.dataset.key === EMOJI_KEY;
+    if (!isEmoji && !this.isSystemKey(key))
       return;
 
+    consume(event);
     this.clearHold();
-    this.holdTimer = window.setTimeout(() => {
-      this.holdTimer = undefined;
-      this.suppressNextClick = key;
-      if (this.systemMode)
-        this.exitSystemMode();
-      else
-        this.enterSystemMode();
-    }, LONG_PRESS_MS);
+    this.heldKey = key;
+    this.heldInSystemMode = this.systemMode;
+    if (isEmoji) {
+      this.holdTimer = window.setTimeout(() => {
+        this.holdTimer = undefined;
+        this.longPressTriggered = true;
+        if (this.systemMode)
+          this.exitSystemMode();
+        else
+          this.enterSystemMode();
+      }, LONG_PRESS_MS);
+    }
   };
 
-  private readonly onPointerEnd = (): void => {
+  private readonly onTouchEnd = (event: TouchEvent): void => {
+    const key = this.heldKey;
+    if (!key || key === this.passThroughTouch)
+      return;
+
+    consume(event);
+    const wasLongPress = this.longPressTriggered;
+    const startedInSystemMode = this.heldInSystemMode;
+    this.clearHold();
+    if (!wasLongPress) {
+      if (key.dataset.key === EMOJI_KEY) {
+        if (startedInSystemMode)
+          this.toggleControl();
+        else
+          this.replayShortTouch(key, event);
+      } else {
+        this.activateSystemKey(key);
+      }
+    }
+    this.suppressNextClick = key;
+    window.setTimeout(() => {
+      if (this.suppressNextClick === key)
+        this.suppressNextClick = undefined;
+    }, 0);
+  };
+
+  private readonly onTouchCancel = (event: TouchEvent): void => {
+    if (!this.heldKey)
+      return;
+    consume(event);
     this.clearHold();
   };
 
@@ -180,36 +231,10 @@ export class SystemKeyLayer {
       return;
     }
 
-    if (key.dataset.key === LAYOUT_KEY) {
+    if (this.isSystemKey(key)) {
       consume(event);
-      this.functionLayer = !this.functionLayer;
-      this.render();
-      return;
+      this.activateSystemKey(key);
     }
-
-    const position = getPosition(key);
-    if (position === "0:0") {
-      consume(event);
-      this.tapNativeKey(HID_ESCAPE);
-      return;
-    }
-
-    const functionKey = this.getFunctionKey(position);
-    if (functionKey !== undefined) {
-      consume(event);
-      this.tapNativeKey(functionKey);
-      return;
-    }
-
-    if (!this.controlActive)
-      return;
-
-    const keyCode = HID_CODES_BY_POSITION[position];
-    if (keyCode === undefined)
-      return;
-
-    consume(event);
-    this.tapNativeKey(keyCode);
   };
 
   private getKey(target: EventTarget | null): HTMLElement | undefined {
@@ -218,6 +243,48 @@ export class SystemKeyLayer {
       ? candidate.closest<HTMLElement>(KEY_SELECTOR)
       : null;
     return element && this.keyboard?.contains(element) ? element : undefined;
+  }
+
+  private replayShortTouch(key: HTMLElement, source: TouchEvent): void {
+    const ownerWindow = key.ownerDocument.defaultView;
+    const TouchConstructor = ownerWindow?.Touch;
+    const TouchEventConstructor = ownerWindow?.TouchEvent;
+    const sourceTouch = source.changedTouches[0];
+    if (!TouchConstructor || !TouchEventConstructor || !sourceTouch)
+      return;
+
+    const touch = new TouchConstructor({
+      identifier: sourceTouch.identifier,
+      target: key,
+      clientX: sourceTouch.clientX,
+      clientY: sourceTouch.clientY,
+      screenX: sourceTouch.screenX,
+      screenY: sourceTouch.screenY,
+      pageX: sourceTouch.pageX,
+      pageY: sourceTouch.pageY,
+      radiusX: sourceTouch.radiusX,
+      radiusY: sourceTouch.radiusY,
+      rotationAngle: sourceTouch.rotationAngle,
+      force: sourceTouch.force,
+    });
+    const options: TouchEventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      changedTouches: [touch],
+    };
+    this.passThroughTouch = key;
+    key.dispatchEvent(new TouchEventConstructor("touchstart", {
+      ...options,
+      touches: [touch],
+      targetTouches: [touch],
+    }));
+    key.dispatchEvent(new TouchEventConstructor("touchend", {
+      ...options,
+      touches: [],
+      targetTouches: [],
+    }));
+    this.passThroughTouch = undefined;
   }
 
   private enterSystemMode(): void {
@@ -259,6 +326,38 @@ export class SystemKeyLayer {
     setKeyState(keyCode, true);
     setKeyState(keyCode, false);
     this.releaseControl();
+  }
+
+  private isSystemKey(key: HTMLElement): boolean {
+    return this.systemMode && (
+      key.dataset.key === LAYOUT_KEY
+      || this.getSystemKeyCode(key) !== undefined
+    );
+  }
+
+  private activateSystemKey(key: HTMLElement): void {
+    if (!this.systemMode)
+      return;
+    if (key.dataset.key === LAYOUT_KEY) {
+      this.functionLayer = !this.functionLayer;
+      this.render();
+      return;
+    }
+    const keyCode = this.getSystemKeyCode(key);
+    if (keyCode !== undefined)
+      this.tapNativeKey(keyCode);
+  }
+
+  private getSystemKeyCode(key: HTMLElement): number | undefined {
+    const position = getPosition(key);
+    if (position === "0:0")
+      return HID_ESCAPE;
+    const functionKey = this.getFunctionKey(position);
+    if (functionKey !== undefined)
+      return functionKey;
+    return this.controlActive
+      ? HID_CODES_BY_POSITION[position]
+      : undefined;
   }
 
   private getFunctionKey(position: string): number | undefined {
@@ -381,5 +480,8 @@ export class SystemKeyLayer {
     if (this.holdTimer !== undefined)
       window.clearTimeout(this.holdTimer);
     this.holdTimer = undefined;
+    this.heldKey = undefined;
+    this.heldInSystemMode = false;
+    this.longPressTriggered = false;
   }
 }
