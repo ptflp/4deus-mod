@@ -14,6 +14,7 @@ customizations.
   the focused application.
 - Supports holding the Steam items key to switch the system layer on or off.
 - Shows letters from a second enabled Steam keyboard layout on each key.
+- Keeps secondary letters synchronized with Shift and Caps Lock.
 - Supports automatic secondary-layout selection and a manually preferred
   layout.
 - Reads layouts directly from Steam, so labels follow the layouts configured

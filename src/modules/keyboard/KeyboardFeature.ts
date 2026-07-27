@@ -124,7 +124,8 @@ export class KeyboardFeature implements ModModule {
     this.keyboardObserver = new MutationObserver(() => this.scheduleRefresh());
     this.keyboardObserver.observe(keyboard, {
       attributes: true,
-      attributeFilter: ["data-key", "data-key-col", "data-key-row"],
+      attributeFilter: ["class", "data-key", "data-key-col", "data-key-row"],
+      characterData: true,
       childList: true,
       subtree: true,
     });

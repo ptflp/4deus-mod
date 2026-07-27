@@ -1,6 +1,47 @@
 const LABEL_CLASS = "fourdeus-secondary-label";
 const KEY_CLASS = "fourdeus-secondary-label-key";
 const STYLE_ID = "fourdeus-secondary-label-style";
+const LETTER_PATTERN = /^\p{L}$/u;
+
+const isUpperCaseLetter = (value: string): boolean =>
+  LETTER_PATTERN.test(value)
+  && value === value.toLocaleUpperCase()
+  && value !== value.toLocaleLowerCase();
+
+const getDisplayedPrimaryLabel = (key: HTMLElement): string | undefined => {
+  const nativeKey = key.firstElementChild;
+  const ownerWindow = key.ownerDocument.defaultView;
+  if (!nativeKey || !ownerWindow)
+    return key.dataset.key;
+
+  let displayed: { label: string; opacity: number } | undefined;
+  nativeKey.querySelectorAll<HTMLElement>("span").forEach((span) => {
+    const label = span.textContent?.trim();
+    if (!label || !LETTER_PATTERN.test(label))
+      return;
+
+    const style = ownerWindow.getComputedStyle(span);
+    if (style.display === "none" || style.visibility === "hidden")
+      return;
+
+    const opacity = Number.parseFloat(style.opacity);
+    const candidate = {
+      label,
+      opacity: Number.isFinite(opacity) ? opacity : 1,
+    };
+    if (!displayed || candidate.opacity >= displayed.opacity)
+      displayed = candidate;
+  });
+
+  return displayed?.label ?? key.dataset.key;
+};
+
+const matchPrimaryCase = (
+  secondary: string,
+  displayedPrimary: string | undefined,
+): string => isUpperCaseLetter(displayedPrimary ?? "")
+  ? secondary.toLocaleUpperCase()
+  : secondary.toLocaleLowerCase();
 
 const ensureStyles = (document: Document): void => {
   if (document.getElementById(STYLE_ID))
@@ -46,6 +87,9 @@ export const renderSecondaryLabels = (
         ? labels.get(`${row}:${column}`)
         : undefined;
       const existing = key.querySelector<HTMLElement>(`:scope > .${LABEL_CLASS}`);
+      const displayedSecondary = secondary
+        ? matchPrimaryCase(secondary, getDisplayedPrimaryLabel(key))
+        : undefined;
 
       if (!secondary || secondary.toLocaleLowerCase() === primary?.toLocaleLowerCase()) {
         existing?.remove();
@@ -55,14 +99,14 @@ export const renderSecondaryLabels = (
 
       key.classList.add(KEY_CLASS);
       if (existing) {
-        if (existing.textContent !== secondary)
-          existing.textContent = secondary;
+        if (existing.textContent !== displayedSecondary)
+          existing.textContent = displayedSecondary ?? secondary;
         return;
       }
 
       const label = keyboard.ownerDocument.createElement("span");
       label.className = LABEL_CLASS;
-      label.textContent = secondary;
+      label.textContent = displayedSecondary ?? secondary;
       label.setAttribute("aria-hidden", "true");
       key.appendChild(label);
     });
