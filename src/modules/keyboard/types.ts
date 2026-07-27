@@ -2,6 +2,8 @@ export interface VirtualKeyboardManager {
   IsShowingVirtualKeyboard?: {
     Value: boolean;
   };
+  m_bDismissOnEnter?: boolean;
+  SetDismissOnEnterKey?: (dismiss: boolean) => void;
   SetVirtualKeyboardHidden?: () => void;
 }
 

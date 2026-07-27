@@ -88,6 +88,16 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
             </PanelSectionRow>
             <PanelSectionRow>
               <ToggleField
+                label={strings.keepOpenAfterEnter}
+                description={strings.keepOpenAfterEnterDescription}
+                checked={keyboard.keepOpenAfterEnter}
+                onChange={(keepOpenAfterEnter) => settings.updateKeyboard({
+                  keepOpenAfterEnter,
+                })}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ToggleField
                 label={strings.labels}
                 description={strings.labelsDescription}
                 checked={keyboard.secondaryLabels}

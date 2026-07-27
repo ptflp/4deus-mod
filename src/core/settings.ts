@@ -5,6 +5,7 @@ export interface ModSettings {
   keyboard: {
     enabled: boolean;
     keepOnTop: boolean;
+    keepOpenAfterEnter: boolean;
     secondaryLabels: boolean;
     secondaryLayout: string;
   };
@@ -19,6 +20,7 @@ const defaults: ModSettings = {
   keyboard: {
     enabled: true,
     keepOnTop: true,
+    keepOpenAfterEnter: false,
     secondaryLabels: true,
     secondaryLayout: AUTO_LAYOUT,
   },

@@ -20,6 +20,8 @@ export class KeyboardFeature implements ModModule {
   private keyboardObserver?: MutationObserver;
   private keyboardElement?: HTMLElement;
   private keyboardRegistration?: { unregister(): void };
+  private dismissOnEnterManager?: WindowInstance["VirtualKeyboardManager"];
+  private originalDismissOnEnter?: boolean;
   private settingsUnsubscribe?: () => void;
   private windowTimer?: number;
   private refreshFrame?: number;
@@ -27,7 +29,7 @@ export class KeyboardFeature implements ModModule {
   constructor(private readonly settings: SettingsStore) {}
 
   start(): void {
-    this.settingsUnsubscribe = this.settings.subscribe(() => this.refresh());
+    this.settingsUnsubscribe = this.settings.subscribe(() => this.applySettings());
     this.keyboardRegistration = (
       window.SteamClient.Input as unknown as SteamInputKeyboardEvents
     ).RegisterForUserKeyboardMessages?.((event) => {
@@ -49,6 +51,7 @@ export class KeyboardFeature implements ModModule {
     this.keyboardRegistration = undefined;
     this.settingsUnsubscribe?.();
     this.settingsUnsubscribe = undefined;
+    this.restoreDismissOnEnter();
     if (this.windowTimer !== undefined)
       window.clearInterval(this.windowTimer);
     this.windowTimer = undefined;
@@ -80,6 +83,7 @@ export class KeyboardFeature implements ModModule {
     this.keyboardObserver?.disconnect();
     this.keyboardObserver = undefined;
     this.keyboardElement = undefined;
+    this.restoreDismissOnEnter();
     if (this.refreshFrame !== undefined)
       window.cancelAnimationFrame(this.refreshFrame);
     this.refreshFrame = undefined;
@@ -100,6 +104,7 @@ export class KeyboardFeature implements ModModule {
     if (document)
       clearSecondaryLabels(document);
     this.keyboardElement = keyboard;
+    this.applyEnterBehavior();
 
     if (!keyboard)
       return;
@@ -139,6 +144,45 @@ export class KeyboardFeature implements ModModule {
       keyboard,
       buildSecondaryLabelMap(settings.secondaryLayout),
     );
+  }
+
+  private applySettings(): void {
+    this.applyEnterBehavior();
+    this.refresh();
+  }
+
+  private applyEnterBehavior(): void {
+    const settings = this.settings.getSnapshot().keyboard;
+    const manager = this.activeWindow?.VirtualKeyboardManager;
+    const shouldOverride = settings.enabled
+      && settings.keepOpenAfterEnter
+      && Boolean(this.keyboardElement);
+
+    if (!shouldOverride || !manager?.SetDismissOnEnterKey) {
+      this.restoreDismissOnEnter();
+      return;
+    }
+
+    if (manager !== this.dismissOnEnterManager) {
+      this.restoreDismissOnEnter();
+      this.dismissOnEnterManager = manager;
+      this.originalDismissOnEnter = manager.m_bDismissOnEnter;
+    }
+
+    manager.SetDismissOnEnterKey(false);
+  }
+
+  private restoreDismissOnEnter(): void {
+    if (
+      this.dismissOnEnterManager?.SetDismissOnEnterKey
+      && this.originalDismissOnEnter !== undefined
+    ) {
+      this.dismissOnEnterManager.SetDismissOnEnterKey(
+        this.originalDismissOnEnter,
+      );
+    }
+    this.dismissOnEnterManager = undefined;
+    this.originalDismissOnEnter = undefined;
   }
 
   private promoteKeyboard(): void {

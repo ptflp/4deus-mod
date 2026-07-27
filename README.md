@@ -7,6 +7,7 @@ customizations.
 
 - Keeps the Steam keyboard above application windows when opened with a
   controller shortcut.
+- Optionally keeps the keyboard open after pressing Enter.
 - Shows letters from a second enabled Steam keyboard layout on each key.
 - Supports automatic secondary-layout selection and a manually preferred
   layout.
