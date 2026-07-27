@@ -139,9 +139,6 @@ export class KeyboardFeature implements ModModule {
       keyboard,
       buildSecondaryLabelMap(settings.secondaryLayout),
     );
-
-    if (settings.keepOnTop)
-      this.raiseKeyboardWindow();
   }
 
   private promoteKeyboard(): void {
