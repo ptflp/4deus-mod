@@ -98,6 +98,16 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
             </PanelSectionRow>
             <PanelSectionRow>
               <ToggleField
+                label={strings.systemKeyLayer}
+                description={strings.systemKeyLayerDescription}
+                checked={keyboard.systemKeyLayer}
+                onChange={(systemKeyLayer) => settings.updateKeyboard({
+                  systemKeyLayer,
+                })}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ToggleField
                 label={strings.labels}
                 description={strings.labelsDescription}
                 checked={keyboard.secondaryLabels}

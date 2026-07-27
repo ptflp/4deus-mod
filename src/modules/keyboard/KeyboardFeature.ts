@@ -2,7 +2,9 @@ import type { ModModule } from "../../core/module";
 import type { SettingsStore } from "../../core/settings";
 import { buildSecondaryLabelMap } from "./steamLayouts";
 import { clearSecondaryLabels, renderSecondaryLabels } from "./secondaryLabels";
+import { SystemKeyLayer } from "./SystemKeyLayer";
 import type {
+  NativeKeyboardInput,
   NativeSteamWindow,
   SteamInputKeyboardEvents,
   WindowInstance,
@@ -20,6 +22,7 @@ export class KeyboardFeature implements ModModule {
   private keyboardObserver?: MutationObserver;
   private keyboardElement?: HTMLElement;
   private keyboardRegistration?: { unregister(): void };
+  private readonly systemKeyLayer = new SystemKeyLayer();
   private dismissOnEnterManager?: WindowInstance["VirtualKeyboardManager"];
   private originalDismissOnEnter?: boolean;
   private settingsUnsubscribe?: () => void;
@@ -82,6 +85,7 @@ export class KeyboardFeature implements ModModule {
     this.rootObserver = undefined;
     this.keyboardObserver?.disconnect();
     this.keyboardObserver = undefined;
+    this.systemKeyLayer.unbind();
     this.keyboardElement = undefined;
     this.restoreDismissOnEnter();
     if (this.refreshFrame !== undefined)
@@ -109,6 +113,10 @@ export class KeyboardFeature implements ModModule {
     if (!keyboard)
       return;
 
+    this.systemKeyLayer.bind(
+      keyboard,
+      window.SteamClient.Input as unknown as NativeKeyboardInput,
+    );
     this.keyboardObserver = new MutationObserver(() => this.scheduleRefresh());
     this.keyboardObserver.observe(keyboard, {
       attributes: true,
@@ -135,8 +143,12 @@ export class KeyboardFeature implements ModModule {
 
     const settings = this.settings.getSnapshot().keyboard;
     const keyboard = this.keyboardElement;
+    this.systemKeyLayer.setEnabled(
+      settings.enabled && settings.systemKeyLayer,
+    );
     if (!settings.enabled || !settings.secondaryLabels || !keyboard) {
       clearSecondaryLabels(document);
+      this.systemKeyLayer.refresh();
       return;
     }
 
@@ -144,6 +156,7 @@ export class KeyboardFeature implements ModModule {
       keyboard,
       buildSecondaryLabelMap(settings.secondaryLayout),
     );
+    this.systemKeyLayer.refresh();
   }
 
   private applySettings(): void {

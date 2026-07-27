@@ -3,8 +3,13 @@ export interface VirtualKeyboardManager {
     Value: boolean;
   };
   m_bDismissOnEnter?: boolean;
+  HandleVirtualKeyDown?: (key: string) => void;
   SetDismissOnEnterKey?: (dismiss: boolean) => void;
   SetVirtualKeyboardHidden?: () => void;
+}
+
+export interface NativeKeyboardInput {
+  ControllerKeyboardSetKeyState?: (keyCode: number, pressed: boolean) => void;
 }
 
 export interface WindowInstance {
