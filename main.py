@@ -51,6 +51,7 @@ KEY_CODES = {
     "KEY_SEMICOLON": 39,
     "KEY_APOSTROPHE": 40,
     "KEY_GRAVE": 41,
+    "KEY_LEFTSHIFT": 42,
     "KEY_BACKSLASH": 43,
     "KEY_Z": 44,
     "KEY_X": 45,
