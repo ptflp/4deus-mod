@@ -2,8 +2,8 @@ import {
   EMOJI_KEY,
   isAltKey,
   KEY_SELECTOR,
-  LAYOUT_KEY,
   resolveSystemKey,
+  SYNTHETIC_FUNCTION_KEY,
 } from "./systemKeys";
 import { PRESSED_KEY_CLASS, SystemKeyView } from "./SystemKeyView";
 
@@ -381,7 +381,7 @@ export class SystemKeyLayer {
 
   private isSystemKey(key: HTMLElement): boolean {
     return this.systemMode && (
-      key.dataset.key === LAYOUT_KEY
+      key.dataset.key === SYNTHETIC_FUNCTION_KEY
       || isAltKey(key)
       || this.getSystemKeyName(key) !== undefined
     );
@@ -390,7 +390,7 @@ export class SystemKeyLayer {
   private activateSystemKey(key: HTMLElement): void {
     if (!this.systemMode)
       return;
-    if (key.dataset.key === LAYOUT_KEY) {
+    if (key.dataset.key === SYNTHETIC_FUNCTION_KEY) {
       this.functionLayer = !this.functionLayer;
       this.render();
       return;

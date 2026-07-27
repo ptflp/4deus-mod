@@ -10,11 +10,14 @@ customizations.
 - Optionally keeps the keyboard open after pressing Enter.
 - Adds a controller-friendly system-key layer with Ctrl, Alt, Fn, Esc, Delete,
   and F1-F12.
+- Keeps Steam's language switch visible and places Fn beside it.
+- Matches secondary and system-key labels to Steam keyboard theme states.
 - Sends system chords such as Alt+Tab, Alt+Shift, and Ctrl+Shift.
 - Sends system keys through a dedicated Linux `uinput` keyboard so they reach
   the focused application.
 - Supports holding the Steam items key to switch the system layer on or off.
 - Shows letters from a second enabled Steam keyboard layout on each key.
+- Shows the secondary layout's symbols while Shift is active.
 - Keeps secondary letters synchronized with Shift and Caps Lock.
 - Supports automatic secondary-layout selection and a manually preferred
   layout.

@@ -1,6 +1,11 @@
 import { findModuleExport } from "@decky/ui";
 
 import { AUTO_LAYOUT } from "../../core/settings";
+import {
+  getVariantLabel,
+  isSingleCharacter,
+  type LayoutKey,
+} from "./layoutLabels";
 
 interface KeyboardLayoutSettings {
   currentLayout: number;
@@ -12,22 +17,19 @@ interface KeyboardLayoutStore {
   SetKeyboardLayout(layout: number): void;
 }
 
-type LayoutKey =
-  | string
-  | null
-  | undefined
-  | LayoutKey[]
-  | {
-    key?: string;
-    label?: unknown;
-  };
-
 export interface SteamKeyboardLayout {
   name: string;
   layout: number;
   locToken: string;
   rgLayout(options: Record<string, boolean>): LayoutKey[][];
 }
+
+export interface SecondaryKeyLabels {
+  normal?: string;
+  shifted?: string;
+}
+
+export type SecondaryLabelMap = Map<string, SecondaryKeyLabels>;
 
 let layoutStore: KeyboardLayoutStore | undefined;
 let activeLayoutsProvider: (() => SteamKeyboardLayout[]) | undefined;
@@ -73,18 +75,6 @@ export const getLayoutDisplayName = (layout: SteamKeyboardLayout): string => {
     .join(" ");
 };
 
-const getPrimaryLabel = (key: LayoutKey): string | undefined => {
-  if (typeof key === "string")
-    return key;
-  if (Array.isArray(key))
-    return getPrimaryLabel(key[0]);
-  if (!key)
-    return undefined;
-  if (typeof key.label === "string")
-    return key.label;
-  return key.key;
-};
-
 const selectSecondaryLayout = (
   layouts: SteamKeyboardLayout[],
   preferredLayout: string,
@@ -106,13 +96,13 @@ const selectSecondaryLayout = (
 
 export const buildSecondaryLabelMap = (
   preferredLayout: string,
-): Map<string, string> => {
+): SecondaryLabelMap => {
   resolveSteamModules();
   const layout = selectSecondaryLayout(getEnabledLayouts(), preferredLayout);
   if (!layout)
     return new Map();
 
-  const labels = new Map<string, string>();
+  const labels: SecondaryLabelMap = new Map();
   const rows = layout.rgLayout({
     AllowMove: false,
     Arrows: false,
@@ -122,9 +112,14 @@ export const buildSecondaryLabelMap = (
 
   rows.forEach((row, rowIndex) => {
     row.forEach((key, columnIndex) => {
-      const label = getPrimaryLabel(key);
-      if (label && /^\p{L}$/u.test(label))
-        labels.set(`${rowIndex}:${columnIndex}`, label);
+      const normal = getVariantLabel(key, 0);
+      const shifted = getVariantLabel(key, 1);
+      if (isSingleCharacter(normal) || isSingleCharacter(shifted)) {
+        labels.set(`${rowIndex}:${columnIndex}`, {
+          normal: isSingleCharacter(normal) ? normal : undefined,
+          shifted: isSingleCharacter(shifted) ? shifted : undefined,
+        });
+      }
     });
   });
 

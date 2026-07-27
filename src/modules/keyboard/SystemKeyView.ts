@@ -6,6 +6,7 @@ import {
   LAYOUT_KEY,
   NATIVE_ALT_KEY,
   SYNTHETIC_ALT_KEY,
+  SYNTHETIC_FUNCTION_KEY,
 } from "./systemKeys";
 
 const SYSTEM_KEY_CLASS = "fourdeus-system-key";
@@ -31,9 +32,9 @@ const STYLES = `
     position: relative !important;
   }
 
-  .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}) span,
+  .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}) span:not(.${LABEL_CLASS}),
   .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}) svg,
-  .${SYSTEM_KEY_CLASS} > .fourdeus-secondary-label {
+  .${SYSTEM_KEY_CLASS} .fourdeus-secondary-label {
     visibility: hidden !important;
   }
 
@@ -44,7 +45,7 @@ const STYLES = `
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: inherit;
     pointer-events: none;
   }
 
@@ -95,10 +96,13 @@ export class SystemKeyView {
 
     this.ensureStyles();
     const altKey = state.visible ? this.ensureAltKey(keyboard) : null;
+    const functionKey = state.visible ? this.ensureFunctionKey(keyboard) : null;
     if (!state.visible)
       findNamedKey(keyboard, SYNTHETIC_ALT_KEY)?.remove();
+    if (!state.visible)
+      findNamedKey(keyboard, SYNTHETIC_FUNCTION_KEY)?.remove();
     const presentations = state.visible
-      ? this.buildPresentations(keyboard, altKey, state)
+      ? this.buildPresentations(keyboard, altKey, functionKey, state)
       : new Map<HTMLElement, Presentation>();
 
     keyboard.querySelectorAll<HTMLElement>(`.${SYSTEM_KEY_CLASS}`).forEach(
@@ -115,6 +119,7 @@ export class SystemKeyView {
   private buildPresentations(
     keyboard: HTMLElement,
     altKey: HTMLElement | null,
+    functionKey: HTMLElement | null,
     state: ViewState,
   ): Map<HTMLElement, Presentation> {
     const entries: Array<[HTMLElement | null, Presentation]> = [
@@ -123,7 +128,7 @@ export class SystemKeyView {
         { label: "Ctrl", active: state.controlActive },
       ],
       [
-        findNamedKey(keyboard, LAYOUT_KEY),
+        functionKey,
         { label: "Fn", active: state.functionLayer },
       ],
       [findKey(keyboard, 0, 0), { label: "Esc" }],
@@ -150,12 +155,17 @@ export class SystemKeyView {
     if (toggleOnClass)
       key.firstElementChild?.classList.toggle(toggleOnClass, active);
 
-    let label = key.querySelector<HTMLElement>(`:scope > .${LABEL_CLASS}`);
+    const nativeKey = key.firstElementChild as HTMLElement | null;
+    let label = nativeKey?.querySelector<HTMLElement>(
+      `:scope > .${LABEL_CLASS}`,
+    ) ?? key.querySelector<HTMLElement>(`:scope > .${LABEL_CLASS}`);
     if (!label) {
       label = key.ownerDocument.createElement("span");
       label.className = LABEL_CLASS;
       label.setAttribute("aria-hidden", "true");
-      key.appendChild(label);
+      (nativeKey ?? key).appendChild(label);
+    } else if (nativeKey && label.parentElement !== nativeKey) {
+      nativeKey.appendChild(label);
     }
     this.syncTypography(label, key);
     if (label.textContent !== presentation.label)
@@ -168,10 +178,30 @@ export class SystemKeyView {
       .forEach((key) => this.clearKey(key));
     this.keyboard?.ownerDocument.getElementById(STYLE_ID)?.remove();
     this.keyboard
-      ?.querySelector<HTMLElement>(
-        `${KEY_SELECTOR}[data-key="${SYNTHETIC_ALT_KEY}"]`,
+      ?.querySelectorAll<HTMLElement>(
+        `${KEY_SELECTOR}[data-key="${SYNTHETIC_ALT_KEY}"], `
+        + `${KEY_SELECTOR}[data-key="${SYNTHETIC_FUNCTION_KEY}"]`,
       )
-      ?.remove();
+      .forEach((key) => key.remove());
+  }
+
+  private ensureFunctionKey(keyboard: HTMLElement): HTMLElement | null {
+    const existing = findNamedKey(keyboard, SYNTHETIC_FUNCTION_KEY);
+    if (existing)
+      return existing;
+
+    const layout = findNamedKey(keyboard, LAYOUT_KEY);
+    if (!layout?.parentElement)
+      return null;
+    const functionKey = layout.cloneNode(true) as HTMLElement;
+    functionKey.dataset.key = SYNTHETIC_FUNCTION_KEY;
+    functionKey.dataset.keyCol = "fn";
+    functionKey.querySelectorAll<HTMLElement>("[data-key]").forEach((element) => {
+      element.dataset.key = SYNTHETIC_FUNCTION_KEY;
+      element.dataset.keyCol = "fn";
+    });
+    layout.parentElement.insertBefore(functionKey, layout.nextSibling);
+    return functionKey;
   }
 
   private ensureAltKey(keyboard: HTMLElement): HTMLElement | null {
@@ -205,7 +235,7 @@ export class SystemKeyView {
     );
     if (this.toggleOnClass)
       key.firstElementChild?.classList.remove(this.toggleOnClass);
-    key.querySelector(`:scope > .${LABEL_CLASS}`)?.remove();
+    key.querySelector(`.${LABEL_CLASS}`)?.remove();
   }
 
   private ensureStyles(): void {
@@ -240,7 +270,7 @@ export class SystemKeyView {
     if (!keyboard || !ownerWindow)
       return;
     const nativeLabel = key.querySelector<HTMLElement>(
-      ":scope > :first-child span",
+      `:scope > :first-child span:not(.${LABEL_CLASS})`,
     ) ?? findKey(keyboard, 1, 1)?.querySelector<HTMLElement>(
       ":scope > :first-child span",
     );

@@ -1,5 +1,6 @@
 export const EMOJI_KEY = "SwitchKeys_Steam";
 export const LAYOUT_KEY = "SwitchKeys_Layout";
+export const SYNTHETIC_FUNCTION_KEY = "4deus_Fn";
 export const NATIVE_ALT_KEY = "AltGr";
 export const SYNTHETIC_ALT_KEY = "4deus_Alt";
 export const KEY_SELECTOR = "[data-key-row][data-key-col]";
