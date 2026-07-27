@@ -8,13 +8,15 @@ const isUpperCaseLetter = (value: string): boolean =>
   && value === value.toLocaleUpperCase()
   && value !== value.toLocaleLowerCase();
 
-const getDisplayedPrimaryLabel = (key: HTMLElement): string | undefined => {
+const displayedLetter = (key: HTMLElement): string | undefined => {
   const nativeKey = key.firstElementChild;
   const ownerWindow = key.ownerDocument.defaultView;
   if (!nativeKey || !ownerWindow)
     return key.dataset.key;
 
   let displayed: { label: string; opacity: number } | undefined;
+  // Steam renders active and inactive Shift labels together; opacity identifies
+  // the active one without depending on hashed CSS class names.
   nativeKey.querySelectorAll<HTMLElement>("span").forEach((span) => {
     const label = span.textContent?.trim();
     if (!label || !LETTER_PATTERN.test(label))
@@ -36,12 +38,12 @@ const getDisplayedPrimaryLabel = (key: HTMLElement): string | undefined => {
   return displayed?.label ?? key.dataset.key;
 };
 
-const matchPrimaryCase = (
-  secondary: string,
-  displayedPrimary: string | undefined,
-): string => isUpperCaseLetter(displayedPrimary ?? "")
-  ? secondary.toLocaleUpperCase()
-  : secondary.toLocaleLowerCase();
+const keyboardUsesUpperCase = (keys: HTMLElement[]): boolean => {
+  const letterKey = keys.find(
+    (key) => LETTER_PATTERN.test(key.dataset.key ?? ""),
+  );
+  return isUpperCaseLetter(letterKey ? displayedLetter(letterKey) ?? "" : "");
+};
 
 const ensureStyles = (document: Document): void => {
   if (document.getElementById(STYLE_ID))
@@ -77,39 +79,47 @@ export const renderSecondaryLabels = (
 ): void => {
   ensureStyles(keyboard.ownerDocument);
 
-  keyboard
-    .querySelectorAll<HTMLElement>("div[data-key-row][data-key-col]")
-    .forEach((key) => {
-      const row = key.getAttribute("data-key-row");
-      const column = key.getAttribute("data-key-col");
-      const primary = key.getAttribute("data-key");
-      const secondary = row !== null && column !== null
-        ? labels.get(`${row}:${column}`)
-        : undefined;
-      const existing = key.querySelector<HTMLElement>(`:scope > .${LABEL_CLASS}`);
-      const displayedSecondary = secondary
-        ? matchPrimaryCase(secondary, getDisplayedPrimaryLabel(key))
-        : undefined;
+  const keys = Array.from(
+    keyboard.querySelectorAll<HTMLElement>("div[data-key-row][data-key-col]"),
+  );
+  const format = keyboardUsesUpperCase(keys)
+    ? (label: string) => label.toLocaleUpperCase()
+    : (label: string) => label.toLocaleLowerCase();
 
-      if (!secondary || secondary.toLocaleLowerCase() === primary?.toLocaleLowerCase()) {
-        existing?.remove();
-        key.classList.remove(KEY_CLASS);
-        return;
-      }
+  keys.forEach((key) => {
+    const row = key.getAttribute("data-key-row");
+    const column = key.getAttribute("data-key-col");
+    const primary = key.getAttribute("data-key");
+    const secondary = row !== null && column !== null
+      ? labels.get(`${row}:${column}`)
+      : undefined;
+    const existing = key.querySelector<HTMLElement>(
+      `:scope > .${LABEL_CLASS}`,
+    );
 
-      key.classList.add(KEY_CLASS);
-      if (existing) {
-        if (existing.textContent !== displayedSecondary)
-          existing.textContent = displayedSecondary ?? secondary;
-        return;
-      }
+    if (
+      !secondary
+      || secondary.toLocaleLowerCase() === primary?.toLocaleLowerCase()
+    ) {
+      existing?.remove();
+      key.classList.remove(KEY_CLASS);
+      return;
+    }
 
-      const label = keyboard.ownerDocument.createElement("span");
-      label.className = LABEL_CLASS;
-      label.textContent = displayedSecondary ?? secondary;
-      label.setAttribute("aria-hidden", "true");
-      key.appendChild(label);
-    });
+    const text = format(secondary);
+    key.classList.add(KEY_CLASS);
+    if (existing) {
+      if (existing.textContent !== text)
+        existing.textContent = text;
+      return;
+    }
+
+    const label = keyboard.ownerDocument.createElement("span");
+    label.className = LABEL_CLASS;
+    label.textContent = text;
+    label.setAttribute("aria-hidden", "true");
+    key.appendChild(label);
+  });
 };
 
 export const clearSecondaryLabels = (document: Document): void => {

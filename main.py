@@ -80,6 +80,7 @@ KEY_CODES = {
     "KEY_DELETE": 111,
 }
 KEY_LEFTCTRL = 29
+KEY_LEFTALT = 56
 
 EV_SYN = 0
 EV_KEY = 1
@@ -98,7 +99,9 @@ class VirtualKeyboard:
         self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         try:
             fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
-            for key_code in sorted({*KEY_CODES.values(), KEY_LEFTCTRL}):
+            for key_code in sorted(
+                {*KEY_CODES.values(), KEY_LEFTCTRL, KEY_LEFTALT}
+            ):
                 fcntl.ioctl(self.fd, UI_SET_KEYBIT, key_code)
             setup = struct.pack(
                 "HHHH80sI",
@@ -136,54 +139,52 @@ class VirtualKeyboard:
 
 
 class Plugin:
-    keyboard = None
-    input_lock = asyncio.Lock()
+    def __init__(self):
+        self.keyboard = None
+        self.input_lock = asyncio.Lock()
 
     async def _main(self):
         try:
-            Plugin.keyboard = VirtualKeyboard()
+            self.keyboard = VirtualKeyboard()
             logger.info("Created 4deus Mod uinput keyboard")
         except Exception:
             logger.exception("Failed to create 4deus Mod uinput keyboard")
 
     async def _unload(self):
-        if Plugin.keyboard is not None:
-            Plugin.keyboard.close()
-            Plugin.keyboard = None
+        if self.keyboard is not None:
+            self.keyboard.close()
+            self.keyboard = None
 
-    async def send_system_key(self, key_name: str, with_control: bool = False):
+    async def send_system_key(
+        self,
+        key_name: str,
+        with_control: bool = False,
+        with_alt: bool = False,
+    ):
         key_code = KEY_CODES.get(key_name)
-        keyboard = Plugin.keyboard
+        keyboard = self.keyboard
         if keyboard is None or key_code is None:
             logger.error("Cannot send system key: %s", key_name)
             return False
 
-        async with Plugin.input_lock:
+        async with self.input_lock:
             try:
                 if with_control:
-                    self._write_key(KEY_LEFTCTRL, 1)
-                self._write_key(key_code, 1)
+                    keyboard.write_key(KEY_LEFTCTRL, 1)
+                if with_alt:
+                    keyboard.write_key(KEY_LEFTALT, 1)
+                keyboard.write_key(key_code, 1)
                 await asyncio.sleep(0.03)
-                self._write_key(key_code, 0)
-                if with_control:
-                    self._write_key(KEY_LEFTCTRL, 0)
                 return True
             except Exception:
                 logger.exception("Failed to send system key: %s", key_name)
-                self._release_keys(key_code, with_control)
                 return False
-
-    @staticmethod
-    def _write_key(key_code: int, value: int):
-        Plugin.keyboard.write_key(key_code, value)
-
-    def _release_keys(self, key_code: int, with_control: bool):
-        keyboard = Plugin.keyboard
-        if keyboard is None:
-            return
-        try:
-            self._write_key(key_code, 0)
-            if with_control:
-                self._write_key(KEY_LEFTCTRL, 0)
-        except Exception:
-            logger.exception("Failed to release virtual keyboard keys")
+            finally:
+                try:
+                    keyboard.write_key(key_code, 0)
+                    if with_alt:
+                        keyboard.write_key(KEY_LEFTALT, 0)
+                    if with_control:
+                        keyboard.write_key(KEY_LEFTCTRL, 0)
+                except Exception:
+                    logger.exception("Failed to release virtual keyboard keys")

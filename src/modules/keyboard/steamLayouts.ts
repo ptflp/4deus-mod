@@ -91,20 +91,17 @@ const selectSecondaryLayout = (
 ): SteamKeyboardLayout | undefined => {
   const settings = layoutStore?.GetKeyboardLayoutSettings();
   const currentLayout = settings?.currentLayout;
-
   const preferred = preferredLayout === AUTO_LAYOUT
     ? undefined
     : layouts.find((layout) => layout.layout === Number(preferredLayout));
-  if (preferred && preferred.layout !== currentLayout)
-    return preferred;
-
-  for (const layoutID of settings?.selectedLayouts ?? []) {
-    const layout = layouts.find((candidate) => candidate.layout === layoutID);
-    if (layout && layout.layout !== currentLayout)
-      return layout;
-  }
-
-  return layouts.find((layout) => layout.layout !== currentLayout);
+  const selected = (settings?.selectedLayouts ?? [])
+    .map((layoutID) =>
+      layouts.find((layout) => layout.layout === layoutID),
+    );
+  return [preferred, ...selected, ...layouts].find(
+    (layout): layout is SteamKeyboardLayout =>
+      Boolean(layout && layout.layout !== currentLayout),
+  );
 };
 
 export const buildSecondaryLabelMap = (
