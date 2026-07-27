@@ -8,8 +8,9 @@ customizations.
 - Keeps the Steam keyboard above application windows when opened with a
   controller shortcut.
 - Optionally keeps the keyboard open after pressing Enter.
-- Adds a controller-friendly system-key layer with Ctrl, Fn, Esc, Delete, and
-  F1-F12.
+- Adds a controller-friendly system-key layer with Ctrl, Alt, Fn, Esc, Delete,
+  and F1-F12.
+- Sends system chords such as Alt+Tab, Alt+Shift, and Ctrl+Shift.
 - Sends system keys through a dedicated Linux `uinput` keyboard so they reach
   the focused application.
 - Supports holding the Steam items key to switch the system layer on or off.

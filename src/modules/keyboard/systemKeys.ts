@@ -38,6 +38,11 @@ const SYSTEM_KEYS_BY_NAME: Record<string, string> = {
   ArrowRight: "KEY_RIGHT",
 };
 
+const SYSTEM_KEYS_BY_POSITION: Record<string, string> = {
+  // Steam's left Shift key has no stable data-key name.
+  "3:0": "KEY_LEFTSHIFT",
+};
+
 const FUNCTION_KEYS: Record<string, string> = Object.fromEntries([
   ...Array.from(
     { length: 12 },
@@ -59,6 +64,7 @@ export const resolveSystemKey = (
     ?? (functionLayer ? FUNCTION_KEYS[position] : undefined)
     ?? (modifierActive
       ? SYSTEM_KEYS_BY_NAME[key.dataset.key ?? ""]
+        ?? SYSTEM_KEYS_BY_POSITION[position]
         ?? KEY_NAMES_BY_POSITION[position]
       : undefined);
 };

@@ -6,8 +6,12 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "build": "rollup -c",
-    "check": "tsc --noEmit",
-    "complexity": "eslint src",
+    "check": "pnpm check:types && pnpm check:complexity && pnpm test",
+    "check:complexity": "eslint src",
+    "check:types": "tsc --noEmit",
+    "test": "pnpm test:frontend && pnpm test:backend",
+    "test:backend": "python -m py_compile main.py && python -m unittest discover -s tests -p 'test_*.py'",
+    "test:frontend": "node --experimental-strip-types --test tests/*.test.ts",
     "watch": "rollup -c -w"
   },
   "repository": {
