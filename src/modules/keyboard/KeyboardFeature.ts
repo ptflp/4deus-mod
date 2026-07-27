@@ -2,9 +2,11 @@ import type { ModModule } from "../../core/module";
 import type { SettingsStore } from "../../core/settings";
 import { buildSecondaryLabelMap } from "./steamLayouts";
 import { clearSecondaryLabels, renderSecondaryLabels } from "./secondaryLabels";
-import { SystemKeyLayer } from "./SystemKeyLayer";
+import {
+  SystemKeyLayer,
+  type SystemKeySender,
+} from "./SystemKeyLayer";
 import type {
-  NativeKeyboardInput,
   NativeSteamWindow,
   SteamInputKeyboardEvents,
   WindowInstance,
@@ -22,14 +24,19 @@ export class KeyboardFeature implements ModModule {
   private keyboardObserver?: MutationObserver;
   private keyboardElement?: HTMLElement;
   private keyboardRegistration?: { unregister(): void };
-  private readonly systemKeyLayer = new SystemKeyLayer();
+  private readonly systemKeyLayer: SystemKeyLayer;
   private dismissOnEnterManager?: WindowInstance["VirtualKeyboardManager"];
   private originalDismissOnEnter?: boolean;
   private settingsUnsubscribe?: () => void;
   private windowTimer?: number;
   private refreshFrame?: number;
 
-  constructor(private readonly settings: SettingsStore) {}
+  constructor(
+    private readonly settings: SettingsStore,
+    sendSystemKey: SystemKeySender,
+  ) {
+    this.systemKeyLayer = new SystemKeyLayer(sendSystemKey);
+  }
 
   start(): void {
     this.settingsUnsubscribe = this.settings.subscribe(() => this.applySettings());
@@ -113,10 +120,7 @@ export class KeyboardFeature implements ModModule {
     if (!keyboard)
       return;
 
-    this.systemKeyLayer.bind(
-      keyboard,
-      window.SteamClient.Input as unknown as NativeKeyboardInput,
-    );
+    this.systemKeyLayer.bind(keyboard);
     this.keyboardObserver = new MutationObserver(() => this.scheduleRefresh());
     this.keyboardObserver.observe(keyboard, {
       attributes: true,
@@ -143,8 +147,9 @@ export class KeyboardFeature implements ModModule {
 
     const settings = this.settings.getSnapshot().keyboard;
     const keyboard = this.keyboardElement;
-    this.systemKeyLayer.setEnabled(
-      settings.enabled && settings.systemKeyLayer,
+    this.systemKeyLayer.configure(
+      settings.enabled,
+      settings.systemKeyLayer,
     );
     if (!settings.enabled || !settings.secondaryLabels || !keyboard) {
       clearSecondaryLabels(document);

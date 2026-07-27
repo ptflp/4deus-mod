@@ -34,7 +34,7 @@ jobs:
       - name: Package plugin
         run: |
           mkdir -p out/4deusMod
-          cp -r dist LICENSE README.md logo.png package.json plugin.json out/4deusMod/
+          cp -r dist LICENSE README.md logo.png main.py package.json plugin.json out/4deusMod/
           cd out
           zip -r 4deusMod.zip 4deusMod
 

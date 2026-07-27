@@ -64,73 +64,59 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
     : AUTO_LAYOUT;
 
   return (
-    <>
-      <PanelSection title={strings.keyboard}>
+    <PanelSection title={strings.keyboard}>
+      <PanelSectionRow>
+        <ToggleField
+          label={strings.keepOnTop}
+          description={strings.keepOnTopDescription}
+          checked={keyboard.keepOnTop}
+          onChange={(keepOnTop) => settings.updateKeyboard({ keepOnTop })}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label={strings.keepOpenAfterEnter}
+          description={strings.keepOpenAfterEnterDescription}
+          checked={keyboard.keepOpenAfterEnter}
+          onChange={(keepOpenAfterEnter) => settings.updateKeyboard({
+            keepOpenAfterEnter,
+          })}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label={strings.systemKeyLayer}
+          description={strings.systemKeyLayerDescription}
+          checked={keyboard.systemKeyLayer}
+          onChange={(systemKeyLayer) => settings.updateKeyboard({
+            systemKeyLayer,
+          })}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label={strings.labels}
+          description={strings.labelsDescription}
+          checked={keyboard.secondaryLabels}
+          onChange={(secondaryLabels) => settings.updateKeyboard({
+            secondaryLabels,
+          })}
+        />
+      </PanelSectionRow>
+      {keyboard.secondaryLabels && (
         <PanelSectionRow>
-          <ToggleField
-            label={strings.enabled}
-            description={strings.enabledDescription}
-            checked={keyboard.enabled}
-            onChange={(enabled) => settings.updateKeyboard({ enabled })}
+          <DropdownItem
+            label={strings.secondaryLayout}
+            description={strings.secondaryLayoutDescription}
+            menuLabel={strings.secondaryLayout}
+            rgOptions={layoutOptions}
+            selectedOption={selectedLayout}
+            onChange={({ data }) => settings.updateKeyboard({
+              secondaryLayout: data.toString(),
+            })}
           />
         </PanelSectionRow>
-      </PanelSection>
-      {keyboard.enabled && (
-        <>
-          <PanelSection>
-            <PanelSectionRow>
-              <ToggleField
-                label={strings.keepOnTop}
-                description={strings.keepOnTopDescription}
-                checked={keyboard.keepOnTop}
-                onChange={(keepOnTop) => settings.updateKeyboard({ keepOnTop })}
-              />
-            </PanelSectionRow>
-            <PanelSectionRow>
-              <ToggleField
-                label={strings.keepOpenAfterEnter}
-                description={strings.keepOpenAfterEnterDescription}
-                checked={keyboard.keepOpenAfterEnter}
-                onChange={(keepOpenAfterEnter) => settings.updateKeyboard({
-                  keepOpenAfterEnter,
-                })}
-              />
-            </PanelSectionRow>
-            <PanelSectionRow>
-              <ToggleField
-                label={strings.systemKeyLayer}
-                description={strings.systemKeyLayerDescription}
-                checked={keyboard.systemKeyLayer}
-                onChange={(systemKeyLayer) => settings.updateKeyboard({
-                  systemKeyLayer,
-                })}
-              />
-            </PanelSectionRow>
-            <PanelSectionRow>
-              <ToggleField
-                label={strings.labels}
-                description={strings.labelsDescription}
-                checked={keyboard.secondaryLabels}
-                onChange={(secondaryLabels) => settings.updateKeyboard({ secondaryLabels })}
-              />
-            </PanelSectionRow>
-            {keyboard.secondaryLabels && (
-              <PanelSectionRow>
-                <DropdownItem
-                  label={strings.secondaryLayout}
-                  description={strings.secondaryLayoutDescription}
-                  menuLabel={strings.secondaryLayout}
-                  rgOptions={layoutOptions}
-                  selectedOption={selectedLayout}
-                  onChange={({ data }) => settings.updateKeyboard({
-                    secondaryLayout: data.toString(),
-                  })}
-                />
-              </PanelSectionRow>
-            )}
-          </PanelSection>
-        </>
       )}
-    </>
+    </PanelSection>
   );
 };

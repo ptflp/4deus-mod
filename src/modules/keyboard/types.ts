@@ -8,10 +8,6 @@ export interface VirtualKeyboardManager {
   SetVirtualKeyboardHidden?: () => void;
 }
 
-export interface NativeKeyboardInput {
-  ControllerKeyboardSetKeyState?: (keyCode: number, pressed: boolean) => void;
-}
-
 export interface WindowInstance {
   BrowserWindow: Window;
   LocationPathName?: string;
