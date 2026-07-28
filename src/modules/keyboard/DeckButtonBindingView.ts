@@ -56,6 +56,7 @@ const STYLES = `
 
 export class DeckButtonBindingView {
   private keyboard?: HTMLElement;
+  private lastSignature?: string;
 
   bind(keyboard: HTMLElement): void {
     this.unbind();
@@ -65,6 +66,7 @@ export class DeckButtonBindingView {
   unbind(): void {
     this.clear();
     this.keyboard = undefined;
+    this.lastSignature = undefined;
   }
 
   render(
@@ -74,38 +76,88 @@ export class DeckButtonBindingView {
     secondLayerEnabled: boolean,
     secondLayerActive: boolean,
   ): void {
-    this.clearLabels();
     const keyboard = this.keyboard;
-    if (!keyboard || !enabled)
+    if (!keyboard)
       return;
 
-    this.ensureStyles();
-    const labelsByAction = new Map<string, string[]>();
-    DECK_BUTTONS.forEach(({ button, label }) => {
-      if (secondLayerEnabled && button === "r4")
-        return;
-      const chord = parseDeckQuickChord(quickActions[button]);
-      if (chord)
-        return;
-      const action = bindings[button];
-      if (action === "none")
-        return;
-      const labels = labelsByAction.get(action) ?? [];
-      labels.push(label);
-      labelsByAction.set(action, labels);
+    const targets = this.buildTargets(
+      keyboard,
+      enabled,
+      bindings,
+      quickActions,
+      secondLayerEnabled,
+    );
+    const layerStatusKey = enabled && secondLayerEnabled
+      ? findKey(keyboard, 4, 2) ?? undefined
+      : undefined;
+    const signature = JSON.stringify({
+      enabled,
+      labels: targets.map(({ key, labels }) => [
+        key.dataset.keyRow,
+        key.dataset.keyCol,
+        labels,
+      ]),
+      secondLayerActive,
+      secondLayerEnabled,
     });
+    const expectedLabelCount = targets.length + (layerStatusKey ? 1 : 0);
+    if (this.renderingIsCurrent(keyboard, signature, expectedLabelCount))
+      return;
+
+    this.clearLabels();
+    this.lastSignature = signature;
+    if (!enabled)
+      return;
+    this.ensureStyles();
+    targets.forEach(({ key, labels }) => this.renderLabels(key, labels));
+    if (layerStatusKey)
+      this.renderLayerStatus(layerStatusKey, secondLayerActive);
+  }
+
+  private buildTargets(
+    keyboard: HTMLElement,
+    enabled: boolean,
+    bindings: DeckButtonBindings,
+    quickActions: DeckQuickActions,
+    secondLayerEnabled: boolean,
+  ): Array<{ key: HTMLElement; labels: string[] }> {
+    const labelsByAction = new Map<string, string[]>();
+    if (enabled) {
+      DECK_BUTTONS.forEach(({ button, label }) => {
+        if (secondLayerEnabled && button === "r4")
+          return;
+        const chord = parseDeckQuickChord(quickActions[button]);
+        if (chord)
+          return;
+        const action = bindings[button];
+        if (action === "none")
+          return;
+        const labels = labelsByAction.get(action) ?? [];
+        labels.push(label);
+        labelsByAction.set(action, labels);
+      });
+    }
+    const targets: Array<{ key: HTMLElement; labels: string[] }> = [];
     labelsByAction.forEach((labels, action) => {
       const key = action === "KEY_LEFTCTRL"
         ? findNamedKey(keyboard, EMOJI_KEY)
         : findKeyBySystemName(keyboard, action);
       if (key)
-        this.renderLabels(key, labels);
+        targets.push({ key, labels });
     });
-    if (secondLayerEnabled) {
-      const space = findKey(keyboard, 4, 2);
-      if (space)
-        this.renderLayerStatus(space, secondLayerActive);
-    }
+    return targets;
+  }
+
+  private renderingIsCurrent(
+    keyboard: HTMLElement,
+    signature: string,
+    expectedLabelCount: number,
+  ): boolean {
+    const renderedLabelCount = keyboard.querySelectorAll(
+      `.${DECK_BINDING_LABEL_CLASS}`,
+    ).length;
+    return signature === this.lastSignature
+      && renderedLabelCount === expectedLabelCount;
   }
 
   private renderLayerStatus(key: HTMLElement, active: boolean): void {
@@ -155,6 +207,7 @@ export class DeckButtonBindingView {
 
   private clear(): void {
     this.clearLabels();
+    this.lastSignature = undefined;
     this.keyboard?.ownerDocument.getElementById(STYLE_ID)?.remove();
   }
 

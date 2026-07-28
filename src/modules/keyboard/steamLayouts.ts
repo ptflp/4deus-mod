@@ -35,6 +35,9 @@ export type SecondaryLabelMap = Map<string, SecondaryKeyLabels>;
 
 let layoutStore: KeyboardLayoutStore | undefined;
 let activeLayoutsProvider: (() => SteamKeyboardLayout[]) | undefined;
+let secondaryLabelCache:
+  | { key: string; labels: SecondaryLabelMap }
+  | undefined;
 
 const resolveSteamModules = (): void => {
   layoutStore ??= findModuleExport(
@@ -95,8 +98,8 @@ export const getLayoutDisplayName = (layout: SteamKeyboardLayout): string => {
 const selectSecondaryLayout = (
   layouts: SteamKeyboardLayout[],
   preferredLayout: string,
+  settings: KeyboardLayoutSettings | undefined,
 ): SteamKeyboardLayout | undefined => {
-  const settings = layoutStore?.GetKeyboardLayoutSettings();
   const currentLayout = settings?.currentLayout;
   const preferred = preferredLayout === AUTO_LAYOUT
     ? undefined
@@ -115,9 +118,21 @@ export const buildSecondaryLabelMap = (
   preferredLayout: string,
 ): SecondaryLabelMap => {
   resolveSteamModules();
-  const layout = selectSecondaryLayout(getEnabledLayouts(), preferredLayout);
+  const settings = layoutStore?.GetKeyboardLayoutSettings();
+  const layout = selectSecondaryLayout(
+    getEnabledLayouts(),
+    preferredLayout,
+    settings,
+  );
   if (!layout)
     return new Map();
+  const cacheKey = [
+    preferredLayout,
+    settings?.currentLayout,
+    layout.layout,
+  ].join(":");
+  if (secondaryLabelCache?.key === cacheKey)
+    return secondaryLabelCache.labels;
 
   const labels: SecondaryLabelMap = new Map();
   const rows = layout.rgLayout({
@@ -140,5 +155,6 @@ export const buildSecondaryLabelMap = (
     });
   });
 
+  secondaryLabelCache = { key: cacheKey, labels };
   return labels;
 };
