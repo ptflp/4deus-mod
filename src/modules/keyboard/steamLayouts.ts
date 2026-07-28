@@ -64,6 +64,25 @@ export const getEnabledLayouts = (): SteamKeyboardLayout[] => {
   }
 };
 
+export const selectPrimaryKeyboardLayout = (): void => {
+  resolveSteamModules();
+  try {
+    const settings = layoutStore?.GetKeyboardLayoutSettings();
+    const primaryLayout = settings?.selectedLayouts[0];
+    if (
+      primaryLayout !== undefined
+      && settings?.currentLayout !== primaryLayout
+    ) {
+      layoutStore?.SetKeyboardLayout(primaryLayout);
+    }
+  } catch (error) {
+    console.warn(
+      "[4deus Mod/Keyboard] Failed to select the primary Steam layout",
+      error,
+    );
+  }
+};
+
 export const getLayoutDisplayName = (layout: SteamKeyboardLayout): string => {
   const localized = window.LocalizationManager?.m_mapTokens?.get(layout.locToken);
   if (localized)

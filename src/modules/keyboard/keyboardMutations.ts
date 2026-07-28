@@ -2,6 +2,7 @@ const MOD_CLASS_PREFIX = "fourdeus-";
 const MOD_NODE_SELECTOR = [
   ".fourdeus-secondary-label",
   ".fourdeus-system-key-label",
+  ".fourdeus-deck-binding-label",
   '[data-key="4deus_Alt"]',
   '[data-key="4deus_Fn"]',
 ].join(",");

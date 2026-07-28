@@ -76,12 +76,24 @@ KEY_CODES = {
     "KEY_F10": 68,
     "KEY_F11": 87,
     "KEY_F12": 88,
+    "KEY_HOME": 102,
+    "KEY_UP": 103,
+    "KEY_PAGEUP": 104,
     "KEY_LEFT": 105,
     "KEY_RIGHT": 106,
+    "KEY_END": 107,
+    "KEY_DOWN": 108,
+    "KEY_PAGEDOWN": 109,
+    "KEY_INSERT": 110,
     "KEY_DELETE": 111,
+    "KEY_LEFTMETA": 125,
+    "KEY_LEFTCTRL": 29,
+    "KEY_LEFTALT": 56,
 }
 KEY_LEFTCTRL = 29
 KEY_LEFTALT = 56
+KEY_LEFTSHIFT = 42
+KEY_LEFTMETA = 125
 
 EV_SYN = 0
 EV_KEY = 1
@@ -143,6 +155,7 @@ class Plugin:
     def __init__(self):
         self.keyboard = None
         self.input_lock = asyncio.Lock()
+        self.held_key_codes = set()
 
     async def _main(self):
         try:
@@ -161,6 +174,8 @@ class Plugin:
         key_name: str,
         with_control: bool = False,
         with_alt: bool = False,
+        with_shift: bool = False,
+        with_meta: bool = False,
     ):
         key_code = KEY_CODES.get(key_name)
         keyboard = self.keyboard
@@ -169,11 +184,19 @@ class Plugin:
             return False
 
         async with self.input_lock:
+            chord_modifiers = [
+                (with_control, KEY_LEFTCTRL),
+                (with_alt, KEY_LEFTALT),
+                (with_shift, KEY_LEFTSHIFT),
+                (with_meta, KEY_LEFTMETA),
+            ]
+            pressed_modifiers = []
+            target_was_held = key_code in self.held_key_codes
             try:
-                if with_control:
-                    keyboard.write_key(KEY_LEFTCTRL, 1)
-                if with_alt:
-                    keyboard.write_key(KEY_LEFTALT, 1)
+                for enabled, modifier in chord_modifiers:
+                    if enabled and modifier not in self.held_key_codes:
+                        keyboard.write_key(modifier, 1)
+                        pressed_modifiers.append(modifier)
                 keyboard.write_key(key_code, 1)
                 await asyncio.sleep(0.03)
                 return True
@@ -182,13 +205,36 @@ class Plugin:
                 return False
             finally:
                 try:
-                    keyboard.write_key(key_code, 0)
-                    if with_alt:
-                        keyboard.write_key(KEY_LEFTALT, 0)
-                    if with_control:
-                        keyboard.write_key(KEY_LEFTCTRL, 0)
+                    if not target_was_held:
+                        keyboard.write_key(key_code, 0)
+                    for modifier in reversed(pressed_modifiers):
+                        keyboard.write_key(modifier, 0)
                 except Exception:
                     logger.exception("Failed to release virtual keyboard keys")
+
+    async def set_system_key_state(self, key_name: str, pressed: bool):
+        key_code = KEY_CODES.get(key_name)
+        keyboard = self.keyboard
+        if keyboard is None or key_code is None:
+            logger.error("Cannot set system key state: %s", key_name)
+            return False
+
+        async with self.input_lock:
+            try:
+                if pressed and key_code not in self.held_key_codes:
+                    keyboard.write_key(key_code, 1)
+                    self.held_key_codes.add(key_code)
+                elif not pressed and key_code in self.held_key_codes:
+                    keyboard.write_key(key_code, 0)
+                    self.held_key_codes.remove(key_code)
+                return True
+            except Exception:
+                logger.exception(
+                    "Failed to set system key state: %s=%s",
+                    key_name,
+                    pressed,
+                )
+                return False
 
     async def log_keyboard_diagnostics(self, payload: str):
         if not isinstance(payload, str):

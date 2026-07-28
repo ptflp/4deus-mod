@@ -8,6 +8,18 @@ export interface Strings {
   keepOpenAfterEnterDescription: string;
   systemKeyLayer: string;
   systemKeyLayerDescription: string;
+  languageSwitchShortcut: string;
+  languageSwitchShortcutDescription: string;
+  languageSwitchShortcutChoice: string;
+  deckButtonBindings: string;
+  deckButtonBindingsDescription: string;
+  keyBinding: string;
+  quickAction: string;
+  quickActionsDescription: string;
+  quickActionHint: string;
+  invalidQuickAction: string;
+  secondHotkeyLayer: string;
+  secondHotkeyLayerDescription: string;
   labels: string;
   labelsDescription: string;
   secondaryLayout: string;
@@ -34,6 +46,18 @@ type Values = [
   automatic: string,
   diagnostics?: string,
   diagnosticsDescription?: string,
+  languageSwitchShortcut?: string,
+  languageSwitchShortcutDescription?: string,
+  languageSwitchShortcutChoice?: string,
+  deckButtonBindings?: string,
+  deckButtonBindingsDescription?: string,
+  keyBinding?: string,
+  quickAction?: string,
+  quickActionsDescription?: string,
+  quickActionHint?: string,
+  invalidQuickAction?: string,
+  secondHotkeyLayer?: string,
+  secondHotkeyLayerDescription?: string,
 ];
 
 const define = ([
@@ -53,6 +77,18 @@ const define = ([
   automatic,
   diagnostics = "Keyboard diagnostics",
   diagnosticsDescription = "Write keyboard state and performance counters to the Decky log every five seconds",
+  languageSwitchShortcut = "System language shortcut",
+  languageSwitchShortcutDescription = "Tap the layout key to switch language; hold it to choose one of four modes",
+  languageSwitchShortcutChoice = "Language shortcut",
+  deckButtonBindings = "Steam Deck button bindings",
+  deckButtonBindingsDescription = "Use shoulder or rear buttons as keys while the virtual keyboard is open",
+  keyBinding = "Key",
+  quickAction = "Quick action",
+  quickActionsDescription = "Enable custom one-button key combinations; valid combinations override regular bindings",
+  quickActionHint = "Example: Ctrl+Shift+Delete",
+  invalidQuickAction = "Invalid combination; the regular binding will be used",
+  secondHotkeyLayer = "Second hotkey set with R4",
+  secondHotkeyLayerDescription = "Hold R4 to use the second quick-action set; R4's own binding is overridden",
 ]: Values): Strings => ({
   keyboard,
   enabled,
@@ -63,6 +99,18 @@ const define = ([
   keepOpenAfterEnterDescription,
   systemKeyLayer,
   systemKeyLayerDescription,
+  languageSwitchShortcut,
+  languageSwitchShortcutDescription,
+  languageSwitchShortcutChoice,
+  deckButtonBindings,
+  deckButtonBindingsDescription,
+  keyBinding,
+  quickAction,
+  quickActionsDescription,
+  quickActionHint,
+  invalidQuickAction,
+  secondHotkeyLayer,
+  secondHotkeyLayerDescription,
   labels,
   labelsDescription,
   secondaryLayout,
@@ -87,6 +135,20 @@ export const english = define([
   "Secondary layout",
   "Automatic follows an enabled layout that is not currently active",
   "Automatic",
+  "Keyboard diagnostics",
+  "Write keyboard state and performance counters to the Decky log every five seconds",
+  "System language shortcut",
+  "Tap the layout key to switch language; hold it to choose one of four modes",
+  "Language shortcut",
+  "Steam Deck button bindings",
+  "Use shoulder or rear buttons as keys while the virtual keyboard is open",
+  "Key",
+  "Quick action",
+  "Enable custom one-button key combinations; valid combinations override regular bindings",
+  "Example: Ctrl+Shift+Delete",
+  "Invalid combination; the regular binding will be used",
+  "Second hotkey set with R4",
+  "Hold R4 to use the second quick-action set; R4's own binding is overridden",
 ]);
 
 const russian = define([
@@ -106,6 +168,18 @@ const russian = define([
   "Автоматически",
   "Диагностика клавиатуры",
   "Записывать состояние клавиатуры и счётчики производительности в журнал Decky каждые пять секунд",
+  "Системное переключение языка",
+  "Нажмите кнопку раскладки для смены языка; удерживайте её для выбора одного из четырёх режимов",
+  "Сочетание для смены языка",
+  "Бинды кнопок Steam Deck",
+  "Использовать бамперы или задние кнопки как клавиши, пока открыта виртуальная клавиатура",
+  "Клавиша",
+  "Быстрое действие",
+  "Включить пользовательские сочетания на одну кнопку; корректное сочетание перекрывает обычный бинд",
+  "Пример: Ctrl+Shift+Delete",
+  "Некорректное сочетание — будет использован обычный бинд",
+  "Второй набор хоткеев через R4",
+  "Удерживайте R4 для второго набора быстрых действий; собственный бинд R4 будет перекрыт",
 ]);
 
 const german = define([

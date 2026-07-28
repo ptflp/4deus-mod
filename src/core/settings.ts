@@ -1,4 +1,62 @@
 export const AUTO_LAYOUT = "auto";
+export type LanguageSwitchShortcut =
+  | "alt-shift"
+  | "ctrl-shift"
+  | "meta-space"
+  | "native";
+export type DeckButton =
+  | "view"
+  | "l1"
+  | "r1"
+  | "l4"
+  | "r4"
+  | "l5"
+  | "r5";
+export type DeckButtonAction =
+  | "none"
+  | "KEY_ESC"
+  | "KEY_SPACE"
+  | "KEY_BACKSPACE"
+  | "KEY_ENTER"
+  | "KEY_TAB"
+  | "KEY_LEFTCTRL"
+  | "KEY_LEFTALT"
+  | "KEY_LEFTSHIFT";
+export type DeckButtonBindings = Record<DeckButton, DeckButtonAction>;
+export type DeckQuickAction = string;
+export type DeckQuickActions = Record<DeckButton, DeckQuickAction>;
+
+const emptyQuickActions = (): DeckQuickActions => ({
+  view: "",
+  l1: "",
+  r1: "",
+  l4: "",
+  r4: "",
+  l5: "",
+  r5: "",
+});
+
+const LEGACY_QUICK_ACTIONS: Record<string, string> = {
+  "ctrl-shift-delete": "Ctrl+Shift+Delete",
+  "ctrl-alt-delete": "Ctrl+Alt+Delete",
+  "ctrl-shift-esc": "Ctrl+Shift+Esc",
+  "ctrl-shift-w": "Ctrl+Shift+W",
+  "alt-f4": "Alt+F4",
+  none: "",
+};
+
+const normalizeQuickActions = (
+  actions: Partial<DeckQuickActions> | undefined,
+): DeckQuickActions => {
+  const normalized = emptyQuickActions();
+  for (const button of Object.keys(normalized) as DeckButton[]) {
+    const value = actions?.[button];
+    normalized[button] = typeof value === "string"
+      ? LEGACY_QUICK_ACTIONS[value] ?? value
+      : "";
+  }
+  return normalized;
+};
 
 export interface ModSettings {
   version: 1;
@@ -7,6 +65,14 @@ export interface ModSettings {
     keepOnTop: boolean;
     keepOpenAfterEnter: boolean;
     systemKeyLayer: boolean;
+    languageSwitchShortcutEnabled: boolean;
+    languageSwitchShortcut: LanguageSwitchShortcut;
+    deckButtonBindingsEnabled: boolean;
+    deckButtonBindings: DeckButtonBindings;
+    deckButtonQuickActionsEnabled: boolean;
+    deckButtonQuickActions: DeckQuickActions;
+    deckButtonSecondLayerEnabled: boolean;
+    deckButtonSecondLayerActions: DeckQuickActions;
     secondaryLabels: boolean;
     secondaryLayout: string;
     diagnostics: boolean;
@@ -24,6 +90,22 @@ const defaults: ModSettings = {
     keepOnTop: true,
     keepOpenAfterEnter: false,
     systemKeyLayer: true,
+    languageSwitchShortcutEnabled: true,
+    languageSwitchShortcut: "native",
+    deckButtonBindingsEnabled: true,
+    deckButtonBindings: {
+      view: "none",
+      l1: "KEY_ESC",
+      r1: "KEY_SPACE",
+      l4: "none",
+      r4: "none",
+      l5: "none",
+      r5: "none",
+    },
+    deckButtonQuickActionsEnabled: true,
+    deckButtonQuickActions: emptyQuickActions(),
+    deckButtonSecondLayerEnabled: false,
+    deckButtonSecondLayerActions: emptyQuickActions(),
     secondaryLabels: true,
     secondaryLayout: AUTO_LAYOUT,
     diagnostics: false,
@@ -43,6 +125,16 @@ const readSettings = (): ModSettings => {
       keyboard: {
         ...defaults.keyboard,
         ...parsed.keyboard,
+        deckButtonBindings: {
+          ...defaults.keyboard.deckButtonBindings,
+          ...parsed.keyboard?.deckButtonBindings,
+        },
+        deckButtonQuickActions: normalizeQuickActions(
+          parsed.keyboard?.deckButtonQuickActions,
+        ),
+        deckButtonSecondLayerActions: normalizeQuickActions(
+          parsed.keyboard?.deckButtonSecondLayerActions,
+        ),
       },
       version: 1,
     };

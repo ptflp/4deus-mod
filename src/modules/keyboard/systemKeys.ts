@@ -1,3 +1,5 @@
+import type { LanguageSwitchShortcut } from "../../core/settings";
+
 export const EMOJI_KEY = "SwitchKeys_Steam";
 export const LAYOUT_KEY = "SwitchKeys_Layout";
 export const SYNTHETIC_FUNCTION_KEY = "4deus_Fn";
@@ -52,6 +54,28 @@ const FUNCTION_KEYS: Record<string, string> = Object.fromEntries([
   ["0:13", "KEY_DELETE"],
 ]);
 
+const FUNCTION_KEYS_BY_NAME: Record<string, string> = {
+  [LAYOUT_KEY]: "KEY_LEFTMETA",
+};
+
+const POSITIONS_BY_KEY_NAME = new Map(
+  [
+    ...Object.entries(KEY_NAMES_BY_POSITION),
+    ...Object.entries(DIRECT_SYSTEM_KEYS),
+    ...Object.entries(SYSTEM_KEYS_BY_POSITION),
+    ...Object.entries(FUNCTION_KEYS),
+  ].map(([position, keyName]) => [keyName, position]),
+);
+
+export const languageSwitchModifiers = (
+  shortcut: LanguageSwitchShortcut,
+): { keyName: string; withAlt: boolean; withControl: boolean; withMeta: boolean } => ({
+  keyName: shortcut === "meta-space" ? "KEY_SPACE" : "KEY_LEFTSHIFT",
+  withAlt: shortcut === "alt-shift",
+  withControl: shortcut === "ctrl-shift",
+  withMeta: shortcut === "meta-space",
+});
+
 export const keyPosition = (key: HTMLElement): string =>
   `${key.dataset.keyRow}:${key.dataset.keyCol}`;
 
@@ -62,6 +86,9 @@ export const resolveSystemKey = (
 ): string | undefined => {
   const position = keyPosition(key);
   return DIRECT_SYSTEM_KEYS[position]
+    ?? (functionLayer
+      ? FUNCTION_KEYS_BY_NAME[key.dataset.key ?? ""]
+      : undefined)
     ?? (functionLayer ? FUNCTION_KEYS[position] : undefined)
     ?? (modifierActive
       ? SYSTEM_KEYS_BY_NAME[key.dataset.key ?? ""]
@@ -73,6 +100,9 @@ export const resolveSystemKey = (
 export const isAltKey = (key: HTMLElement): boolean =>
   key.dataset.key === NATIVE_ALT_KEY
   || key.dataset.key === SYNTHETIC_ALT_KEY;
+
+export const isShiftKey = (key: HTMLElement): boolean =>
+  keyPosition(key) === "3:0";
 
 export const findKey = (
   keyboard: HTMLElement,
@@ -87,3 +117,14 @@ export const findNamedKey = (
   name: string,
 ): HTMLElement | null =>
   keyboard.querySelector(`${KEY_SELECTOR}[data-key="${name}"]`);
+
+export const findKeyBySystemName = (
+  keyboard: HTMLElement,
+  keyName: string,
+): HTMLElement | null => {
+  const position = POSITIONS_BY_KEY_NAME.get(keyName);
+  if (!position)
+    return null;
+  const [row, column] = position.split(":").map(Number);
+  return findKey(keyboard, row, column);
+};

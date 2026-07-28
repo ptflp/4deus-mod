@@ -6,6 +6,7 @@ import { buildSecondaryLabelMap } from "./steamLayouts";
 import {
   SystemKeyLayer,
   type SystemKeySender,
+  type SystemKeyStateSender,
 } from "./SystemKeyLayer";
 import type {
   NativeSteamWindow,
@@ -64,9 +65,16 @@ export class KeyboardFeature implements ModModule {
   constructor(
     private readonly settings: SettingsStore,
     sendSystemKey: SystemKeySender,
+    setSystemKeyState: SystemKeyStateSender,
     private readonly sendDiagnostics: KeyboardDiagnosticSender,
   ) {
-    this.systemKeyLayer = new SystemKeyLayer(sendSystemKey);
+    this.systemKeyLayer = new SystemKeyLayer(
+      sendSystemKey,
+      setSystemKeyState,
+      (languageSwitchShortcut) => this.settings.updateKeyboard({
+        languageSwitchShortcut,
+      }),
+    );
   }
 
   start(): void {
@@ -231,6 +239,14 @@ export class KeyboardFeature implements ModModule {
     this.systemKeyLayer.configure(
       settings.enabled,
       settings.systemKeyLayer,
+      settings.languageSwitchShortcutEnabled,
+      settings.languageSwitchShortcut,
+      settings.deckButtonBindingsEnabled,
+      settings.deckButtonBindings,
+      settings.deckButtonQuickActionsEnabled,
+      settings.deckButtonQuickActions,
+      settings.deckButtonSecondLayerEnabled,
+      settings.deckButtonSecondLayerActions,
     );
     if (!settings.enabled || !settings.secondaryLabels || !keyboard) {
       clearSecondaryLabels(document);

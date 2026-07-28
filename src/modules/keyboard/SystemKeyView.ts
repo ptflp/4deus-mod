@@ -8,9 +8,11 @@ import {
   SYNTHETIC_ALT_KEY,
   SYNTHETIC_FUNCTION_KEY,
 } from "./systemKeys";
+import { DECK_BINDING_LABEL_CLASS } from "./DeckButtonBindingView";
 
 const SYSTEM_KEY_CLASS = "fourdeus-system-key";
 const ACTIVE_KEY_CLASS = "fourdeus-system-key-active";
+const ESCAPE_KEY_CLASS = "fourdeus-system-key-escape";
 export const PRESSED_KEY_CLASS = "fourdeus-system-key-pressed";
 const LABEL_CLASS = "fourdeus-system-key-label";
 const STYLE_ID = "fourdeus-system-key-style";
@@ -19,12 +21,14 @@ interface ViewState {
   altActive: boolean;
   controlActive: boolean;
   functionLayer: boolean;
+  shiftActive: boolean;
   visible: boolean;
 }
 
 interface Presentation {
   active?: boolean;
   label: string;
+  regularWidth?: boolean;
 }
 
 const STYLES = `
@@ -32,7 +36,7 @@ const STYLES = `
     position: relative !important;
   }
 
-  .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}) span:not(.${LABEL_CLASS}),
+  .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}):not(.${DECK_BINDING_LABEL_CLASS}) span:not(.${LABEL_CLASS}),
   .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}) svg,
   .${SYSTEM_KEY_CLASS} .fourdeus-secondary-label {
     visibility: hidden !important;
@@ -51,6 +55,13 @@ const STYLES = `
 
   .${ACTIVE_KEY_CLASS} {
     outline: none !important;
+  }
+
+  .${ESCAPE_KEY_CLASS} {
+    flex: 0 0 var(--fourdeus-regular-key-width) !important;
+    width: var(--fourdeus-regular-key-width) !important;
+    min-width: var(--fourdeus-regular-key-width) !important;
+    max-width: var(--fourdeus-regular-key-width) !important;
   }
 
   .${PRESSED_KEY_CLASS} > :first-child {
@@ -131,10 +142,23 @@ export class SystemKeyView {
         functionKey,
         { label: "Fn", active: state.functionLayer },
       ],
-      [findKey(keyboard, 0, 0), { label: "Esc" }],
+      [
+        findKey(keyboard, 0, 0),
+        { label: "Esc", regularWidth: true },
+      ],
       [altKey, { label: "Alt", active: state.altActive }],
     ];
+    if (state.shiftActive) {
+      entries.push([
+        findKey(keyboard, 3, 0),
+        { label: "Shift", active: true },
+      ]);
+    }
     if (state.functionLayer) {
+      entries.push([
+        findNamedKey(keyboard, LAYOUT_KEY),
+        { label: "Start" },
+      ]);
       entries.push([findKey(keyboard, 0, 13), { label: "Delete" }]);
       for (let column = 1; column <= 12; column += 1)
         entries.push([findKey(keyboard, 0, column), { label: `F${column}` }]);
@@ -150,6 +174,9 @@ export class SystemKeyView {
     const active = Boolean(presentation.active);
     key.classList.add(SYSTEM_KEY_CLASS);
     key.classList.toggle(ACTIVE_KEY_CLASS, active);
+    key.classList.toggle(ESCAPE_KEY_CLASS, Boolean(presentation.regularWidth));
+    if (presentation.regularWidth)
+      this.syncRegularKeyWidth(key);
 
     const toggleOnClass = this.resolveToggleOnClass();
     if (toggleOnClass)
@@ -231,8 +258,10 @@ export class SystemKeyView {
     key.classList.remove(
       SYSTEM_KEY_CLASS,
       ACTIVE_KEY_CLASS,
+      ESCAPE_KEY_CLASS,
       PRESSED_KEY_CLASS,
     );
+    key.style.removeProperty("--fourdeus-regular-key-width");
     if (this.toggleOnClass)
       key.firstElementChild?.classList.remove(this.toggleOnClass);
     key.querySelector(`.${LABEL_CLASS}`)?.remove();
@@ -285,5 +314,16 @@ export class SystemKeyView {
       letterSpacing: style.letterSpacing,
       lineHeight: style.lineHeight,
     });
+  }
+
+  private syncRegularKeyWidth(key: HTMLElement): void {
+    const regularKey = findKey(this.keyboard!, 0, 1);
+    const width = regularKey?.getBoundingClientRect().width ?? 0;
+    if (width > 0) {
+      key.style.setProperty(
+        "--fourdeus-regular-key-width",
+        `${width.toFixed(2)}px`,
+      );
+    }
   }
 }

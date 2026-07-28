@@ -53,6 +53,107 @@ class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_start_emits_left_meta(self):
+        plugin = plugin_backend.Plugin()
+        keyboard = RecordingKeyboard()
+        plugin.keyboard = keyboard
+
+        with patch.object(plugin_backend.asyncio, "sleep", AsyncMock()):
+            sent = await plugin.send_system_key("KEY_LEFTMETA")
+
+        self.assertTrue(sent)
+        self.assertEqual(
+            keyboard.events,
+            [
+                (plugin_backend.KEY_CODES["KEY_LEFTMETA"], 1),
+                (plugin_backend.KEY_CODES["KEY_LEFTMETA"], 0),
+            ],
+        )
+
+    async def test_cmd_space_emits_a_complete_chord(self):
+        plugin = plugin_backend.Plugin()
+        keyboard = RecordingKeyboard()
+        plugin.keyboard = keyboard
+
+        with patch.object(plugin_backend.asyncio, "sleep", AsyncMock()):
+            sent = await plugin.send_system_key(
+                "KEY_SPACE",
+                with_meta=True,
+            )
+
+        self.assertTrue(sent)
+        self.assertEqual(
+            keyboard.events,
+            [
+                (plugin_backend.KEY_LEFTMETA, 1),
+                (plugin_backend.KEY_CODES["KEY_SPACE"], 1),
+                (plugin_backend.KEY_CODES["KEY_SPACE"], 0),
+                (plugin_backend.KEY_LEFTMETA, 0),
+            ],
+        )
+
+    async def test_control_can_be_held_and_released(self):
+        plugin = plugin_backend.Plugin()
+        keyboard = RecordingKeyboard()
+        plugin.keyboard = keyboard
+
+        pressed = await plugin.set_system_key_state("KEY_LEFTCTRL", True)
+        released = await plugin.set_system_key_state("KEY_LEFTCTRL", False)
+
+        self.assertTrue(pressed)
+        self.assertTrue(released)
+        self.assertEqual(
+            keyboard.events,
+            [
+                (plugin_backend.KEY_LEFTCTRL, 1),
+                (plugin_backend.KEY_LEFTCTRL, 0),
+            ],
+        )
+
+    async def test_alt_can_be_sent_as_a_standalone_key(self):
+        plugin = plugin_backend.Plugin()
+        keyboard = RecordingKeyboard()
+        plugin.keyboard = keyboard
+
+        with patch.object(plugin_backend.asyncio, "sleep", AsyncMock()):
+            sent = await plugin.send_system_key("KEY_LEFTALT")
+
+        self.assertTrue(sent)
+        self.assertEqual(
+            keyboard.events,
+            [
+                (plugin_backend.KEY_LEFTALT, 1),
+                (plugin_backend.KEY_LEFTALT, 0),
+            ],
+        )
+
+    async def test_quick_chord_preserves_an_already_held_modifier(self):
+        plugin = plugin_backend.Plugin()
+        keyboard = RecordingKeyboard()
+        plugin.keyboard = keyboard
+
+        with patch.object(plugin_backend.asyncio, "sleep", AsyncMock()):
+            await plugin.set_system_key_state("KEY_LEFTCTRL", True)
+            sent = await plugin.send_system_key(
+                "KEY_DELETE",
+                with_control=True,
+                with_shift=True,
+            )
+            await plugin.set_system_key_state("KEY_LEFTCTRL", False)
+
+        self.assertTrue(sent)
+        self.assertEqual(
+            keyboard.events,
+            [
+                (plugin_backend.KEY_LEFTCTRL, 1),
+                (plugin_backend.KEY_LEFTSHIFT, 1),
+                (plugin_backend.KEY_CODES["KEY_DELETE"], 1),
+                (plugin_backend.KEY_CODES["KEY_DELETE"], 0),
+                (plugin_backend.KEY_LEFTSHIFT, 0),
+                (plugin_backend.KEY_LEFTCTRL, 0),
+            ],
+        )
+
     async def test_diagnostics_are_bounded_before_logging(self):
         plugin = plugin_backend.Plugin()
         with self.assertLogs(plugin_backend.logger, level="INFO") as captured:

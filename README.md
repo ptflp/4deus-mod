@@ -1,4 +1,4 @@
-# 4deus Mod
+ 4deus Mod
 
 `4deus Mod` is a modular Decky Loader plugin for Steam Deck fixes and
 customizations.
@@ -10,7 +10,20 @@ customizations.
 - Optionally keeps the keyboard open after pressing Enter.
 - Adds a controller-friendly system-key layer with Ctrl, Alt, Fn, Esc, Delete,
   and F1-F12.
-- Keeps Steam's language switch visible and places Fn beside it.
+- Can send Alt+Shift, Ctrl+Shift, or Cmd+Space from Steam's language key while
+  the system layer is active. Hold the key to choose a chord or Steam's native
+  behavior; the choice is saved.
+- Turns Steam's language key into Start while Fn is active.
+- Optionally maps View, L1, R1, L4, R4, L5, or R5 to common typing keys while
+  the virtual keyboard is open.
+- Supports holding Ctrl, Alt, and Shift on separate Deck buttons for chords such as
+  Ctrl+Shift+W with an on-screen letter.
+- Supports sequential on-screen modifier chords: tap Ctrl, then hold Shift or
+  Alt to latch both modifiers before pressing the final key; a short second
+  modifier press sends the modifier-only chord immediately.
+- Supports optional custom one-button quick chords such as
+  `Ctrl+Shift+Delete` and an optional second hotkey set while R4 is held; the
+  active set is shown on the space bar.
 - Matches secondary and system-key labels to Steam keyboard theme states.
 - Sends system chords such as Alt+Tab, Alt+Shift, and Ctrl+Shift.
 - Sends system keys through a dedicated Linux `uinput` keyboard so they reach
@@ -42,10 +55,11 @@ where every letter produces `1` while number keys continue to work. RustDesk
 also documents the distinction between position-based `Map 1:1` input and
 character-oriented `Translate` input.
 
-4deus Mod keeps Steam's stable primary keyboard layout active and adds the
-secondary layout as visual labels. The remote or desktop system remains
-responsible for language switching, while every key shows the character that
-the active secondary layout will produce.
+4deus Mod returns Steam to its primary keyboard layout whenever a configured
+system language shortcut is sent, and adds the secondary layout as visual
+labels. The remote or desktop system remains responsible for language
+switching, while every key shows the character that the active secondary
+layout will produce.
 
 - [Nested Desktop report: letter keys produce `1`](https://www.reddit.com/r/SteamDeck/comments/1jdd0e1/nested_desktop_keyboard_problem/)
 - [RustDesk keyboard translation modes](https://github.com/rustdesk/rustdesk/wiki/FAQ#keyboard-translation-modes)

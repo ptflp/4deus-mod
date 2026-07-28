@@ -10,14 +10,25 @@ import { KEYBOARD_SETTINGS_ROUTE, ModsPanel } from "./ui/ModsPanel";
 
 export default definePlugin(() => {
   const settings = new SettingsStore();
-  const sendSystemKey = callable<[string, boolean, boolean], boolean>(
+  const sendSystemKey = callable<
+    [string, boolean, boolean, boolean, boolean],
+    boolean
+  >(
     "send_system_key",
+  );
+  const setSystemKeyState = callable<[string, boolean], boolean>(
+    "set_system_key_state",
   );
   const logKeyboardDiagnostics = callable<[string], boolean>(
     "log_keyboard_diagnostics",
   );
   const host = new ModuleHost([
-    new KeyboardFeature(settings, sendSystemKey, logKeyboardDiagnostics),
+    new KeyboardFeature(
+      settings,
+      sendSystemKey,
+      setSystemKeyState,
+      logKeyboardDiagnostics,
+    ),
   ]);
   const KeyboardRoute = () => <KeyboardSettingsRoute settings={settings} />;
   routerHook.addRoute(KEYBOARD_SETTINGS_ROUTE, KeyboardRoute, {
