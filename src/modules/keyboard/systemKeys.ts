@@ -7,6 +7,27 @@ export const NATIVE_ALT_KEY = "AltGr";
 export const SYNTHETIC_ALT_KEY = "4deus_Alt";
 export const KEY_SELECTOR = "[data-key-row][data-key-col]";
 
+export interface LanguageSwitchOption {
+  column: number;
+  label: string;
+  row: number;
+  value: LanguageSwitchShortcut;
+}
+
+export const LANGUAGE_SWITCH_OPTIONS: ReadonlyArray<LanguageSwitchOption> = [
+  { row: 2, column: 3, label: "Alt\nShift", value: "alt-shift" },
+  { row: 3, column: 3, label: "Ctrl\nShift", value: "ctrl-shift" },
+  { row: 2, column: 8, label: "Cmd\nSpace", value: "meta-space" },
+  { row: 3, column: 8, label: "Steam", value: "native" },
+];
+
+const LANGUAGE_SWITCH_OPTIONS_BY_POSITION = new Map(
+  LANGUAGE_SWITCH_OPTIONS.map((option) => [
+    `${option.row}:${option.column}`,
+    option,
+  ]),
+);
+
 const KEY_ROWS = [
   [
     "GRAVE", "1", "2", "3", "4", "5", "6",
@@ -78,6 +99,11 @@ export const languageSwitchModifiers = (
 
 export const keyPosition = (key: HTMLElement): string =>
   `${key.dataset.keyRow}:${key.dataset.keyCol}`;
+
+export const resolveLanguageSwitchOption = (
+  key: HTMLElement,
+): LanguageSwitchOption | undefined =>
+  LANGUAGE_SWITCH_OPTIONS_BY_POSITION.get(keyPosition(key));
 
 export const resolveSystemKey = (
   key: HTMLElement,

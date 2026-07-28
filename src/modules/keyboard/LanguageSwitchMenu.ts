@@ -1,119 +1,127 @@
 import type { LanguageSwitchShortcut } from "../../core/settings";
+import {
+  findKey,
+  LANGUAGE_SWITCH_OPTIONS,
+  resolveLanguageSwitchOption,
+} from "./systemKeys";
 
-const MENU_ID = "fourdeus-language-switch-menu";
+const OPTION_KEY_CLASS = "fourdeus-language-switch-option";
+const SELECTED_KEY_CLASS = "fourdeus-language-switch-option-selected";
+const LABEL_CLASS = "fourdeus-language-switch-option-label";
 const STYLE_ID = "fourdeus-language-switch-menu-style";
 
-const OPTIONS: ReadonlyArray<{
-  label: string;
-  value: LanguageSwitchShortcut;
-}> = [
-  { label: "Alt + Shift", value: "alt-shift" },
-  { label: "Ctrl + Shift", value: "ctrl-shift" },
-  { label: "Cmd + Space", value: "meta-space" },
-  { label: "Steam (default)", value: "native" },
-];
-
 const STYLES = `
-  #${MENU_ID} {
-    position: fixed;
-    left: 50%;
-    bottom: 18%;
-    z-index: 10000;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(170px, 1fr));
-    gap: 10px;
-    width: min(520px, calc(100vw - 32px));
-    padding: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    border-radius: 12px;
-    background: rgba(24, 28, 35, 0.97);
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
-    transform: translateX(-50%);
+  .${OPTION_KEY_CLASS} {
+    position: relative !important;
   }
 
-  #${MENU_ID} button {
-    min-height: 54px;
-    padding: 8px 12px;
-    border: 2px solid transparent;
-    border-radius: 8px;
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
-    font: inherit;
-    font-size: 18px;
+  .${OPTION_KEY_CLASS} > :not(.${LABEL_CLASS}) span:not(.${LABEL_CLASS}),
+  .${OPTION_KEY_CLASS} > :not(.${LABEL_CLASS}) svg,
+  .${OPTION_KEY_CLASS} .fourdeus-secondary-label {
+    visibility: hidden !important;
   }
 
-  #${MENU_ID} button:hover,
-  #${MENU_ID} button:focus {
-    outline: none;
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.65);
+  .${LABEL_CLASS} {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+    font-size: 0.72em;
+    font-weight: 600;
+    line-height: 0.95;
+    text-align: center;
+    white-space: pre-line;
+    pointer-events: none;
   }
 
-  #${MENU_ID} button[data-selected="true"] {
-    border-color: #1a9fff;
-    background: rgba(26, 159, 255, 0.28);
+  .${SELECTED_KEY_CLASS} > :first-child {
+    outline: 2px solid #1a9fff;
+    outline-offset: -2px;
+    background: rgba(26, 159, 255, 0.3) !important;
   }
 `;
 
 export class LanguageSwitchMenu {
-  private document?: Document;
-  private menu?: HTMLElement;
+  private keyboard?: HTMLElement;
+  private onSelect?: (shortcut: LanguageSwitchShortcut) => void;
+  private visible = false;
 
-  bind(document: Document): void {
+  bind(keyboard: HTMLElement): void {
     this.unbind();
-    this.document = document;
+    this.keyboard = keyboard;
   }
 
   unbind(): void {
     this.hide();
-    this.document?.getElementById(STYLE_ID)?.remove();
-    this.document = undefined;
+    this.keyboard?.ownerDocument.getElementById(STYLE_ID)?.remove();
+    this.keyboard = undefined;
   }
 
   show(
     selected: LanguageSwitchShortcut,
     onSelect: (shortcut: LanguageSwitchShortcut) => void,
   ): void {
-    const document = this.document;
-    if (!document)
+    const keyboard = this.keyboard;
+    if (!keyboard)
       return;
+
     this.hide();
     this.ensureStyles();
+    this.onSelect = onSelect;
+    this.visible = true;
 
-    const menu = document.createElement("div");
-    menu.id = MENU_ID;
-    menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", "Language switch shortcut");
-    for (const option of OPTIONS) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = option.label;
-      button.dataset.selected = (option.value === selected).toString();
-      button.setAttribute("role", "menuitemradio");
-      button.setAttribute(
-        "aria-checked",
-        (option.value === selected).toString(),
-      );
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onSelect(option.value);
-        this.hide();
-      });
-      menu.appendChild(button);
+    for (const option of LANGUAGE_SWITCH_OPTIONS) {
+      const key = findKey(keyboard, option.row, option.column);
+      if (!key)
+        continue;
+      key.classList.add(OPTION_KEY_CLASS);
+      key.classList.toggle(SELECTED_KEY_CLASS, option.value === selected);
+      const nativeKey = key.firstElementChild as HTMLElement | null;
+      const label = key.ownerDocument.createElement("span");
+      label.className = LABEL_CLASS;
+      label.textContent = option.label;
+      label.setAttribute("aria-hidden", "true");
+      (nativeKey ?? key).appendChild(label);
     }
-    document.body.appendChild(menu);
-    this.menu = menu;
-    menu.querySelector<HTMLElement>('[data-selected="true"]')?.focus();
   }
 
   hide(): void {
-    this.menu?.remove();
-    this.menu = undefined;
+    this.keyboard
+      ?.querySelectorAll<HTMLElement>(`.${OPTION_KEY_CLASS}`)
+      .forEach((key) => {
+        key.classList.remove(OPTION_KEY_CLASS, SELECTED_KEY_CLASS);
+        key.querySelectorAll<HTMLElement>(`.${LABEL_CLASS}`)
+          .forEach((label) => label.remove());
+      });
+    this.onSelect = undefined;
+    this.visible = false;
+  }
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  isOptionKey(key: HTMLElement): boolean {
+    return this.visible && resolveLanguageSwitchOption(key) !== undefined;
+  }
+
+  selectKey(key: HTMLElement): boolean {
+    if (!this.visible)
+      return false;
+    const option = resolveLanguageSwitchOption(key);
+    if (!option)
+      return false;
+    const onSelect = this.onSelect;
+    this.hide();
+    onSelect?.(option.value);
+    return true;
   }
 
   private ensureStyles(): void {
-    const document = this.document;
+    const document = this.keyboard?.ownerDocument;
     if (!document || document.getElementById(STYLE_ID))
       return;
     const style = document.createElement("style");

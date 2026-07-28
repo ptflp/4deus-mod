@@ -91,6 +91,11 @@ interface ModifierHold {
   timer?: number;
 }
 
+interface LanguageMenuTouch {
+  identifier?: number;
+  key: HTMLElement;
+}
+
 const consume = (event: Event): void => {
   event.preventDefault();
   event.stopPropagation();
@@ -147,6 +152,8 @@ export class SystemKeyLayer {
   private listenerAbort?: AbortController;
   private passThroughKey?: HTMLElement;
   private suppressNextClick?: HTMLElement;
+  private languageMenuTouch?: LanguageMenuTouch;
+  private languageMenuGamepadKey?: HTMLElement;
   private inputQueue = Promise.resolve();
   private readonly heldBoundKeys = new Map<number, string>();
   private readonly activeBoundButtons = new Set<number>();
@@ -169,7 +176,7 @@ export class SystemKeyLayer {
     this.view.bind(keyboard);
     this.deckButtonBindingView.bind(keyboard);
     const document = keyboard.ownerDocument;
-    this.languageSwitchMenu.bind(document);
+    this.languageSwitchMenu.bind(keyboard);
     const AbortController =
       document.defaultView?.AbortController ?? window.AbortController;
     this.listenerAbort = new AbortController();
@@ -214,6 +221,7 @@ export class SystemKeyLayer {
     this.activeBoundButtons.clear();
     this.passThroughKey = undefined;
     this.suppressNextClick = undefined;
+    this.clearLanguageMenuInput();
   }
 
   configure(
@@ -241,6 +249,8 @@ export class SystemKeyLayer {
     this.deckButtonQuickActions = deckButtonQuickActions;
     this.deckButtonSecondLayerEnabled = deckButtonSecondLayerEnabled;
     this.deckButtonSecondLayerActions = deckButtonSecondLayerActions;
+    if (!enabled)
+      this.languageSwitchMenu.hide();
     if (!deckButtonQuickActionsEnabled || !deckButtonSecondLayerEnabled)
       this.deckButtonSecondLayerActive = false;
     if (resetMode)
@@ -272,6 +282,15 @@ export class SystemKeyLayer {
     const key = this.getKey(event.target);
     if (!key || key === this.passThroughKey)
       return;
+    if (this.beginLanguageMenuTouch(event, key))
+      return;
+    this.handleRegularTouchStart(event, key);
+  };
+
+  private handleRegularTouchStart(
+    event: TouchEvent,
+    key: HTMLElement,
+  ): void {
     const chordModifier = this.getChordModifier(key);
     if (chordModifier) {
       consume(event);
@@ -292,9 +311,13 @@ export class SystemKeyLayer {
     this.beginHold(key, "touch", isEmoji || isLanguageSwitch);
     if (!isEmoji && !isLanguageSwitch)
       this.activateSystemKey(key);
-  };
+  }
 
   private readonly onTouchEnd = (event: TouchEvent): void => {
+    if (this.finishLanguageMenuTouch(event)) {
+      consume(event);
+      return;
+    }
     if (this.endTouchModifierHold(event)) {
       consume(event);
       return;
@@ -315,6 +338,10 @@ export class SystemKeyLayer {
   };
 
   private readonly onTouchCancel = (event: TouchEvent): void => {
+    if (this.cancelLanguageMenuTouch(event)) {
+      consume(event);
+      return;
+    }
     if (this.endTouchModifierHold(event)) {
       consume(event);
       return;
@@ -328,6 +355,9 @@ export class SystemKeyLayer {
   private readonly onGamepadButtonDown = (event: Event): void => {
     const gamepadEvent = event as CustomEvent<GamepadButtonDetail>;
     if (!this.enabled)
+      return;
+
+    if (this.handleLanguageMenuGamepadDown(event, gamepadEvent.detail))
       return;
 
     if (this.handleSecondLayerButton(event, gamepadEvent.detail, true))
@@ -370,6 +400,8 @@ export class SystemKeyLayer {
 
   private readonly onGamepadButtonUp = (event: Event): void => {
     const gamepadEvent = event as CustomEvent<GamepadButtonDetail>;
+    if (this.handleLanguageMenuGamepadUp(event, gamepadEvent.detail))
+      return;
     if (this.handleSecondLayerButton(event, gamepadEvent.detail, false))
       return;
     if (this.handleBoundGamepadButtonUp(event, gamepadEvent.detail))
@@ -451,21 +483,10 @@ export class SystemKeyLayer {
     if (this.consumeBlockedClick(event, key))
       return;
 
-    if (!this.enabled || !this.systemMode)
+    if (this.handleLanguageMenuClick(event, key))
       return;
 
-    if (key.dataset.key === EMOJI_KEY) {
-      consume(event);
-      this.toggleControl();
-      return;
-    }
-
-    if (this.isSystemKey(key)) {
-      if (this.shouldPassNativeLanguageClick(key))
-        return;
-      consume(event);
-      this.activateSystemKey(key, () => this.replayClick(key));
-    }
+    this.handleRegularClick(event, key);
   };
 
   private consumeBlockedClick(event: MouseEvent, key: HTMLElement): boolean {
@@ -477,6 +498,128 @@ export class SystemKeyLayer {
       this.suppressNextClick = undefined;
     consume(event);
     return true;
+  }
+
+  private beginLanguageMenuTouch(
+    event: TouchEvent,
+    key: HTMLElement,
+  ): boolean {
+    if (!this.languageSwitchMenu.isVisible())
+      return false;
+    consume(event);
+    this.languageMenuTouch = {
+      identifier: event.changedTouches[0]?.identifier,
+      key,
+    };
+    if (this.languageSwitchMenu.isOptionKey(key))
+      key.classList.add(PRESSED_KEY_CLASS);
+    return true;
+  }
+
+  private handleLanguageMenuClick(
+    event: MouseEvent,
+    key: HTMLElement,
+  ): boolean {
+    if (!this.languageSwitchMenu.isVisible())
+      return false;
+    consume(event);
+    this.languageSwitchMenu.selectKey(key);
+    return true;
+  }
+
+  private handleEmojiClick(event: MouseEvent, key: HTMLElement): boolean {
+    if (key.dataset.key !== EMOJI_KEY)
+      return false;
+    consume(event);
+    this.toggleControl();
+    return true;
+  }
+
+  private handleRegularClick(event: MouseEvent, key: HTMLElement): void {
+    if (!this.enabled || !this.systemMode)
+      return;
+    if (this.handleEmojiClick(event, key))
+      return;
+    if (!this.isSystemKey(key) || this.shouldPassNativeLanguageClick(key))
+      return;
+    consume(event);
+    this.activateSystemKey(key, () => this.replayClick(key));
+  }
+
+  private finishLanguageMenuTouch(event: TouchEvent): boolean {
+    const touch = this.languageMenuTouch;
+    if (!touch || !this.touchEventContains(event, touch.identifier))
+      return false;
+    touch.key.classList.remove(PRESSED_KEY_CLASS);
+    this.languageMenuTouch = undefined;
+    this.languageSwitchMenu.selectKey(touch.key);
+    this.suppressClickForTick(touch.key);
+    return true;
+  }
+
+  private cancelLanguageMenuTouch(event: TouchEvent): boolean {
+    const touch = this.languageMenuTouch;
+    if (!touch || !this.touchEventContains(event, touch.identifier))
+      return false;
+    touch.key.classList.remove(PRESSED_KEY_CLASS);
+    this.languageMenuTouch = undefined;
+    this.suppressClickForTick(touch.key);
+    return true;
+  }
+
+  private touchEventContains(
+    event: TouchEvent,
+    identifier: number | undefined,
+  ): boolean {
+    return identifier === undefined
+      || Array.from(event.changedTouches).some(
+        (touch) => touch.identifier === identifier,
+      );
+  }
+
+  private handleLanguageMenuGamepadDown(
+    event: Event,
+    detail: GamepadButtonDetail | undefined,
+  ): boolean {
+    if (
+      detail?.button !== GAMEPAD_OK_BUTTON
+      || !this.languageSwitchMenu.isVisible()
+    ) {
+      return false;
+    }
+    const key = this.getKey(event.target);
+    if (!key)
+      return false;
+    consume(event);
+    if (detail.is_repeat)
+      return true;
+    this.languageMenuGamepadKey?.classList.remove(PRESSED_KEY_CLASS);
+    this.languageMenuGamepadKey = key;
+    if (this.languageSwitchMenu.isOptionKey(key))
+      key.classList.add(PRESSED_KEY_CLASS);
+    return true;
+  }
+
+  private handleLanguageMenuGamepadUp(
+    event: Event,
+    detail: GamepadButtonDetail | undefined,
+  ): boolean {
+    const key = this.languageMenuGamepadKey;
+    if (detail?.button !== GAMEPAD_OK_BUTTON || !key)
+      return false;
+    consume(event);
+    key.classList.remove(PRESSED_KEY_CLASS);
+    this.languageMenuGamepadKey = undefined;
+    this.languageSwitchMenu.selectKey(key);
+    this.suppressClickForTick(key);
+    return true;
+  }
+
+  private clearLanguageMenuInput(): void {
+    this.languageMenuTouch?.key.classList.remove(PRESSED_KEY_CLASS);
+    this.languageMenuGamepadKey?.classList.remove(PRESSED_KEY_CLASS);
+    this.languageMenuTouch = undefined;
+    this.languageMenuGamepadKey = undefined;
   }
 
   private getKey(target: EventTarget | null): HTMLElement | undefined {

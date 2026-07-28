@@ -1,4 +1,4 @@
- 4deus Mod
+4deus Mod
 
 `4deus Mod` is a modular Decky Loader plugin for Steam Deck fixes and
 customizations.
@@ -12,7 +12,8 @@ customizations.
   and F1-F12.
 - Can send Alt+Shift, Ctrl+Shift, or Cmd+Space from Steam's language key while
   the system layer is active. Hold the key to choose a chord or Steam's native
-  behavior; the choice is saved.
+  behavior directly on four keyboard keys using either trackpad; the choice is
+  saved.
 - Turns Steam's language key into Start while Fn is active.
 - Optionally maps View, L1, R1, L4, R4, L5, or R5 to common typing keys while
   the virtual keyboard is open.

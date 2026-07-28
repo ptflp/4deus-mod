@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   isShiftKey,
+  LANGUAGE_SWITCH_OPTIONS,
   languageSwitchModifiers,
+  resolveLanguageSwitchOption,
   resolveSystemKey,
 } from "../src/modules/keyboard/systemKeys.ts";
 import { getVariantLabel } from "../src/modules/keyboard/layoutLabels.ts";
@@ -80,6 +82,25 @@ test("language switching supports all configured system chords", () => {
     withControl: false,
     withMeta: true,
   });
+});
+
+test("language switch choices occupy two keys for each trackpad", () => {
+  assert.deepEqual(
+    LANGUAGE_SWITCH_OPTIONS.map(({ row, column, value }) => ({
+      row,
+      column,
+      value,
+    })),
+    [
+      { row: 2, column: 3, value: "alt-shift" },
+      { row: 3, column: 3, value: "ctrl-shift" },
+      { row: 2, column: 8, value: "meta-space" },
+      { row: 3, column: 8, value: "native" },
+    ],
+  );
+  assert.equal(resolveLanguageSwitchOption(keyAt(2, 3))?.value, "alt-shift");
+  assert.equal(resolveLanguageSwitchOption(keyAt(3, 8))?.value, "native");
+  assert.equal(resolveLanguageSwitchOption(keyAt(2, 4)), undefined);
 });
 
 test("Steam Deck shoulder and rear button codes resolve configured keys", () => {
