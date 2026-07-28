@@ -17,6 +17,8 @@ interface KeyboardLayoutStore {
   SetKeyboardLayout(layout: number): void;
 }
 
+const QWERTY_LAYOUT = 0;
+
 export interface SteamKeyboardLayout {
   name: string;
   layout: number;
@@ -64,22 +66,18 @@ export const getEnabledLayouts = (): SteamKeyboardLayout[] => {
   }
 };
 
-export const selectPrimaryKeyboardLayout = (): void => {
+export const isQwertyKeyboardLayout = (): boolean => {
   resolveSteamModules();
   try {
-    const settings = layoutStore?.GetKeyboardLayoutSettings();
-    const primaryLayout = settings?.selectedLayouts[0];
-    if (
-      primaryLayout !== undefined
-      && settings?.currentLayout !== primaryLayout
-    ) {
-      layoutStore?.SetKeyboardLayout(primaryLayout);
-    }
+    const currentLayout = layoutStore?.GetKeyboardLayoutSettings()
+      .currentLayout;
+    return currentLayout === QWERTY_LAYOUT;
   } catch (error) {
     console.warn(
-      "[4deus Mod/Keyboard] Failed to select the primary Steam layout",
+      "[4deus Mod/Keyboard] Failed to read Steam's keyboard layout",
       error,
     );
+    return true;
   }
 };
 

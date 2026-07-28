@@ -20,7 +20,7 @@ import {
 import { DeckButtonBindingView } from "./DeckButtonBindingView";
 import { LanguageSwitchMenu } from "./LanguageSwitchMenu";
 import { PRESSED_KEY_CLASS, SystemKeyView } from "./SystemKeyView";
-import { selectPrimaryKeyboardLayout } from "./steamLayouts";
+import { isQwertyKeyboardLayout } from "./steamLayouts";
 
 const LONG_PRESS_MS = 550;
 const GAMEPAD_OK_BUTTON = 1;
@@ -464,11 +464,13 @@ export class SystemKeyLayer {
       if (this.shouldPassNativeLanguageClick(key))
         return;
       consume(event);
-      this.activateSystemKey(key);
+      this.activateSystemKey(key, () => this.replayClick(key));
     }
   };
 
   private consumeBlockedClick(event: MouseEvent, key: HTMLElement): boolean {
+    if (key === this.passThroughKey)
+      return true;
     if (key !== this.modifierHold?.key && key !== this.suppressNextClick)
       return false;
     if (key === this.suppressNextClick)
@@ -593,6 +595,12 @@ export class SystemKeyLayer {
     this.passThroughKey = key;
     key.dispatchEvent(new CustomEventConstructor("vgp_onbuttondown", options));
     key.dispatchEvent(new CustomEventConstructor("vgp_onbuttonup", options));
+    this.passThroughKey = undefined;
+  }
+
+  private replayClick(key: HTMLElement): void {
+    this.passThroughKey = key;
+    key.click();
     this.passThroughKey = undefined;
   }
 
@@ -812,7 +820,8 @@ export class SystemKeyLayer {
       replayNative();
       return;
     }
-    selectPrimaryKeyboardLayout();
+    if (!isQwertyKeyboardLayout())
+      replayNative();
     const shortcut = languageSwitchModifiers(this.languageSwitchShortcut);
     this.queueSystemKey(
       shortcut.keyName,
@@ -823,7 +832,10 @@ export class SystemKeyLayer {
     );
   }
 
-  private activateSystemKey(key: HTMLElement): void {
+  private activateSystemKey(
+    key: HTMLElement,
+    replayNative = (): void => undefined,
+  ): void {
     if (!this.systemMode)
       return;
     if (key.dataset.key === SYNTHETIC_FUNCTION_KEY) {
@@ -839,7 +851,7 @@ export class SystemKeyLayer {
       this.isLanguageSwitchKey(key)
       && this.languageSwitchShortcut !== "native"
     ) {
-      this.activateLanguageSwitch(() => undefined);
+      this.activateLanguageSwitch(replayNative);
       return;
     }
     const keyName = this.getSystemKeyName(key);

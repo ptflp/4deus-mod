@@ -55,11 +55,10 @@ where every letter produces `1` while number keys continue to work. RustDesk
 also documents the distinction between position-based `Map 1:1` input and
 character-oriented `Translate` input.
 
-4deus Mod returns Steam to its primary keyboard layout whenever a configured
-system language shortcut is sent, and adds the secondary layout as visual
-labels. The remote or desktop system remains responsible for language
-switching, while every key shows the character that the active secondary
-layout will produce.
+4deus Mod returns Steam to its built-in QWERTY layout when a configured system
+language shortcut is used, and adds the secondary layout as visual labels. The
+remote or desktop system remains responsible for language switching, while
+every key shows the character that the active secondary layout will produce.
 
 - [Nested Desktop report: letter keys produce `1`](https://www.reddit.com/r/SteamDeck/comments/1jdd0e1/nested_desktop_keyboard_problem/)
 - [RustDesk keyboard translation modes](https://github.com/rustdesk/rustdesk/wiki/FAQ#keyboard-translation-modes)
