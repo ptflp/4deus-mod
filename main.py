@@ -189,3 +189,9 @@ class Plugin:
                         keyboard.write_key(KEY_LEFTCTRL, 0)
                 except Exception:
                     logger.exception("Failed to release virtual keyboard keys")
+
+    async def log_keyboard_diagnostics(self, payload: str):
+        if not isinstance(payload, str):
+            return False
+        logger.info("Keyboard diagnostics: %s", payload[:4000])
+        return True

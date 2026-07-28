@@ -42,3 +42,41 @@ jobs:
         with:
           name: 4deusMod
           path: out/4deusMod.zip
+
+  release:
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs: plugin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          PACKAGE_VERSION="$(jq -r .version package.json)"
+          test "v${PACKAGE_VERSION}" = "${RELEASE_TAG}"
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: 4deusMod
+          path: release
+
+      - name: Create checksum
+        run: |
+          cd release
+          sha256sum 4deusMod.zip > 4deusMod.zip.sha256
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            release/4deusMod.zip \
+            release/4deusMod.zip.sha256 \
+            --verify-tag \
+            --generate-notes \
+            --latest \
+            --title "4deus Mod ${GITHUB_REF_NAME}"

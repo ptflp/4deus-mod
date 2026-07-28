@@ -53,6 +53,16 @@ class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_diagnostics_are_bounded_before_logging(self):
+        plugin = plugin_backend.Plugin()
+        with self.assertLogs(plugin_backend.logger, level="INFO") as captured:
+            logged = await plugin.log_keyboard_diagnostics("x" * 5000)
+
+        self.assertTrue(logged)
+        message = captured.output[-1]
+        self.assertIn("Keyboard diagnostics:", message)
+        self.assertLess(len(message), 4100)
+
 
 if __name__ == "__main__":
     unittest.main()

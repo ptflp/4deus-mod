@@ -13,8 +13,11 @@ export default definePlugin(() => {
   const sendSystemKey = callable<[string, boolean, boolean], boolean>(
     "send_system_key",
   );
+  const logKeyboardDiagnostics = callable<[string], boolean>(
+    "log_keyboard_diagnostics",
+  );
   const host = new ModuleHost([
-    new KeyboardFeature(settings, sendSystemKey),
+    new KeyboardFeature(settings, sendSystemKey, logKeyboardDiagnostics),
   ]);
   const KeyboardRoute = () => <KeyboardSettingsRoute settings={settings} />;
   routerHook.addRoute(KEYBOARD_SETTINGS_ROUTE, KeyboardRoute, {

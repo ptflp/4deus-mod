@@ -24,6 +24,7 @@ customizations.
 - Reads layouts directly from Steam, so labels follow the layouts configured
   in Steam settings.
 - Localizes plugin settings for every language currently supported by Steam.
+- Provides optional keyboard diagnostics in the Decky plugin log.
 
 Secondary labels are visual only. Steam remains responsible for the active
 layout and text input.
@@ -63,6 +64,16 @@ pnpm install
 pnpm check
 pnpm build
 ```
+
+Enable **Keyboard diagnostics** in the keyboard settings to write state,
+refresh, and mutation counters to Decky's `4deusMod` log every five seconds.
+The option is disabled by default.
+
+## Releases
+
+Set the matching version in `package.json`, commit it, and push a `v*` tag.
+GitHub Actions verifies the tag, runs all checks, builds `4deusMod.zip`,
+generates a SHA-256 checksum, and publishes both files in a GitHub Release.
 
 ## License
 

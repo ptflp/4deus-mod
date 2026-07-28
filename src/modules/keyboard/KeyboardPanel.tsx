@@ -117,6 +117,14 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
           />
         </PanelSectionRow>
       )}
+      <PanelSectionRow>
+        <ToggleField
+          label={strings.diagnostics}
+          description={strings.diagnosticsDescription}
+          checked={keyboard.diagnostics}
+          onChange={(diagnostics) => settings.updateKeyboard({ diagnostics })}
+        />
+      </PanelSectionRow>
     </PanelSection>
   );
 };

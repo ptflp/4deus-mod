@@ -9,6 +9,7 @@ export interface ModSettings {
     systemKeyLayer: boolean;
     secondaryLabels: boolean;
     secondaryLayout: string;
+    diagnostics: boolean;
   };
 }
 
@@ -25,6 +26,7 @@ const defaults: ModSettings = {
     systemKeyLayer: true,
     secondaryLabels: true,
     secondaryLayout: AUTO_LAYOUT,
+    diagnostics: false,
   },
 };
 

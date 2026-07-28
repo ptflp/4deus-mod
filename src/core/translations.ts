@@ -13,6 +13,8 @@ export interface Strings {
   secondaryLayout: string;
   secondaryLayoutDescription: string;
   automatic: string;
+  diagnostics: string;
+  diagnosticsDescription: string;
 }
 
 type Values = [
@@ -30,6 +32,8 @@ type Values = [
   secondaryLayout: string,
   secondaryLayoutDescription: string,
   automatic: string,
+  diagnostics?: string,
+  diagnosticsDescription?: string,
 ];
 
 const define = ([
@@ -47,6 +51,8 @@ const define = ([
   secondaryLayout,
   secondaryLayoutDescription,
   automatic,
+  diagnostics = "Keyboard diagnostics",
+  diagnosticsDescription = "Write keyboard state and performance counters to the Decky log every five seconds",
 ]: Values): Strings => ({
   keyboard,
   enabled,
@@ -62,6 +68,8 @@ const define = ([
   secondaryLayout,
   secondaryLayoutDescription,
   automatic,
+  diagnostics,
+  diagnosticsDescription,
 });
 
 export const english = define([
@@ -96,6 +104,8 @@ const russian = define([
   "Вторая раскладка",
   "Автоматически выбирается включённая раскладка, которая сейчас не активна",
   "Автоматически",
+  "Диагностика клавиатуры",
+  "Записывать состояние клавиатуры и счётчики производительности в журнал Decky каждые пять секунд",
 ]);
 
 const german = define([

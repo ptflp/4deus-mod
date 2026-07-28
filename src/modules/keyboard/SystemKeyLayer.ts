@@ -16,6 +16,14 @@ export type SystemKeySender = (
   withAlt: boolean,
 ) => Promise<boolean>;
 
+export interface SystemKeyDiagnostics {
+  altActive: boolean;
+  controlActive: boolean;
+  functionLayer: boolean;
+  lastSystemKey?: string;
+  systemMode: boolean;
+}
+
 interface GamepadButtonDetail {
   button: number;
   is_repeat?: boolean;
@@ -53,6 +61,7 @@ export class SystemKeyLayer {
   private passThroughKey?: HTMLElement;
   private suppressNextClick?: HTMLElement;
   private inputQueue = Promise.resolve();
+  private lastSystemKey?: string;
 
   constructor(private readonly sendSystemKey: SystemKeySender) {}
 
@@ -119,6 +128,16 @@ export class SystemKeyLayer {
 
   refresh(): void {
     this.render();
+  }
+
+  getDiagnostics(): SystemKeyDiagnostics {
+    return {
+      altActive: this.altActive,
+      controlActive: this.controlActive,
+      functionLayer: this.functionLayer,
+      lastSystemKey: this.lastSystemKey,
+      systemMode: this.systemMode,
+    };
   }
 
   private readonly onTouchStart = (event: TouchEvent): void => {
@@ -370,6 +389,11 @@ export class SystemKeyLayer {
   private tapSystemKey(keyName: string): void {
     const withControl = this.controlActive;
     const withAlt = this.altActive;
+    this.lastSystemKey = [
+      withControl ? "Ctrl" : undefined,
+      withAlt ? "Alt" : undefined,
+      keyName.replace("KEY_", ""),
+    ].filter((part) => part !== undefined).join("+");
     this.inputQueue = this.inputQueue
       .then(() => this.sendSystemKey(keyName, withControl, withAlt))
       .then(() => undefined)
