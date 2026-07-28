@@ -4,9 +4,20 @@ import { FaSlidersH } from "react-icons/fa";
 
 import { ModuleHost } from "./core/module";
 import { SettingsStore } from "./core/settings";
+import type {
+  AppBridgeApplication,
+  AppBridgeProfileDraft,
+  AppBridgeStatus,
+  PreparedAppBridgeProfile,
+} from "./modules/appBridge/types";
 import { KeyboardFeature } from "./modules/keyboard/KeyboardFeature";
+import { AppBridgeSettingsRoute } from "./ui/AppBridgeSettingsRoute";
 import { KeyboardSettingsRoute } from "./ui/KeyboardSettingsRoute";
-import { KEYBOARD_SETTINGS_ROUTE, ModsPanel } from "./ui/ModsPanel";
+import {
+  APP_BRIDGE_SETTINGS_ROUTE,
+  KEYBOARD_SETTINGS_ROUTE,
+  ModsPanel,
+} from "./ui/ModsPanel";
 
 export default definePlugin(() => {
   const settings = new SettingsStore();
@@ -22,6 +33,22 @@ export default definePlugin(() => {
   const logKeyboardDiagnostics = callable<[string], boolean>(
     "log_keyboard_diagnostics",
   );
+  const appBridgeApi = {
+    getStatus: callable<[], AppBridgeStatus>("get_app_bridge_status"),
+    listApplications: callable<[], AppBridgeApplication[]>(
+      "list_app_bridge_applications",
+    ),
+    prepareParsec: callable<[], PreparedAppBridgeProfile>(
+      "prepare_parsec_app_bridge",
+    ),
+    prepareRustDesk: callable<[], PreparedAppBridgeProfile>(
+      "prepare_rustdesk_app_bridge",
+    ),
+    saveProfile: callable<
+      [AppBridgeProfileDraft],
+      PreparedAppBridgeProfile
+    >("save_app_bridge_profile"),
+  };
   const host = new ModuleHost([
     new KeyboardFeature(
       settings,
@@ -31,7 +58,13 @@ export default definePlugin(() => {
     ),
   ]);
   const KeyboardRoute = () => <KeyboardSettingsRoute settings={settings} />;
+  const AppBridgeRoute = () => (
+    <AppBridgeSettingsRoute api={appBridgeApi} settings={settings} />
+  );
   routerHook.addRoute(KEYBOARD_SETTINGS_ROUTE, KeyboardRoute, {
+    exact: true,
+  });
+  routerHook.addRoute(APP_BRIDGE_SETTINGS_ROUTE, AppBridgeRoute, {
     exact: true,
   });
   host.start();
@@ -42,6 +75,7 @@ export default definePlugin(() => {
     content: <ModsPanel settings={settings} />,
     icon: <FaSlidersH />,
     onDismount: () => {
+      routerHook.removeRoute(APP_BRIDGE_SETTINGS_ROUTE);
       routerHook.removeRoute(KEYBOARD_SETTINGS_ROUTE);
       host.stop();
     },

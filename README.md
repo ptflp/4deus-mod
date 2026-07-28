@@ -43,6 +43,23 @@ customizations.
 Secondary labels are visual only. Steam remains responsible for the active
 layout and text input.
 
+## App Bridge module
+
+- Scans installed Flatpak and desktop applications without modifying Steam's
+  shortcut database directly.
+- Adds or repairs non-Steam shortcuts through Steam's live shortcut API.
+- Uses one autonomous launcher with saved per-application compatibility
+  profiles, so shortcuts continue to work when Decky is not loaded.
+- Supports optional process tracking, Steam preload cleanup, Gamescope/X11
+  environment variables, custom working directories, arguments, and
+  compatibility library paths.
+- Includes a quick **Add / Fix Parsec** action that keeps the Steam session
+  active for Parsec's real background process.
+- Includes a quick **Add / Fix RustDesk** action with Steam runtime cleanup,
+  RustDesk compatibility libraries, and the Gamescope/X11 environment.
+- Updates existing shortcuts in place to preserve their Steam app ID,
+  controller layout, and artwork.
+
 ### Why dual-language labels matter
 
 Remote desktop clients such as Parsec and RustDesk can forward keyboard

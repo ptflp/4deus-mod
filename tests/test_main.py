@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 decky_plugin = types.ModuleType("decky_plugin")
 decky_plugin.logger = logging.getLogger("4deus-mod-test")
+decky_plugin.DECKY_USER_HOME = str(PROJECT_ROOT)
+decky_plugin.DECKY_PLUGIN_DIR = str(PROJECT_ROOT)
 sys.modules.setdefault("decky_plugin", decky_plugin)
 
 spec = importlib.util.spec_from_file_location(

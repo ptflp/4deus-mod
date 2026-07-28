@@ -8,6 +8,18 @@ declare global {
   }
 
   interface Window {
+    appStore: {
+      GetAppOverviewByAppID(appId: number): {
+        appid: number;
+        app_type: number;
+        display_name: string;
+      } | undefined;
+      allApps: Array<{
+        appid: number;
+        app_type: number;
+        display_name: string;
+      }>;
+    };
     SP_REACT: typeof import("react");
     LocalizationManager?: {
       m_mapTokens?: Map<string, string>;

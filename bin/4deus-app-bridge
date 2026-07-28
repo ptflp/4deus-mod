@@ -1,0 +1,137 @@
+#!/usr/bin/python3
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+
+RUNNER_VERSION = 1
+PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+def matching_processes(pattern: str) -> set[int]:
+    matches: set[int] = set()
+    own_pid = os.getpid()
+    for process in Path("/proc").iterdir():
+        if not process.name.isdigit():
+            continue
+        pid = int(process.name)
+        if pid == own_pid:
+            continue
+        try:
+            if process.stat().st_uid != os.getuid():
+                continue
+            command = (process / "cmdline").read_bytes().replace(b"\0", b" ")
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            continue
+        if pattern.encode() in command:
+            matches.add(pid)
+    return matches
+
+
+def load_profile(profile_id: str) -> dict:
+    if not PROFILE_ID_PATTERN.fullmatch(profile_id):
+        raise ValueError("invalid profile ID")
+    path = (
+        Path.home()
+        / ".local/share/4deus-mod/app-bridge/profiles"
+        / f"{profile_id}.json"
+    )
+    profile = json.loads(path.read_text(encoding="utf-8"))
+    if profile.get("version") != RUNNER_VERSION:
+        raise ValueError("unsupported profile version")
+    command = profile.get("command")
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(part, str) and part for part in command)
+    ):
+        raise ValueError("invalid command")
+    return profile
+
+
+def build_environment(profile: dict) -> dict[str, str]:
+    environment = os.environ.copy()
+    if profile.get("clearSteamPreload"):
+        environment.pop("LD_PRELOAD", None)
+        environment.pop("LD_AUDIT", None)
+    library_path = profile.get("libraryPath")
+    if isinstance(library_path, str) and library_path:
+        current = environment.get("LD_LIBRARY_PATH", "")
+        environment["LD_LIBRARY_PATH"] = (
+            f"{library_path}:{current}" if current else library_path
+        )
+    if profile.get("forceX11"):
+        environment.setdefault("DISPLAY", ":0")
+        environment["XDG_SESSION_TYPE"] = "x11"
+        environment["XDG_CURRENT_DESKTOP"] = "gamescope"
+        environment["XDG_SESSION_DESKTOP"] = "gamescope"
+    return environment
+
+
+def wait_for_tracked_process(
+    launcher: subprocess.Popen,
+    pattern: str,
+) -> int:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if matching_processes(pattern):
+            break
+        if launcher.poll() is not None:
+            time.sleep(0.2)
+        else:
+            time.sleep(0.1)
+    else:
+        return launcher.wait() if launcher.poll() is None else launcher.returncode
+
+    while matching_processes(pattern):
+        time.sleep(1)
+    if launcher.poll() is None:
+        try:
+            return launcher.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            return 0
+    return launcher.returncode
+
+
+def run(profile_id: str) -> int:
+    profile = load_profile(profile_id)
+    log_dir = Path.home() / ".local/share/4deus-mod/app-bridge/logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{profile_id}.log"
+    working_directory = profile.get("workingDirectory")
+    if not isinstance(working_directory, str) or not Path(
+        working_directory
+    ).is_dir():
+        working_directory = str(Path.home())
+
+    with log_path.open("a", encoding="utf-8") as log:
+        print(
+            f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] launch requested",
+            file=log,
+            flush=True,
+        )
+        launcher = subprocess.Popen(
+            profile["command"],
+            cwd=working_directory,
+            env=build_environment(profile),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        pattern = profile.get("waitForProcess")
+        if isinstance(pattern, str) and pattern:
+            return wait_for_tracked_process(launcher, pattern)
+        return launcher.wait()
+
+
+if __name__ == "__main__":
+    try:
+        if len(sys.argv) != 2:
+            raise ValueError("usage: 4deus-app-bridge <profile-id>")
+        raise SystemExit(run(sys.argv[1]))
+    except Exception as error:
+        print(f"4deus App Bridge: {error}", file=sys.stderr)
+        raise SystemExit(1)

@@ -1,0 +1,378 @@
+import configparser
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+from typing import Any
+
+
+PROFILE_VERSION = 1
+PARSEC_APP_ID = "com.parsecgaming.parsec"
+PARSEC_PROFILE_ID = "parsec"
+RUSTDESK_PROFILE_ID = "rustdesk"
+PROFILE_ID_PATTERN = re.compile(r"[^a-z0-9-]+")
+DESKTOP_FIELD_CODE_PATTERN = re.compile(r"^%[fFuUdDnNickvm]$")
+
+
+def normalize_profile_id(value: str) -> str:
+    normalized = PROFILE_ID_PATTERN.sub("-", value.strip().lower()).strip("-")
+    return normalized[:64]
+
+
+def _clean_text(value: Any, maximum: int = 4096) -> str:
+    return value.strip()[:maximum] if isinstance(value, str) else ""
+
+
+def _desktop_command(raw: str) -> tuple[str, str] | None:
+    try:
+        parts = [
+            part
+            for part in shlex.split(raw)
+            if not DESKTOP_FIELD_CODE_PATTERN.match(part)
+        ]
+    except ValueError:
+        return None
+    if not parts:
+        return None
+    return parts[0], shlex.join(parts[1:])
+
+
+class AppBridgeManager:
+    def __init__(self, home: Path, plugin_root: Path):
+        self.home = Path(home)
+        self.plugin_root = Path(plugin_root)
+        self.data_dir = self.home / ".local/share/4deus-mod/app-bridge"
+        self.profile_dir = self.data_dir / "profiles"
+        self.runner_source = self.plugin_root / "bin/4deus-app-bridge"
+        self.runner_path = self.home / ".local/bin/4deus-app-bridge"
+
+    def status(self) -> dict[str, Any]:
+        rustdesk_executable = self._rustdesk_directory() / "rustdesk"
+        return {
+            "launcherInstalled": self._runner_is_current(),
+            "launcherPath": str(self.runner_path),
+            "parsecInstalled": self._flatpak_installed(PARSEC_APP_ID),
+            "parsecProfileInstalled": (
+                self.profile_dir / f"{PARSEC_PROFILE_ID}.json"
+            ).is_file(),
+            "rustdeskInstalled": rustdesk_executable.is_file(),
+            "rustdeskProfileInstalled": (
+                self.profile_dir / f"{RUSTDESK_PROFILE_ID}.json"
+            ).is_file(),
+        }
+
+    def list_applications(self) -> list[dict[str, str]]:
+        applications: dict[str, dict[str, str]] = {}
+        self._collect_flatpaks(applications)
+        self._collect_desktop_files(applications)
+        return sorted(
+            applications.values(),
+            key=lambda application: application["name"].casefold(),
+        )
+
+    def prepare_parsec(self) -> dict[str, Any]:
+        working_directory = (
+            self.home
+            / ".local/share/flatpak/app/com.parsecgaming.parsec/current/"
+            "active/files/bin"
+        )
+        icon = self._first_existing(
+            [
+                Path(
+                    "/var/lib/flatpak/exports/share/icons/hicolor/512x512/"
+                    "apps/com.parsecgaming.parsec.png"
+                ),
+                self.home
+                / ".local/share/flatpak/exports/share/icons/hicolor/512x512/"
+                "apps/com.parsecgaming.parsec.png",
+            ]
+        )
+        return self.save_profile(
+            {
+                "id": PARSEC_PROFILE_ID,
+                "name": "Parsec",
+                "executable": "/usr/bin/flatpak",
+                "arguments": (
+                    "run --branch=stable --arch=x86_64 "
+                    "--command=/app/bin/parsec com.parsecgaming.parsec"
+                ),
+                "workingDirectory": str(working_directory),
+                "icon": str(icon) if icon else "",
+                "waitForProcess": "/app/extra/bin/parsecd",
+                "clearSteamPreload": False,
+                "forceX11": False,
+                "libraryPath": "",
+            }
+        )
+
+    def prepare_rustdesk(self) -> dict[str, Any]:
+        application_directory = self._rustdesk_directory()
+        executable = application_directory / "rustdesk"
+        if not executable.is_file():
+            raise FileNotFoundError("RustDesk installation was not found")
+        icon = (
+            self.home
+            / "Applications/RustDesk/usr/share/icons/hicolor/256x256/"
+            "apps/rustdesk.png"
+        )
+        return self.save_profile(
+            {
+                "id": RUSTDESK_PROFILE_ID,
+                "name": "RustDesk",
+                "executable": str(executable),
+                "arguments": "",
+                "workingDirectory": str(application_directory),
+                "icon": str(icon) if icon.is_file() else "",
+                "waitForProcess": str(executable),
+                "clearSteamPreload": True,
+                "forceX11": True,
+                "libraryPath": str(application_directory / "compat-libs"),
+            }
+        )
+
+    def save_profile(self, raw: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            raise ValueError("Profile must be an object")
+        name = _clean_text(raw.get("name"), 128)
+        executable = _clean_text(raw.get("executable"))
+        if not name or not executable:
+            raise ValueError("Profile name and executable are required")
+        if not Path(executable).is_absolute():
+            raise ValueError("Executable path must be absolute")
+
+        profile_id = normalize_profile_id(_clean_text(raw.get("id"), 128) or name)
+        if not profile_id:
+            raise ValueError("Profile ID is invalid")
+        arguments = _clean_text(raw.get("arguments"))
+        try:
+            command = [executable, *shlex.split(arguments)]
+        except ValueError as error:
+            raise ValueError(f"Invalid arguments: {error}") from error
+
+        working_directory = _clean_text(raw.get("workingDirectory"))
+        icon = _clean_text(raw.get("icon"))
+        profile = {
+            "version": PROFILE_VERSION,
+            "id": profile_id,
+            "name": name,
+            "command": command,
+            "workingDirectory": working_directory,
+            "icon": icon,
+            "waitForProcess": _clean_text(raw.get("waitForProcess"), 512),
+            "clearSteamPreload": bool(raw.get("clearSteamPreload")),
+            "forceX11": bool(raw.get("forceX11")),
+            "libraryPath": _clean_text(raw.get("libraryPath")),
+        }
+
+        self._install_runner()
+        self.profile_dir.mkdir(parents=True, exist_ok=True)
+        destination = self.profile_dir / f"{profile_id}.json"
+        temporary = destination.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, destination)
+        return {
+            "icon": icon,
+            "id": profile_id,
+            "launcherPath": str(self.runner_path),
+            "name": name,
+            "startDirectory": (
+                working_directory
+                if Path(working_directory).is_absolute()
+                else str(self.runner_path.parent)
+            ),
+        }
+
+    def _install_runner(self) -> None:
+        if not self.runner_source.is_file():
+            raise FileNotFoundError("App Bridge runner is missing from the plugin")
+        self.runner_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.runner_path.with_suffix(".tmp")
+        shutil.copyfile(self.runner_source, temporary)
+        temporary.chmod(0o755)
+        os.replace(temporary, self.runner_path)
+
+    def _rustdesk_directory(self) -> Path:
+        return self.home / "Applications/RustDesk/usr/share/rustdesk"
+
+    def _runner_is_current(self) -> bool:
+        if not self.runner_source.is_file() or not self.runner_path.is_file():
+            return False
+        return self._file_digest(self.runner_source) == self._file_digest(
+            self.runner_path
+        )
+
+    @staticmethod
+    def _file_digest(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    @staticmethod
+    def _first_existing(paths: list[Path]) -> Path | None:
+        return next((path for path in paths if path.is_file()), None)
+
+    def _flatpak_environment(self) -> dict[str, str]:
+        environment = os.environ.copy()
+        environment.pop("LD_PRELOAD", None)
+        environment.pop("LD_AUDIT", None)
+        environment["HOME"] = str(self.home)
+        environment["XDG_DATA_HOME"] = str(self.home / ".local/share")
+        return environment
+
+    def _flatpak_installed(self, application_id: str) -> bool:
+        exported_desktop_files = [
+            self.home
+            / ".local/share/flatpak/exports/share/applications"
+            / f"{application_id}.desktop",
+            Path("/var/lib/flatpak/exports/share/applications")
+            / f"{application_id}.desktop",
+        ]
+        if any(path.is_file() for path in exported_desktop_files):
+            return True
+        try:
+            result = subprocess.run(
+                ["/usr/bin/flatpak", "info", application_id],
+                check=False,
+                capture_output=True,
+                env=self._flatpak_environment(),
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0
+
+    def _collect_flatpaks(
+        self,
+        applications: dict[str, dict[str, str]],
+    ) -> None:
+        try:
+            result = subprocess.run(
+                [
+                    "/usr/bin/flatpak",
+                    "list",
+                    "--app",
+                    "--columns=application,name",
+                ],
+                check=False,
+                capture_output=True,
+                env=self._flatpak_environment(),
+                text=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return
+        for line in result.stdout.splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+            application_id, name = (part.strip() for part in parts)
+            if not application_id or not name:
+                continue
+            applications[f"flatpak:{application_id}"] = {
+                "arguments": f"run {shlex.quote(application_id)}",
+                "executable": "/usr/bin/flatpak",
+                "icon": self._resolve_icon(application_id),
+                "id": f"flatpak:{application_id}",
+                "kind": "flatpak",
+                "name": name,
+                "workingDirectory": str(self.home),
+            }
+
+    def _collect_desktop_files(
+        self,
+        applications: dict[str, dict[str, str]],
+    ) -> None:
+        directories = [
+            self.home / ".local/share/applications",
+            self.home / ".local/share/flatpak/exports/share/applications",
+            Path("/var/lib/flatpak/exports/share/applications"),
+            Path("/usr/share/applications"),
+        ]
+        for directory in directories:
+            if not directory.is_dir():
+                continue
+            for desktop_file in directory.glob("*.desktop"):
+                application = self._read_desktop_file(desktop_file)
+                if application is None:
+                    continue
+                key = application["id"]
+                existing = applications.get(key)
+                if existing and existing["kind"] == "flatpak":
+                    existing["icon"] = application["icon"]
+                    continue
+                applications.setdefault(key, application)
+
+    def _read_desktop_file(self, path: Path) -> dict[str, str] | None:
+        parser = configparser.ConfigParser(interpolation=None, strict=False)
+        parser.optionxform = str
+        try:
+            parser.read(path, encoding="utf-8")
+            entry = parser["Desktop Entry"]
+        except (OSError, UnicodeError, KeyError, configparser.Error):
+            return None
+        if entry.get("Type", "Application") != "Application":
+            return None
+        if entry.get("NoDisplay", "false").lower() == "true":
+            return None
+        name = entry.get("Name", "").strip()
+        command = _desktop_command(entry.get("Exec", ""))
+        if not name or command is None:
+            return None
+        executable, arguments = command
+        if not Path(executable).is_absolute():
+            resolved_executable = shutil.which(executable)
+            if not resolved_executable:
+                return None
+            executable = resolved_executable
+        flatpak_id = entry.get("X-Flatpak", "").strip()
+        application_id = (
+            f"flatpak:{flatpak_id}"
+            if flatpak_id
+            else f"desktop:{path.stem}"
+        )
+        return {
+            "arguments": arguments,
+            "executable": executable,
+            "icon": self._resolve_icon(entry.get("Icon", "").strip()),
+            "id": application_id,
+            "kind": "flatpak" if flatpak_id else "desktop",
+            "name": name,
+            "workingDirectory": entry.get("Path", "").strip() or str(self.home),
+        }
+
+    def _resolve_icon(self, value: str) -> str:
+        if not value:
+            return ""
+        icon = Path(value)
+        if icon.is_absolute():
+            return str(icon) if icon.is_file() else ""
+        basename = icon.name
+        names = (
+            [basename]
+            if icon.suffix.lower() in {".png", ".svg", ".xpm"}
+            else [f"{basename}.png", f"{basename}.svg"]
+        )
+        roots = [
+            self.home / ".local/share/icons/hicolor",
+            self.home / ".local/share/flatpak/exports/share/icons/hicolor",
+            Path("/var/lib/flatpak/exports/share/icons/hicolor"),
+            Path("/usr/share/icons/hicolor"),
+        ]
+        preferred_sizes = ["512x512", "256x256", "128x128", "scalable"]
+        for root in roots:
+            for size in preferred_sizes:
+                for name in names:
+                    candidate = root / size / "apps" / name
+                    if candidate.is_file():
+                        return str(candidate)
+        for name in names:
+            candidate = Path("/usr/share/pixmaps") / name
+            if candidate.is_file():
+                return str(candidate)
+        return ""

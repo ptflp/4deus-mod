@@ -1,3 +1,5 @@
+import { appBridgeTranslations } from "./appBridgeTranslations";
+
 export interface Strings {
   keyboard: string;
   enabled: string;
@@ -20,6 +22,26 @@ export interface Strings {
   invalidQuickAction: string;
   secondHotkeyLayer: string;
   secondHotkeyLayerDescription: string;
+  appBridge: string;
+  appBridgeEnabledDescription: string;
+  appBridgeQuickSetup: string;
+  appBridgeParsecDescription: string;
+  addOrFixParsec: string;
+  appBridgeRustDeskDescription: string;
+  addOrFixRustDesk: string;
+  appBridgeApplications: string;
+  appBridgeSelectApplication: string;
+  appBridgeLoadApplications: string;
+  appBridgeName: string;
+  appBridgeExecutable: string;
+  appBridgeArguments: string;
+  appBridgeWorkingDirectory: string;
+  appBridgeTrackProcess: string;
+  appBridgeClearSteamRuntime: string;
+  appBridgeForceX11: string;
+  appBridgeLibraryPath: string;
+  addOrFixApplication: string;
+  appBridgeReady: string;
   labels: string;
   labelsDescription: string;
   secondaryLayout: string;
@@ -58,6 +80,26 @@ type Values = [
   invalidQuickAction?: string,
   secondHotkeyLayer?: string,
   secondHotkeyLayerDescription?: string,
+  appBridge?: string,
+  appBridgeEnabledDescription?: string,
+  appBridgeQuickSetup?: string,
+  appBridgeParsecDescription?: string,
+  addOrFixParsec?: string,
+  appBridgeApplications?: string,
+  appBridgeSelectApplication?: string,
+  appBridgeLoadApplications?: string,
+  appBridgeName?: string,
+  appBridgeExecutable?: string,
+  appBridgeArguments?: string,
+  appBridgeWorkingDirectory?: string,
+  appBridgeTrackProcess?: string,
+  appBridgeClearSteamRuntime?: string,
+  appBridgeForceX11?: string,
+  appBridgeLibraryPath?: string,
+  addOrFixApplication?: string,
+  appBridgeReady?: string,
+  appBridgeRustDeskDescription?: string,
+  addOrFixRustDesk?: string,
 ];
 
 const define = ([
@@ -89,6 +131,26 @@ const define = ([
   invalidQuickAction = "Invalid combination; the regular binding will be used",
   secondHotkeyLayer = "Second hotkey set with R4",
   secondHotkeyLayerDescription = "Hold R4 to use the second quick-action set; R4's own binding is overridden",
+  appBridge = "App Bridge",
+  appBridgeEnabledDescription = "Add third-party applications to Gaming Mode through configurable compatibility profiles",
+  appBridgeQuickSetup = "Quick setup",
+  appBridgeParsecDescription = "Add Parsec or repair its Steam shortcut with the tested process-tracking profile",
+  addOrFixParsec = "Add / Fix Parsec",
+  appBridgeApplications = "Applications",
+  appBridgeSelectApplication = "Installed application",
+  appBridgeLoadApplications = "Reload installed applications",
+  appBridgeName = "Shortcut name",
+  appBridgeExecutable = "Executable",
+  appBridgeArguments = "Arguments",
+  appBridgeWorkingDirectory = "Working directory",
+  appBridgeTrackProcess = "Keep Steam session for process",
+  appBridgeClearSteamRuntime = "Clear Steam preload",
+  appBridgeForceX11 = "Force Gamescope/X11 environment",
+  appBridgeLibraryPath = "Compatibility library path",
+  addOrFixApplication = "Add / Fix application",
+  appBridgeReady = "Profile and Steam shortcut are ready",
+  appBridgeRustDeskDescription = "Add RustDesk or repair its Steam shortcut with the Gamescope/X11 compatibility profile",
+  addOrFixRustDesk = "Add / Fix RustDesk",
 ]: Values): Strings => ({
   keyboard,
   enabled,
@@ -111,6 +173,26 @@ const define = ([
   invalidQuickAction,
   secondHotkeyLayer,
   secondHotkeyLayerDescription,
+  appBridge,
+  appBridgeEnabledDescription,
+  appBridgeQuickSetup,
+  appBridgeParsecDescription,
+  addOrFixParsec,
+  appBridgeApplications,
+  appBridgeSelectApplication,
+  appBridgeLoadApplications,
+  appBridgeName,
+  appBridgeExecutable,
+  appBridgeArguments,
+  appBridgeWorkingDirectory,
+  appBridgeTrackProcess,
+  appBridgeClearSteamRuntime,
+  appBridgeForceX11,
+  appBridgeLibraryPath,
+  addOrFixApplication,
+  appBridgeReady,
+  appBridgeRustDeskDescription,
+  addOrFixRustDesk,
   labels,
   labelsDescription,
   secondaryLayout,
@@ -149,6 +231,26 @@ export const english = define([
   "Invalid combination; the regular binding will be used",
   "Second hotkey set with R4",
   "Hold R4 to use the second quick-action set; R4's own binding is overridden",
+  "App Bridge",
+  "Add third-party applications to Gaming Mode through configurable compatibility profiles",
+  "Quick setup",
+  "Add Parsec or repair its Steam shortcut with the tested process-tracking profile",
+  "Add / Fix Parsec",
+  "Applications",
+  "Installed application",
+  "Reload installed applications",
+  "Shortcut name",
+  "Executable",
+  "Arguments",
+  "Working directory",
+  "Keep Steam session for process",
+  "Clear Steam preload",
+  "Force Gamescope/X11 environment",
+  "Compatibility library path",
+  "Add / Fix application",
+  "Profile and Steam shortcut are ready",
+  "Add RustDesk or repair its Steam shortcut with the Gamescope/X11 compatibility profile",
+  "Add / Fix RustDesk",
 ]);
 
 const russian = define([
@@ -180,6 +282,26 @@ const russian = define([
   "Некорректное сочетание — будет использован обычный бинд",
   "Второй набор хоткеев через R4",
   "Удерживайте R4 для второго набора быстрых действий; собственный бинд R4 будет перекрыт",
+  "App Bridge",
+  "Добавлять сторонние приложения в игровой режим через настраиваемые профили совместимости",
+  "Быстрая настройка",
+  "Добавить Parsec или исправить его ярлык Steam проверенным профилем с отслеживанием процесса",
+  "Добавить / исправить Parsec",
+  "Приложения",
+  "Установленное приложение",
+  "Обновить список приложений",
+  "Название ярлыка",
+  "Исполняемый файл",
+  "Аргументы",
+  "Рабочая папка",
+  "Удерживать сессию Steam для процесса",
+  "Очистить Steam preload",
+  "Принудительное окружение Gamescope/X11",
+  "Путь библиотек совместимости",
+  "Добавить / исправить приложение",
+  "Профиль и ярлык Steam готовы",
+  "Добавить RustDesk или исправить его ярлык Steam профилем совместимости Gamescope/X11",
+  "Добавить / исправить RustDesk",
 ]);
 
 const german = define([
@@ -675,7 +797,7 @@ const malay = define([
   "Automatik",
 ]);
 
-export const translations: Record<string, Strings> = {
+const baseTranslations: Record<string, Strings> = {
   arabic,
   brazilian,
   bulgarian,
@@ -709,3 +831,20 @@ export const translations: Record<string, Strings> = {
   ukrainian,
   vietnamese,
 };
+
+export const translations: Record<string, Strings> = Object.fromEntries(
+  Object.entries(baseTranslations).map(([language, strings]) => [
+    language,
+    {
+      ...strings,
+      ...(
+        appBridgeTranslations[language]
+        ?? (
+          language === "sc_schinese"
+            ? appBridgeTranslations.schinese
+            : undefined
+        )
+      ),
+    },
+  ]),
+);

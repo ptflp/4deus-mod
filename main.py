@@ -3,12 +3,25 @@ import fcntl
 import logging
 import os
 import struct
+import sys
 
 import decky_plugin
 
 
 logger = decky_plugin.logger
 logger.setLevel(logging.INFO)
+
+PLUGIN_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PLUGIN_ROOT not in sys.path:
+    sys.path.insert(0, PLUGIN_ROOT)
+
+try:
+    from app_bridge import AppBridgeManager
+except Exception:
+    AppBridgeManager = None
+    logger.exception(
+        "App Bridge is unavailable; keyboard features will remain active"
+    )
 
 KEY_CODES = {
     "KEY_ESC": 1,
@@ -156,6 +169,14 @@ class Plugin:
         self.keyboard = None
         self.input_lock = asyncio.Lock()
         self.held_key_codes = set()
+        self.app_bridge = (
+            AppBridgeManager(
+                home=decky_plugin.DECKY_USER_HOME,
+                plugin_root=PLUGIN_ROOT,
+            )
+            if AppBridgeManager is not None
+            else None
+        )
 
     async def _main(self):
         try:
@@ -241,3 +262,40 @@ class Plugin:
             return False
         logger.info("Keyboard diagnostics: %s", payload[:4000])
         return True
+
+    async def get_app_bridge_status(self):
+        if self.app_bridge is None:
+            return {"error": "App Bridge backend is unavailable"}
+        return self.app_bridge.status()
+
+    async def list_app_bridge_applications(self):
+        if self.app_bridge is None:
+            return []
+        return self.app_bridge.list_applications()
+
+    async def save_app_bridge_profile(self, profile):
+        if self.app_bridge is None:
+            return {"error": "App Bridge backend is unavailable"}
+        try:
+            return self.app_bridge.save_profile(profile)
+        except Exception as error:
+            logger.exception("Failed to save App Bridge profile")
+            return {"error": str(error)}
+
+    async def prepare_parsec_app_bridge(self):
+        if self.app_bridge is None:
+            return {"error": "App Bridge backend is unavailable"}
+        try:
+            return self.app_bridge.prepare_parsec()
+        except Exception as error:
+            logger.exception("Failed to prepare Parsec App Bridge profile")
+            return {"error": str(error)}
+
+    async def prepare_rustdesk_app_bridge(self):
+        if self.app_bridge is None:
+            return {"error": "App Bridge backend is unavailable"}
+        try:
+            return self.app_bridge.prepare_rustdesk()
+        except Exception as error:
+            logger.exception("Failed to prepare RustDesk App Bridge profile")
+            return {"error": str(error)}
