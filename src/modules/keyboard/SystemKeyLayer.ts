@@ -1011,10 +1011,12 @@ export class SystemKeyLayer {
   }
 
   private getBoundGamepadCommand(
+    event: Event,
     buttonCode: number | undefined,
   ): DeckButtonCommand | undefined {
     if (
-      !this.deckButtonBindingsEnabled
+      !this.isKeyboardInputEvent(event)
+      || !this.deckButtonBindingsEnabled
       || buttonCode === undefined
     ) {
       return undefined;
@@ -1031,16 +1033,12 @@ export class SystemKeyLayer {
     );
   }
 
-  private isBoundGamepadButton(buttonCode: number | undefined): boolean {
-    return this.getBoundGamepadCommand(buttonCode) !== undefined;
-  }
-
   private handleBoundGamepadButtonDown(
     event: Event,
     detail: GamepadButtonDetail | undefined,
   ): boolean {
     const buttonCode = detail?.button;
-    const command = this.getBoundGamepadCommand(buttonCode);
+    const command = this.getBoundGamepadCommand(event, buttonCode);
     if (!command || buttonCode === undefined)
       return false;
     consume(event);
@@ -1086,13 +1084,18 @@ export class SystemKeyLayer {
         this.queueBoundKeyState(heldKey, false);
       return true;
     }
-    if (
-      !this.activeBoundButtons.delete(buttonCode)
-      && !this.isBoundGamepadButton(buttonCode)
-    )
+    if (!this.activeBoundButtons.delete(buttonCode))
       return false;
     consume(event);
     return true;
+  }
+
+  private isKeyboardInputEvent(event: Event): boolean {
+    const keyboard = this.keyboard;
+    return Boolean(
+      keyboard?.isConnected
+      && event.composedPath().includes(keyboard),
+    );
   }
 
   private queueBoundKeyState(keyName: string, pressed: boolean): void {
@@ -1123,6 +1126,10 @@ export class SystemKeyLayer {
     ) {
       return false;
     }
+    if (active && !this.isKeyboardInputEvent(event))
+      return false;
+    if (!active && !this.deckButtonSecondLayerActive)
+      return false;
     consume(event);
     if (active && detail.is_repeat)
       return true;
