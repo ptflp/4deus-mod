@@ -61,7 +61,6 @@ const normalizeQuickActions = (
 export interface ModSettings {
   version: 1;
   appBridge: {
-    enabled: boolean;
     shortcutAppIds: Record<string, number>;
   };
   keyboard: {
@@ -90,7 +89,6 @@ const STORAGE_KEY = "4deus-mod.settings";
 const defaults: ModSettings = {
   version: 1,
   appBridge: {
-    enabled: true,
     shortcutAppIds: {},
   },
   keyboard: {
@@ -131,8 +129,6 @@ const readSettings = (): ModSettings => {
       ...defaults,
       ...parsed,
       appBridge: {
-        ...defaults.appBridge,
-        ...parsed.appBridge,
         shortcutAppIds: {
           ...defaults.appBridge.shortcutAppIds,
           ...parsed.appBridge?.shortcutAppIds,

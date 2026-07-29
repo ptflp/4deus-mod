@@ -22,6 +22,8 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -34,7 +36,7 @@ jobs:
       - name: Package plugin
         run: |
           mkdir -p out/4deusMod
-          cp -r bin dist LICENSE README.md app_bridge.py logo.png main.py package.json plugin.json out/4deusMod/
+          cp -r assets bin dist LICENSE README.md app_bridge.py mangoapp_hotfix.py steam_artwork.py steamos_application.py logo.png main.py package.json plugin.json out/4deusMod/
           cd out
           zip -r 4deusMod.zip 4deusMod
 

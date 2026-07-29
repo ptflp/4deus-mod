@@ -22,12 +22,21 @@ export interface AppBridgeProfileDraft {
 }
 
 export interface PreparedAppBridgeProfile {
+  artworkId?: string;
   error?: string;
   icon: string;
   id: string;
   launcherPath: string;
   name: string;
   startDirectory: string;
+}
+
+export interface AppBridgeArtworkResult {
+  artworkId?: string;
+  error?: string;
+  gridDirectory?: string;
+  installed: number;
+  preserved: number;
 }
 
 export interface AppBridgeStatus {
@@ -41,6 +50,10 @@ export interface AppBridgeStatus {
 
 export interface AppBridgeApi {
   getStatus(): Promise<AppBridgeStatus>;
+  installArtwork(
+    artworkId: string,
+    appId: number,
+  ): Promise<AppBridgeArtworkResult>;
   listApplications(): Promise<AppBridgeApplication[]>;
   prepareParsec(): Promise<PreparedAppBridgeProfile>;
   prepareRustDesk(): Promise<PreparedAppBridgeProfile>;

@@ -1,4 +1,5 @@
 import { appBridgeTranslations } from "./appBridgeTranslations";
+import { systemToolsTranslations } from "./systemToolsTranslations";
 
 export interface Strings {
   keyboard: string;
@@ -42,6 +43,24 @@ export interface Strings {
   appBridgeLibraryPath: string;
   addOrFixApplication: string;
   appBridgeReady: string;
+  systemTools: string;
+  systemToolsDescription: string;
+  systemToolsStatus: string;
+  systemToolsLoading: string;
+  mangoHudFix: string;
+  mangoHudFixDescription: string;
+  mangoHudFixInstalled: string;
+  mangoHudFixNeedsRepair: string;
+  mangoHudFixNotInstalled: string;
+  mangoHudFixUnavailable: string;
+  installOrRepairMangoHudFix: string;
+  removeMangoHudFix: string;
+  mangoHudFixApplied: string;
+  mangoHudFixRemoved: string;
+  steamOsApplication: string;
+  steamOsApplicationDescription: string;
+  addOrRepairSteamOsApplication: string;
+  steamOsApplicationReady: string;
   labels: string;
   labelsDescription: string;
   secondaryLayout: string;
@@ -193,6 +212,24 @@ const define = ([
   appBridgeReady,
   appBridgeRustDeskDescription,
   addOrFixRustDesk,
+  systemTools: "System Tools",
+  systemToolsDescription: "Install and manage narrowly scoped system fixes",
+  systemToolsStatus: "Status",
+  systemToolsLoading: "Loading…",
+  mangoHudFix: "MangoHud Nested Desktop fix",
+  mangoHudFixDescription: "Prevents protected Nested Desktop processes from crashing MangoApp and hiding the performance overlay",
+  mangoHudFixInstalled: "Installed",
+  mangoHudFixNeedsRepair: "Update or repair required",
+  mangoHudFixNotInstalled: "Not installed",
+  mangoHudFixUnavailable: "Unavailable on this system",
+  installOrRepairMangoHudFix: "Install / Repair fix",
+  removeMangoHudFix: "Remove fix",
+  mangoHudFixApplied: "MangoHud fix installed",
+  mangoHudFixRemoved: "MangoHud fix removed",
+  steamOsApplication: "SteamOS in Gaming Mode",
+  steamOsApplicationDescription: "Adds or repairs a fully configured Nested Desktop shortcut in the Steam library",
+  addOrRepairSteamOsApplication: "Add / Repair SteamOS",
+  steamOsApplicationReady: "SteamOS application is ready",
   labels,
   labelsDescription,
   secondaryLayout,
@@ -842,6 +879,14 @@ export const translations: Record<string, Strings> = Object.fromEntries(
         ?? (
           language === "sc_schinese"
             ? appBridgeTranslations.schinese
+            : undefined
+        )
+      ),
+      ...(
+        systemToolsTranslations[language]
+        ?? (
+          language === "sc_schinese"
+            ? systemToolsTranslations.schinese
             : undefined
         )
       ),

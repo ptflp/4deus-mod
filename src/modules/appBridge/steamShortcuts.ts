@@ -1,7 +1,16 @@
 import type { PreparedAppBridgeProfile } from "./types";
+import type {
+  PreparedSteamOsApplication,
+} from "../systemTools/types";
 
 const NON_STEAM_APP_TYPE = 1 << 30;
 const REGISTRATION_TIMEOUT_MS = 3000;
+const STEAMOS_SHORTCUT_NAMES = [
+  "Steam Os",
+  "Steam OS",
+  "SteamOS",
+  "Nested Desktop",
+];
 
 export interface ShortcutOverview {
   appid: number;
@@ -34,6 +43,17 @@ export const findShortcutByName = (
   );
 };
 
+export const findSteamOsShortcut = (
+  names: string[] = STEAMOS_SHORTCUT_NAMES,
+): ShortcutOverview | undefined => {
+  for (const name of names) {
+    const shortcut = findShortcutByName(name);
+    if (shortcut)
+      return shortcut;
+  }
+  return undefined;
+};
+
 const waitForShortcut = async (appId: number): Promise<void> => {
   const deadline = Date.now() + REGISTRATION_TIMEOUT_MS;
   while (!window.appStore.GetAppOverviewByAppID(appId)) {
@@ -43,9 +63,17 @@ const waitForShortcut = async (appId: number): Promise<void> => {
   }
 };
 
+interface ShortcutConfiguration {
+  icon: string;
+  launchOptions: string;
+  launcherPath: string;
+  name: string;
+  startDirectory: string;
+}
+
 const applyShortcutConfiguration = (
   appId: number,
-  profile: PreparedAppBridgeProfile,
+  profile: ShortcutConfiguration,
 ): void => {
   window.SteamClient.Apps.SetShortcutName(appId, profile.name);
   window.SteamClient.Apps.SetShortcutExe(appId, profile.launcherPath);
@@ -53,23 +81,23 @@ const applyShortcutConfiguration = (
     appId,
     profile.startDirectory,
   );
-  window.SteamClient.Apps.SetShortcutLaunchOptions(appId, profile.id);
+  window.SteamClient.Apps.SetShortcutLaunchOptions(
+    appId,
+    profile.launchOptions,
+  );
   if (profile.icon.startsWith("/"))
     window.SteamClient.Apps.SetShortcutIcon(appId, profile.icon);
 };
 
-export const ensureAppBridgeShortcut = async (
-  profile: PreparedAppBridgeProfile,
-  preferredAppId?: number,
+const ensureShortcut = async (
+  profile: ShortcutConfiguration,
+  existing: ShortcutOverview | undefined,
 ): Promise<number> => {
-  if (profile.error)
-    throw new Error(profile.error);
-  const existing = findShortcutByName(profile.name, preferredAppId);
   const appId = existing?.appid ?? await window.SteamClient.Apps.AddShortcut(
     profile.name,
     profile.launcherPath,
     profile.startDirectory,
-    profile.id,
+    profile.launchOptions,
   );
   if (!appId)
     throw new Error("Steam did not create the shortcut");
@@ -82,4 +110,27 @@ export const ensureAppBridgeShortcut = async (
     applyShortcutConfiguration(appId, profile);
   }
   return appId;
+};
+
+export const ensureAppBridgeShortcut = async (
+  profile: PreparedAppBridgeProfile,
+  preferredAppId?: number,
+): Promise<number> => {
+  if (profile.error)
+    throw new Error(profile.error);
+  return ensureShortcut(
+    {
+      ...profile,
+      launchOptions: profile.id,
+    },
+    findShortcutByName(profile.name, preferredAppId),
+  );
+};
+
+export const ensureSteamOsShortcut = async (
+  profile: PreparedSteamOsApplication,
+): Promise<number> => {
+  if (profile.error)
+    throw new Error(profile.error);
+  return ensureShortcut(profile, findSteamOsShortcut(profile.aliases));
 };

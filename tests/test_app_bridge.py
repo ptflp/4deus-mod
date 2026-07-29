@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from app_bridge import AppBridgeManager, normalize_profile_id
+from steam_artwork import STEAM_ID64_BASE
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -95,6 +96,7 @@ class AppBridgeTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(prepared["name"], "Parsec")
+        self.assertEqual(prepared["artworkId"], "parsec")
         self.assertEqual(profile["command"][0], "/usr/bin/flatpak")
         self.assertIn("com.parsecgaming.parsec", profile["command"])
         self.assertEqual(
@@ -130,6 +132,7 @@ class AppBridgeTests(unittest.TestCase):
         )
 
         self.assertEqual(prepared["name"], "RustDesk")
+        self.assertEqual(prepared["artworkId"], "rustdesk")
         self.assertEqual(profile["command"], [str(executable)])
         self.assertEqual(profile["workingDirectory"], str(application_directory))
         self.assertTrue(profile["clearSteamPreload"])
@@ -138,6 +141,50 @@ class AppBridgeTests(unittest.TestCase):
             profile["libraryPath"],
             str(application_directory / "compat-libs"),
         )
+
+    def test_builtin_artwork_replaces_all_slots(self):
+        account_id = 12345
+        steam_root = self.home / ".local/share/Steam"
+        (steam_root / "config").mkdir(parents=True)
+        (steam_root / "config/loginusers.vdf").write_text(
+            '"users"\n{\n'
+            f'  "{STEAM_ID64_BASE + account_id}"\n'
+            "  {\n"
+            '    "AutoLogin" "1"\n'
+            '    "Timestamp" "42"\n'
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        grid = steam_root / f"userdata/{account_id}/config/grid"
+        grid.mkdir(parents=True)
+        (grid / "777p.png").write_bytes(b"custom")
+
+        result = self.manager.install_artwork("parsec", 777)
+
+        self.assertEqual(result["artworkId"], "parsec")
+        self.assertEqual(result["installed"], 4)
+        self.assertEqual(result["preserved"], 0)
+        self.assertEqual(result["replaced"], 1)
+        for destination, source in (
+            ("777p.png", "capsule.png"),
+            ("777.png", "grid.png"),
+            ("777_hero.png", "hero.png"),
+            ("777_logo.png", "logo.png"),
+        ):
+            with self.subTest(destination=destination):
+                self.assertEqual(
+                    (grid / destination).read_bytes(),
+                    (
+                        PROJECT_ROOT
+                        / "assets/app-bridge/parsec"
+                        / source
+                    ).read_bytes(),
+                )
+
+    def test_artwork_is_limited_to_builtin_profiles(self):
+        with self.assertRaisesRegex(ValueError, "not available"):
+            self.manager.install_artwork("../../custom", 777)
 
 
 if __name__ == "__main__":
