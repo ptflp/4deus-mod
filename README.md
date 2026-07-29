@@ -88,6 +88,10 @@ layout and text input.
   controller layout, and play history.
 - Refreshes all four Steam artwork slots from the bundled branded SteamOS
   artwork whenever Add / Repair runs.
+- Restores the right-trackpad cursor and click, trigger clicks, and left-pad
+  scrolling in Nested Desktop while another Game Mode application is running.
+- Activates the input bridge only while Nested Desktop is frontmost, with
+  configurable cursor and scroll inertia that is saved between sessions.
 
 ### Why dual-language labels matter
 

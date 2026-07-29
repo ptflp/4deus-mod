@@ -1,7 +1,9 @@
 import importlib.util
+import json
 import logging
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -30,6 +32,28 @@ class RecordingKeyboard:
 
     def write_key(self, key_code, value):
         self.events.append((key_code, value))
+
+
+class RecordingMouseBridge:
+    def __init__(self):
+        self.started = 0
+        self.stopped = 0
+        self.is_running = True
+        self.inertia_values = []
+
+    def start(self):
+        self.started += 1
+        self.is_running = True
+
+    def stop(self):
+        self.stopped += 1
+        self.is_running = False
+
+    def running(self):
+        return self.is_running
+
+    def set_inertia_enabled(self, enabled):
+        self.inertia_values.append(enabled)
 
 
 class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
@@ -165,6 +189,123 @@ class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
         message = captured.output[-1]
         self.assertIn("Keyboard diagnostics:", message)
         self.assertLess(len(message), 4100)
+
+
+class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_setting_is_persisted_and_controls_the_bridge(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+        plugin.nested_desktop_mouse_enabled = True
+        plugin.nested_desktop_mouse_inertia_enabled = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            disabled = await plugin.set_nested_desktop_mouse_enabled(False)
+
+            self.assertFalse(disabled["enabled"])
+            self.assertFalse(disabled["running"])
+            self.assertEqual(bridge.stopped, 1)
+            self.assertEqual(
+                json.loads(settings_path.read_text(encoding="utf-8")),
+                {"enabled": False, "inertiaEnabled": True},
+            )
+            self.assertEqual(
+                plugin._load_nested_desktop_mouse_settings(),
+                (False, True),
+            )
+
+            enabled = await plugin.set_nested_desktop_mouse_enabled(True)
+
+            self.assertTrue(enabled["enabled"])
+            self.assertTrue(enabled["running"])
+            self.assertEqual(bridge.started, 1)
+            self.assertEqual(
+                json.loads(settings_path.read_text(encoding="utf-8")),
+                {"enabled": True, "inertiaEnabled": True},
+            )
+            self.assertEqual(
+                plugin._load_nested_desktop_mouse_settings(),
+                (True, True),
+            )
+
+    async def test_invalid_value_does_not_change_the_setting(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+        plugin.nested_desktop_mouse_enabled = True
+        plugin.nested_desktop_mouse_inertia_enabled = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_nested_desktop_mouse_enabled("false")
+
+            self.assertIn("error", result)
+            self.assertTrue(result["enabled"])
+            self.assertFalse(settings_path.exists())
+            self.assertEqual(bridge.started, 0)
+            self.assertEqual(bridge.stopped, 0)
+
+    async def test_inertia_setting_is_persisted_and_applied(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+        plugin.nested_desktop_mouse_enabled = True
+        plugin.nested_desktop_mouse_inertia_enabled = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            disabled = (
+                await plugin.set_nested_desktop_mouse_inertia_enabled(False)
+            )
+
+            self.assertFalse(disabled["inertiaEnabled"])
+            self.assertEqual(bridge.inertia_values, [False])
+            self.assertEqual(
+                json.loads(settings_path.read_text(encoding="utf-8")),
+                {"enabled": True, "inertiaEnabled": False},
+            )
+
+    async def test_invalid_inertia_value_does_not_change_the_setting(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+        plugin.nested_desktop_mouse_enabled = True
+        plugin.nested_desktop_mouse_inertia_enabled = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = (
+                await plugin.set_nested_desktop_mouse_inertia_enabled("false")
+            )
+
+            self.assertIn("error", result)
+            self.assertTrue(result["inertiaEnabled"])
+            self.assertFalse(settings_path.exists())
+            self.assertEqual(bridge.inertia_values, [])
+
+    def test_legacy_setting_defaults_inertia_to_enabled(self):
+        plugin = plugin_backend.Plugin()
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            settings_path.write_text(
+                json.dumps({"enabled": False}),
+                encoding="utf-8",
+            )
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            self.assertEqual(
+                plugin._load_nested_desktop_mouse_settings(),
+                (False, True),
+            )
 
 
 if __name__ == "__main__":

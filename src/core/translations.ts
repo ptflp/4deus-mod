@@ -61,6 +61,10 @@ export interface Strings {
   steamOsApplicationDescription: string;
   addOrRepairSteamOsApplication: string;
   steamOsApplicationReady: string;
+  nestedDesktopMouseBridge: string;
+  nestedDesktopMouseBridgeDescription: string;
+  nestedDesktopTrackpadInertia: string;
+  nestedDesktopTrackpadInertiaDescription: string;
   labels: string;
   labelsDescription: string;
   secondaryLayout: string;
@@ -230,6 +234,10 @@ const define = ([
   steamOsApplicationDescription: "Adds or repairs a fully configured Nested Desktop shortcut in the Steam library",
   addOrRepairSteamOsApplication: "Add / Repair SteamOS",
   steamOsApplicationReady: "SteamOS application is ready",
+  nestedDesktopMouseBridge: "Nested Desktop mouse over games",
+  nestedDesktopMouseBridgeDescription: "Restores the right-trackpad cursor and click in Nested Desktop while another Game Mode app is running",
+  nestedDesktopTrackpadInertia: "Trackpad inertia",
+  nestedDesktopTrackpadInertiaDescription: "Continues cursor and scroll movement after a fast swipe; disable to stop immediately when a trackpad is released",
   labels,
   labelsDescription,
   secondaryLayout,

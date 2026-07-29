@@ -14,6 +14,7 @@ import type {
 import { KeyboardFeature } from "./modules/keyboard/KeyboardFeature";
 import type {
   MangoHudFixStatus,
+  NestedDesktopMouseStatus,
   PreparedSteamOsApplication,
   SteamOsApplicationStatus,
   SteamOsArtworkResult,
@@ -83,6 +84,17 @@ export default definePlugin(() => {
       [number],
       SteamOsArtworkResult
     >("install_steamos_application_artwork"),
+    getNestedDesktopMouseStatus: callable<[], NestedDesktopMouseStatus>(
+      "get_nested_desktop_mouse_status",
+    ),
+    setNestedDesktopMouseEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_mouse_enabled"),
+    setNestedDesktopMouseInertiaEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_mouse_inertia_enabled"),
   };
   const host = new ModuleHost([
     new KeyboardFeature(

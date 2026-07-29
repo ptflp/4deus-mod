@@ -1,7 +1,9 @@
 import asyncio
 import fcntl
+import json
 import logging
 import os
+from pathlib import Path
 import struct
 import sys
 
@@ -37,6 +39,15 @@ except Exception:
     SteamOsApplicationManager = None
     logger.exception(
         "SteamOS application System Tool is unavailable; "
+        "other features will remain active"
+    )
+
+try:
+    from nested_desktop_mouse import NestedDesktopMouseSupervisor
+except Exception:
+    NestedDesktopMouseSupervisor = None
+    logger.exception(
+        "Nested Desktop mouse bridge is unavailable; "
         "other features will remain active"
     )
 
@@ -184,6 +195,31 @@ class VirtualKeyboard:
 class Plugin:
     def __init__(self):
         self.keyboard = None
+        settings_directory = Path(
+            getattr(
+                decky_plugin,
+                "DECKY_PLUGIN_SETTINGS_DIR",
+                Path(decky_plugin.DECKY_USER_HOME) / ".config/4deus-mod",
+            )
+        )
+        self.nested_desktop_mouse_settings_path = (
+            settings_directory / "nested-desktop-mouse.json"
+        )
+        (
+            self.nested_desktop_mouse_enabled,
+            self.nested_desktop_mouse_inertia_enabled,
+        ) = self._load_nested_desktop_mouse_settings()
+        self.nested_desktop_mouse = (
+            NestedDesktopMouseSupervisor(
+                plugin_root=PLUGIN_ROOT,
+                logger=logger,
+                inertia_enabled=(
+                    self.nested_desktop_mouse_inertia_enabled
+                ),
+            )
+            if NestedDesktopMouseSupervisor is not None
+            else None
+        )
         self.input_lock = asyncio.Lock()
         self.held_key_codes = set()
         self.app_bridge = (
@@ -214,8 +250,15 @@ class Plugin:
             logger.info("Created 4deus Mod uinput keyboard")
         except Exception:
             logger.exception("Failed to create 4deus Mod uinput keyboard")
+        if (
+            self.nested_desktop_mouse is not None
+            and self.nested_desktop_mouse_enabled
+        ):
+            self.nested_desktop_mouse.start()
 
     async def _unload(self):
+        if self.nested_desktop_mouse is not None:
+            await asyncio.to_thread(self.nested_desktop_mouse.stop)
         if self.keyboard is not None:
             self.keyboard.close()
             self.keyboard = None
@@ -301,6 +344,130 @@ class Plugin:
             return False
         logger.info("Keyboard diagnostics: %s", payload[:4000])
         return True
+
+    async def get_nested_desktop_mouse_status(self):
+        bridge = self.nested_desktop_mouse
+        return {
+            "available": bridge is not None,
+            "enabled": self.nested_desktop_mouse_enabled,
+            "inertiaEnabled": (
+                self.nested_desktop_mouse_inertia_enabled
+            ),
+            "running": bridge.running() if bridge is not None else False,
+        }
+
+    async def set_nested_desktop_mouse_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "Enabled must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                enabled,
+                self.nested_desktop_mouse_inertia_enabled,
+            )
+            self.nested_desktop_mouse_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                if enabled:
+                    bridge.start()
+                else:
+                    await asyncio.to_thread(bridge.stop)
+            logger.info(
+                "Nested Desktop mouse bridge %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception(
+                "Failed to change the Nested Desktop mouse bridge"
+            )
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    async def set_nested_desktop_mouse_inertia_enabled(
+        self,
+        enabled: bool,
+    ):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "Inertia enabled must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                self.nested_desktop_mouse_enabled,
+                enabled,
+            )
+            self.nested_desktop_mouse_inertia_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_inertia_enabled,
+                    enabled,
+                )
+            logger.info(
+                "Nested Desktop trackpad inertia %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception(
+                "Failed to change Nested Desktop trackpad inertia"
+            )
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    def _load_nested_desktop_mouse_settings(
+        self,
+    ) -> tuple[bool, bool]:
+        try:
+            payload = json.loads(
+                self.nested_desktop_mouse_settings_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+            return (
+                payload.get("enabled", True) is not False,
+                payload.get("inertiaEnabled", True) is not False,
+            )
+        except FileNotFoundError:
+            return True, True
+        except Exception:
+            logger.exception(
+                "Failed to read the Nested Desktop mouse bridge settings"
+            )
+            return True, True
+
+    def _save_nested_desktop_mouse_settings(
+        self,
+        enabled: bool,
+        inertia_enabled: bool,
+    ):
+        path = self.nested_desktop_mouse_settings_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "enabled": enabled,
+                    "inertiaEnabled": inertia_enabled,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
 
     async def get_app_bridge_status(self):
         if self.app_bridge is None:

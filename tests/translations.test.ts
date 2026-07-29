@@ -1,8 +1,43 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { appBridgeTranslations } from "../src/core/appBridgeTranslations.ts";
 import { systemToolsTranslations } from "../src/core/systemToolsTranslations.ts";
+
+const GETTING_STARTED_ANCHORS: Record<string, string> = {
+  english: "en",
+  arabic: "ar",
+  brazilian: "pt-br",
+  bulgarian: "bg",
+  czech: "cs",
+  danish: "da",
+  dutch: "nl",
+  finnish: "fi",
+  french: "fr",
+  german: "de",
+  greek: "el",
+  hungarian: "hu",
+  indonesian: "id",
+  italian: "it",
+  japanese: "ja",
+  koreana: "ko",
+  latam: "es-419",
+  malay: "ms",
+  norwegian: "no",
+  polish: "pl",
+  portuguese: "pt",
+  romanian: "ro",
+  russian: "ru",
+  schinese: "zh-cn",
+  spanish: "es",
+  swedish: "sv",
+  tchinese: "zh-tw",
+  thai: "th",
+  turkish: "tr",
+  ukrainian: "uk",
+  vietnamese: "vi",
+};
 
 const APP_BRIDGE_KEYS = [
   "addOrFixApplication",
@@ -65,6 +100,10 @@ const SYSTEM_TOOLS_KEYS = [
   "steamOsApplicationDescription",
   "addOrRepairSteamOsApplication",
   "steamOsApplicationReady",
+  "nestedDesktopMouseBridge",
+  "nestedDesktopMouseBridgeDescription",
+  "nestedDesktopTrackpadInertia",
+  "nestedDesktopTrackpadInertiaDescription",
 ] as const;
 
 test("System Tools has complete translations for every Steam locale", () => {
@@ -84,4 +123,34 @@ test("System Tools has complete translations for every Steam locale", () => {
     for (const key of SYSTEM_TOOLS_KEYS)
       assert.ok(strings[key].trim(), `${language}.${key}`);
   }
+});
+
+test("Getting Started covers every Steam locale", () => {
+  const guide = readFileSync(
+    new URL("../docs/GETTING_STARTED.md", import.meta.url),
+    "utf8",
+  );
+  assert.deepEqual(
+    Object.keys(GETTING_STARTED_ANCHORS).sort(),
+    ["english", ...Object.keys(systemToolsTranslations)].sort(),
+  );
+
+  for (const anchor of Object.values(GETTING_STARTED_ANCHORS)) {
+    assert.ok(
+      guide.includes(`](#${anchor})`),
+      `Missing language link for ${anchor}`,
+    );
+    assert.ok(
+      guide.includes(`<a id="${anchor}"></a>`),
+      `Missing language section for ${anchor}`,
+    );
+  }
+
+  const downloadUrl =
+    "https://github.com/ptflp/4deus-mod/releases/latest/download/"
+    + "4deusMod.zip";
+  assert.equal(
+    guide.split(downloadUrl).length - 1,
+    Object.keys(GETTING_STARTED_ANCHORS).length,
+  );
 });

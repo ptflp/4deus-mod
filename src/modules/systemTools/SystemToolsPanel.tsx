@@ -2,6 +2,7 @@ import {
   DialogButton,
   PanelSection,
   PanelSectionRow,
+  ToggleField,
 } from "@decky/ui";
 import { useEffect, useState } from "react";
 
@@ -12,6 +13,7 @@ import {
 } from "../appBridge/steamShortcuts";
 import type {
   MangoHudFixStatus,
+  NestedDesktopMouseStatus,
   SteamOsApplicationStatus,
   SystemToolsApi,
 } from "./types";
@@ -56,6 +58,8 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
   const [status, setStatus] = useState<MangoHudFixStatus>();
   const [steamOsStatus, setSteamOsStatus] =
     useState<SteamOsApplicationStatus>();
+  const [nestedDesktopMouseStatus, setNestedDesktopMouseStatus] =
+    useState<NestedDesktopMouseStatus>();
   const [steamOsShortcutAppId, setSteamOsShortcutAppId] = useState<
     number | undefined
   >(() => findSteamOsShortcut()?.appid);
@@ -65,12 +69,18 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
 
   const loadStatus = async (): Promise<void> => {
     try {
-      const [nextMangoHudStatus, nextSteamOsStatus] = await Promise.all([
+      const [
+        nextMangoHudStatus,
+        nextSteamOsStatus,
+        nextNestedDesktopMouseStatus,
+      ] = await Promise.all([
         api.getMangoHudFixStatus(),
         api.getSteamOsApplicationStatus(),
+        api.getNestedDesktopMouseStatus(),
       ]);
       setStatus(nextMangoHudStatus);
       setSteamOsStatus(nextSteamOsStatus);
+      setNestedDesktopMouseStatus(nextNestedDesktopMouseStatus);
       setSteamOsShortcutAppId(findSteamOsShortcut()?.appid);
     } catch (error) {
       setMangoHudMessage(
@@ -116,6 +126,45 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
       setSteamOsStatus(profile);
       setSteamOsShortcutAppId(appId);
       setSteamOsMessage(strings.steamOsApplicationReady);
+    } catch (error) {
+      setSteamOsMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setNestedDesktopMouseEnabled = async (
+    enabled: boolean,
+  ): Promise<void> => {
+    setBusy(true);
+    setSteamOsMessage("");
+    try {
+      const nextStatus = await api.setNestedDesktopMouseEnabled(enabled);
+      setNestedDesktopMouseStatus(nextStatus);
+      if (nextStatus.error)
+        setSteamOsMessage(nextStatus.error);
+    } catch (error) {
+      setSteamOsMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setNestedDesktopMouseInertiaEnabled = async (
+    enabled: boolean,
+  ): Promise<void> => {
+    setBusy(true);
+    setSteamOsMessage("");
+    try {
+      const nextStatus =
+        await api.setNestedDesktopMouseInertiaEnabled(enabled);
+      setNestedDesktopMouseStatus(nextStatus);
+      if (nextStatus.error)
+        setSteamOsMessage(nextStatus.error);
     } catch (error) {
       setSteamOsMessage(
         error instanceof Error ? error.message : String(error),
@@ -181,6 +230,29 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
               strings,
             )
           }`}</div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label={strings.nestedDesktopMouseBridge}
+            description={strings.nestedDesktopMouseBridgeDescription}
+            checked={nestedDesktopMouseStatus?.enabled ?? false}
+            disabled={busy || !nestedDesktopMouseStatus?.available}
+            onChange={(enabled) => void setNestedDesktopMouseEnabled(enabled)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label={strings.nestedDesktopTrackpadInertia}
+            description={strings.nestedDesktopTrackpadInertiaDescription}
+            checked={nestedDesktopMouseStatus?.inertiaEnabled ?? true}
+            disabled={
+              busy
+              || !nestedDesktopMouseStatus?.available
+              || !nestedDesktopMouseStatus.enabled
+            }
+            onChange={(enabled) =>
+              void setNestedDesktopMouseInertiaEnabled(enabled)}
+          />
         </PanelSectionRow>
         <PanelSectionRow>
           <DialogButton

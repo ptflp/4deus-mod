@@ -32,6 +32,14 @@ export interface SteamOsArtworkResult {
   preserved: number;
 }
 
+export interface NestedDesktopMouseStatus {
+  available: boolean;
+  enabled: boolean;
+  error?: string;
+  inertiaEnabled: boolean;
+  running: boolean;
+}
+
 export interface SystemToolsApi {
   getMangoHudFixStatus(): Promise<MangoHudFixStatus>;
   installMangoHudFix(): Promise<MangoHudFixStatus>;
@@ -41,4 +49,11 @@ export interface SystemToolsApi {
   installSteamOsApplicationArtwork(
     appId: number,
   ): Promise<SteamOsArtworkResult>;
+  getNestedDesktopMouseStatus(): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopMouseEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopMouseInertiaEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
 }

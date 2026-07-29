@@ -53,6 +53,10 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
             f'exec {self.launcher} "$@"',
             Path(profile["wrapperPath"]).read_text(encoding="utf-8"),
         )
+        self.assertIn(
+            "export KWIN_FORCE_SW_CURSOR=1",
+            Path(profile["wrapperPath"]).read_text(encoding="utf-8"),
+        )
 
     def test_prepare_reports_missing_nested_desktop(self):
         self.launcher.unlink()

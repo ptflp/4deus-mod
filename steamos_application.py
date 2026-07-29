@@ -95,6 +95,7 @@ class SteamOsApplicationManager:
             "export GTK_IM_MODULE=ibus\n"
             "export QT_IM_MODULE=ibus\n"
             "export XMODIFIERS=@im=ibus\n"
+            "export KWIN_FORCE_SW_CURSOR=1\n"
             "\n"
             f'exec {launcher} "$@"\n'
         )
