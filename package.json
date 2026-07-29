@@ -5,7 +5,8 @@
   "type": "module",
   "packageManager": "pnpm@11.17.0",
   "scripts": {
-    "build": "rollup -c",
+    "build": "pnpm build:native && rollup -c",
+    "build:native": "python scripts/build_native.py",
     "check": "pnpm check:types && pnpm check:complexity && pnpm test",
     "check:complexity": "eslint src",
     "check:types": "tsc --noEmit",

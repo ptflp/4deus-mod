@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   ensureAppBridgeShortcut,
+  ensureSteamOsShortcut,
   findShortcutByName,
+  findSteamOsShortcut,
 } from "../src/modules/appBridge/steamShortcuts.ts";
 
 const NON_STEAM_APP_TYPE = 1 << 30;
@@ -103,5 +105,62 @@ test("App Bridge reapplies every field after creating a shortcut", async () => {
     ],
     ...configuration,
     ...configuration,
+  ]);
+});
+
+test("SteamOS setup repairs a Nested Desktop shortcut in place", async () => {
+  const { calls } = installWindowMock(false);
+  window.appStore.allApps.push({
+    appid: 77,
+    app_type: NON_STEAM_APP_TYPE,
+    display_name: "Nested Desktop",
+  });
+  assert.equal(findSteamOsShortcut()?.appid, 77);
+
+  const appId = await ensureSteamOsShortcut({
+    aliases: ["Steam Os", "Nested Desktop"],
+    available: true,
+    current: true,
+    icon: "/usr/share/steamos/icon.png",
+    launchOptions: "",
+    launcherPath: "/home/deck/.local/bin/4deus-steamos-desktop",
+    name: "Steam Os",
+    startDirectory: "/home/deck/.local/bin",
+    wrapperInstalled: true,
+    wrapperPath: "/home/deck/.local/bin/4deus-steamos-desktop",
+  });
+
+  assert.equal(appId, 77);
+  assert.deepEqual(calls, [
+    ["name", 77, "Steam Os"],
+    ["exe", 77, "/home/deck/.local/bin/4deus-steamos-desktop"],
+    ["directory", 77, "/home/deck/.local/bin"],
+    ["options", 77, ""],
+    ["icon", 77, "/usr/share/steamos/icon.png"],
+  ]);
+});
+
+test("SteamOS setup creates a shortcut without launch options", async () => {
+  const { calls } = installWindowMock(false);
+  const profile = {
+    aliases: ["Steam Os", "Nested Desktop"],
+    available: true,
+    current: true,
+    icon: "/usr/share/steamos/icon.png",
+    launchOptions: "",
+    launcherPath: "/home/deck/.local/bin/4deus-steamos-desktop",
+    name: "Steam Os",
+    startDirectory: "/home/deck/.local/bin",
+    wrapperInstalled: true,
+    wrapperPath: "/home/deck/.local/bin/4deus-steamos-desktop",
+  };
+
+  assert.equal(await ensureSteamOsShortcut(profile), 99);
+  assert.deepEqual(calls[0], [
+    "add",
+    "Steam Os",
+    "/home/deck/.local/bin/4deus-steamos-desktop",
+    "/home/deck/.local/bin",
+    "",
   ]);
 });

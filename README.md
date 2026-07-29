@@ -58,7 +58,31 @@ layout and text input.
 - Includes a quick **Add / Fix RustDesk** action with Steam runtime cleanup,
   RustDesk compatibility libraries, and the Gamescope/X11 environment.
 - Updates existing shortcuts in place to preserve their Steam app ID,
-  controller layout, and artwork.
+  controller layout, and play history.
+- Refreshes branded portrait, grid, hero, and logo artwork for Parsec and
+  RustDesk whenever their Add / Fix actions run.
+
+## System Tools module
+
+- Provides explicit install, repair, status, and removal actions for narrowly
+  scoped system compatibility fixes.
+- Includes a MangoHud Nested Desktop fix for protected KWin processes whose
+  `/proc/<pid>/fd` or `/proc/<pid>/fdinfo` directories cannot be enumerated.
+- Keeps the built-in Gamescope performance overlay running instead of allowing
+  MangoApp to enter a crash loop.
+- Installs only a user-level systemd drop-in and a dedicated preload library;
+  it does not replace the system MangoHud package.
+- Requires no additional runtime packages: the guard uses the same glibc and
+  GCC runtime libraries already required by SteamOS MangoApp.
+- Removes only files marked as managed by 4deus Mod and cleans the fix up when
+  the plugin is uninstalled.
+- Adds or repairs a **Steam Os** non-Steam shortcut for the built-in Nested
+  Desktop, using a persistent launcher with the correct locale and IBus
+  environment.
+- Updates an existing SteamOS shortcut in place to preserve its app ID,
+  controller layout, and play history.
+- Refreshes all four Steam artwork slots from the original artwork shipped
+  with the installed SteamOS whenever Add / Repair runs.
 
 ### Why dual-language labels matter
 

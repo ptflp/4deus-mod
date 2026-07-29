@@ -98,6 +98,11 @@ export const AppBridgePanel = ({
       prepared,
       bridge.shortcutAppIds[prepared.id],
     );
+    if (prepared.artworkId) {
+      const artwork = await api.installArtwork(prepared.artworkId, appId);
+      if (artwork.error)
+        throw new Error(artwork.error);
+    }
     rememberShortcut(prepared.id, appId);
     setMessage(`${strings.appBridgeReady}: ${prepared.name}`);
   };
@@ -152,7 +157,7 @@ export const AppBridgePanel = ({
   ): void => setProfile((current) => ({ ...current, ...patch }));
 
   const canInstallProfile = Boolean(profile.name && profile.executable);
-  const controlsDisabled = busy || !bridge.enabled;
+  const controlsDisabled = busy;
 
   return (
     <>
@@ -254,7 +259,7 @@ export const AppBridgePanel = ({
           <ToggleField
             label={strings.appBridgeClearSteamRuntime}
             checked={profile.clearSteamPreload}
-            disabled={!bridge.enabled}
+            disabled={busy}
             onChange={(clearSteamPreload) => updateProfile({
               clearSteamPreload,
             })}
@@ -264,7 +269,7 @@ export const AppBridgePanel = ({
           <ToggleField
             label={strings.appBridgeForceX11}
             checked={profile.forceX11}
-            disabled={!bridge.enabled}
+            disabled={busy}
             onChange={(forceX11) => updateProfile({ forceX11 })}
           />
         </PanelSectionRow>

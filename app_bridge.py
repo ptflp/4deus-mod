@@ -9,6 +9,8 @@ import shutil
 import subprocess
 from typing import Any
 
+from steam_artwork import SteamArtworkInstaller
+
 
 PROFILE_VERSION = 1
 PARSEC_APP_ID = "com.parsecgaming.parsec"
@@ -49,6 +51,8 @@ class AppBridgeManager:
         self.profile_dir = self.data_dir / "profiles"
         self.runner_source = self.plugin_root / "bin/4deus-app-bridge"
         self.runner_path = self.home / ".local/bin/4deus-app-bridge"
+        self.artwork_root = self.plugin_root / "assets/app-bridge"
+        self.artwork_installer = SteamArtworkInstaller(self.home)
 
     def status(self) -> dict[str, Any]:
         rustdesk_executable = self._rustdesk_directory() / "rustdesk"
@@ -91,7 +95,7 @@ class AppBridgeManager:
                 "apps/com.parsecgaming.parsec.png",
             ]
         )
-        return self.save_profile(
+        prepared = self.save_profile(
             {
                 "id": PARSEC_PROFILE_ID,
                 "name": "Parsec",
@@ -108,6 +112,7 @@ class AppBridgeManager:
                 "libraryPath": "",
             }
         )
+        return {**prepared, "artworkId": PARSEC_PROFILE_ID}
 
     def prepare_rustdesk(self) -> dict[str, Any]:
         application_directory = self._rustdesk_directory()
@@ -119,7 +124,7 @@ class AppBridgeManager:
             / "Applications/RustDesk/usr/share/icons/hicolor/256x256/"
             "apps/rustdesk.png"
         )
-        return self.save_profile(
+        prepared = self.save_profile(
             {
                 "id": RUSTDESK_PROFILE_ID,
                 "name": "RustDesk",
@@ -133,6 +138,36 @@ class AppBridgeManager:
                 "libraryPath": str(application_directory / "compat-libs"),
             }
         )
+        return {**prepared, "artworkId": RUSTDESK_PROFILE_ID}
+
+    def install_artwork(
+        self,
+        artwork_id: str,
+        app_id: int,
+    ) -> dict[str, Any]:
+        if artwork_id not in (PARSEC_PROFILE_ID, RUSTDESK_PROFILE_ID):
+            raise ValueError("Artwork is not available for this profile")
+        asset_directory = self.artwork_root / artwork_id
+        sources = {
+            slot: asset_directory / f"{slot}.png"
+            for slot in ("capsule", "grid", "hero", "logo")
+        }
+        missing = [
+            path.name for path in sources.values() if not path.is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                "App Bridge artwork is incomplete: "
+                + ", ".join(sorted(missing))
+            )
+        return {
+            **self.artwork_installer.install(
+                app_id,
+                sources,
+                overwrite=True,
+            ),
+            "artworkId": artwork_id,
+        }
 
     def save_profile(self, raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict):

@@ -1,6 +1,7 @@
 dist/
 node_modules/
 out/
+/bin/mangoapp-fdinfo-guard.so
 *.log
 __pycache__/
 .DS_Store
