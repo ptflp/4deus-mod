@@ -22,16 +22,17 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
         self.assets.mkdir()
         for name in (
             "capsule.png",
+            "grid.png",
             "hero.png",
             "icon.png",
             "logo.png",
-            "store-capsule.png",
         ):
             (self.assets / name).write_bytes(name.encode())
         self.manager = SteamOsApplicationManager(
             home=self.home,
             nested_desktop=self.launcher,
             asset_directory=self.assets,
+            artwork_directory=self.assets,
         )
 
     def tearDown(self):
@@ -90,7 +91,7 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
         )
         self.assertEqual(
             (grid / "777.png").read_bytes(),
-            b"store-capsule.png",
+            b"grid.png",
         )
         self.assertEqual(
             (grid / "777_hero.png").read_bytes(),
@@ -118,6 +119,15 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
             Path(result["gridDirectory"]),
             newer / "grid",
         )
+
+    def test_install_artwork_requires_the_complete_bundled_set(self):
+        (self.assets / "logo.png").unlink()
+
+        with self.assertRaisesRegex(
+            FileNotFoundError,
+            "SteamOS artwork is incomplete: logo.png",
+        ):
+            self.manager.install_artwork(888)
 
     def test_install_artwork_validates_app_id(self):
         for invalid in (True, 0, -1, 0x100000000, "42"):

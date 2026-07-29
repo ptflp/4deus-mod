@@ -3,6 +3,11 @@
 `4deus Mod` is a modular Decky Loader plugin for Steam Deck fixes and
 customizations.
 
+## Getting started
+
+Install the latest release directly from Decky Loader using the
+[Getting Started guide](docs/GETTING_STARTED.md).
+
 ## Keyboard module
 
 - Keeps the Steam keyboard above application windows when opened with a
@@ -81,8 +86,8 @@ layout and text input.
   environment.
 - Updates an existing SteamOS shortcut in place to preserve its app ID,
   controller layout, and play history.
-- Refreshes all four Steam artwork slots from the original artwork shipped
-  with the installed SteamOS whenever Add / Repair runs.
+- Refreshes all four Steam artwork slots from the bundled branded SteamOS
+  artwork whenever Add / Repair runs.
 
 ### Why dual-language labels matter
 

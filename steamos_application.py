@@ -16,16 +16,23 @@ DEFAULT_NESTED_DESKTOP = Path("/usr/bin/steamos-nested-desktop")
 DEFAULT_ASSET_DIRECTORY = Path(
     "/usr/share/applications/steam/steamos-nested-desktop"
 )
+DEFAULT_ARTWORK_DIRECTORY = (
+    Path(__file__).resolve().parent / "assets/system-tools/steamos"
+)
+
+
 class SteamOsApplicationManager:
     def __init__(
         self,
         home: Path,
         nested_desktop: Path = DEFAULT_NESTED_DESKTOP,
         asset_directory: Path = DEFAULT_ASSET_DIRECTORY,
+        artwork_directory: Path = DEFAULT_ARTWORK_DIRECTORY,
     ):
         self.home = Path(home)
         self.nested_desktop = Path(nested_desktop)
         self.asset_directory = Path(asset_directory)
+        self.artwork_directory = Path(artwork_directory)
         self.wrapper_path = self.home / ".local/bin/4deus-steamos-desktop"
         self.artwork_installer = SteamArtworkInstaller(self.home)
 
@@ -59,14 +66,21 @@ class SteamOsApplicationManager:
         }
 
     def install_artwork(self, app_id: int) -> dict[str, Any]:
+        sources = {
+            slot: self.artwork_directory / f"{slot}.png"
+            for slot in ("capsule", "grid", "hero", "logo")
+        }
+        missing = [
+            path.name for path in sources.values() if not path.is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                "SteamOS artwork is incomplete: "
+                + ", ".join(sorted(missing))
+            )
         return self.artwork_installer.install(
             app_id,
-            {
-                "capsule": self._asset("capsule.png"),
-                "grid": self._asset("store-capsule.png"),
-                "hero": self._asset("hero.png"),
-                "logo": self._asset("logo.png"),
-            },
+            sources,
             overwrite=True,
         )
 
