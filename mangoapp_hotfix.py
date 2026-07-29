@@ -77,13 +77,12 @@ class MangoHudFixManager:
             raise RuntimeError("MangoApp is not installed on this system")
 
         previous_state = self._service_state()
-        binary_changed = self._copy_library()
-        dropin_changed = self._write_dropin()
-        legacy_removed = self._remove_matching_legacy_dropin()
+        self._copy_library()
+        self._write_dropin()
+        self._remove_matching_legacy_dropin()
 
-        if binary_changed or dropin_changed or legacy_removed:
-            self._systemctl("daemon-reload")
-            self._restart_after_change(previous_state)
+        self._systemctl("daemon-reload")
+        self._restart_after_change(previous_state)
 
         return self.status()
 
@@ -97,7 +96,7 @@ class MangoHudFixManager:
         if self._remove_matching_legacy_dropin():
             removed = True
 
-        if removed:
+        if removed or self.library.is_file():
             self._systemctl("daemon-reload")
             if previous_state in {"active", "activating", "reloading"}:
                 self._systemctl("restart", SERVICE_NAME)
@@ -270,7 +269,7 @@ class MangoHudFixManager:
             self._systemctl("restart", SERVICE_NAME)
 
     def _systemctl(self, *arguments, check=True):
-        environment = os.environ.copy()
+        environment = self._systemctl_environment()
         runtime_directory = f"/run/user/{self.user_id}"
         environment["XDG_RUNTIME_DIR"] = runtime_directory
         environment["DBUS_SESSION_BUS_ADDRESS"] = (
@@ -302,6 +301,21 @@ class MangoHudFixManager:
                 f"systemctl {' '.join(arguments)} failed: {detail}"
             )
         return result
+
+    @staticmethod
+    def _systemctl_environment():
+        environment = os.environ.copy()
+        original_library_path = environment.pop(
+            "LD_LIBRARY_PATH_ORIG",
+            None,
+        )
+        if original_library_path:
+            environment["LD_LIBRARY_PATH"] = original_library_path
+        else:
+            environment.pop("LD_LIBRARY_PATH", None)
+        environment.pop("LD_PRELOAD", None)
+        environment.pop("LD_AUDIT", None)
+        return environment
 
     @staticmethod
     def _same_contents(first, second):

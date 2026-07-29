@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 import tempfile
@@ -98,6 +99,8 @@ class MangoHudFixManagerTests(unittest.TestCase):
             self.commands,
             [
                 ("is-active", "gamescope-mangoapp.service"),
+                ("daemon-reload",),
+                ("restart", "gamescope-mangoapp.service"),
                 ("is-active", "gamescope-mangoapp.service"),
             ],
         )
@@ -207,6 +210,50 @@ class MangoHudFixManagerTests(unittest.TestCase):
 
         self.assertTrue(unmanaged.exists())
         self.assertTrue(self.manager.library.exists())
+
+    def test_remove_recovers_after_dropin_was_already_deleted(self):
+        self.manager.install()
+        self.manager.dropin.unlink()
+        self.commands.clear()
+
+        result = self.manager.remove()
+
+        self.assertFalse(result["installed"])
+        self.assertFalse(self.manager.library.exists())
+        self.assertEqual(
+            self.commands,
+            [
+                ("is-active", "gamescope-mangoapp.service"),
+                ("daemon-reload",),
+                ("restart", "gamescope-mangoapp.service"),
+                ("is-active", "gamescope-mangoapp.service"),
+            ],
+        )
+
+    def test_systemctl_uses_the_original_system_library_path(self):
+        contaminated = {
+            "LD_AUDIT": "/tmp/_MEI/libaudit.so",
+            "LD_LIBRARY_PATH": "/tmp/_MEI",
+            "LD_LIBRARY_PATH_ORIG": "/usr/lib",
+            "LD_PRELOAD": "/tmp/_MEI/libpreload.so",
+        }
+        with patch.dict(os.environ, contaminated):
+            environment = self.manager._systemctl_environment()
+
+        self.assertEqual(environment["LD_LIBRARY_PATH"], "/usr/lib")
+        self.assertNotIn("LD_LIBRARY_PATH_ORIG", environment)
+        self.assertNotIn("LD_PRELOAD", environment)
+        self.assertNotIn("LD_AUDIT", environment)
+
+    def test_systemctl_removes_injected_library_path_without_original(self):
+        with patch.dict(
+            os.environ,
+            {"LD_LIBRARY_PATH": "/tmp/_MEI"},
+            clear=True,
+        ):
+            environment = self.manager._systemctl_environment()
+
+        self.assertNotIn("LD_LIBRARY_PATH", environment)
 
     def test_rejects_a_non_x86_64_library(self):
         self.source.write_bytes(b"not an elf")
