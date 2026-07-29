@@ -1,7 +1,11 @@
+import type { Attributes } from "react";
+
 import type { WindowInstance } from "./modules/keyboard/types";
 
 declare global {
   namespace JSX {
+    interface IntrinsicAttributes extends Attributes {}
+
     interface IntrinsicElements {
       [elementName: string]: unknown;
     }

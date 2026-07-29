@@ -1,6 +1,7 @@
 import { SidebarNavigation } from "@decky/ui";
 
 import { useStrings } from "../core/localization";
+import { NestedDesktopBindingsPanel } from "../modules/systemTools/NestedDesktopBindingsPanel";
 import { SystemToolsPanel } from "../modules/systemTools/SystemToolsPanel";
 import type { SystemToolsApi } from "../modules/systemTools/types";
 
@@ -22,6 +23,11 @@ export const SystemToolsSettingsRoute = ({
           identifier: "system-tools",
           title: strings.systemTools,
           content: <SystemToolsPanel api={api} />,
+        },
+        {
+          identifier: "nested-desktop-hotkeys",
+          title: strings.nestedDesktopHotkeys,
+          content: <NestedDesktopBindingsPanel api={api} />,
         },
       ]}
     />

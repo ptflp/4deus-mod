@@ -3,6 +3,9 @@ import { SidebarNavigation } from "@decky/ui";
 import { useStrings } from "../core/localization";
 import type { SettingsStore } from "../core/settings";
 import { KeyboardPanel } from "../modules/keyboard/KeyboardPanel";
+import {
+  KeyboardShortcutsPanel,
+} from "../modules/keyboard/KeyboardShortcutsPanel";
 
 interface KeyboardSettingsRouteProps {
   settings: SettingsStore;
@@ -22,6 +25,11 @@ export const KeyboardSettingsRoute = ({
           identifier: "keyboard",
           title: strings.keyboard,
           content: <KeyboardPanel settings={settings} />,
+        },
+        {
+          identifier: "keyboard-hotkeys",
+          title: strings.hotkeys,
+          content: <KeyboardShortcutsPanel settings={settings} />,
         },
       ]}
     />

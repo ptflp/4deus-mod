@@ -2,6 +2,7 @@ import {
   DropdownItem,
   PanelSectionRow,
 } from "@decky/ui";
+import { Fragment } from "react";
 
 import type { Strings } from "../../core/translations";
 import type {
@@ -86,7 +87,7 @@ export const QuickActionEditor = ({
         if (index > 0 && !tokens[index - 1])
           return null;
         return (
-          <>
+          <Fragment key={index}>
             <PanelSectionRow>
               <DropdownItem
                 label={index === 0 ? title : `${title} — ${index + 1}`}
@@ -97,7 +98,7 @@ export const QuickActionEditor = ({
                 onChange={({ data }) => updateSlot(index, data)}
               />
             </PanelSectionRow>
-          </>
+          </Fragment>
         );
       })}
     </>

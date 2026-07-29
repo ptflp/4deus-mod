@@ -43,9 +43,22 @@ except Exception:
     )
 
 try:
-    from nested_desktop_mouse import NestedDesktopMouseSupervisor
+    from nested_desktop_mouse import (
+        DEFAULT_NESTED_DESKTOP_BINDINGS,
+        NESTED_DESKTOP_BINDING_ACTIONS,
+        NESTED_DESKTOP_BINDING_SOURCES,
+        NestedDesktopMouseSupervisor,
+        normalize_nested_desktop_bindings,
+    )
 except Exception:
     NestedDesktopMouseSupervisor = None
+    DEFAULT_NESTED_DESKTOP_BINDINGS = {}
+    NESTED_DESKTOP_BINDING_ACTIONS = frozenset()
+    NESTED_DESKTOP_BINDING_SOURCES = ()
+
+    def normalize_nested_desktop_bindings(_bindings):
+        return {}
+
     logger.exception(
         "Nested Desktop mouse bridge is unavailable; "
         "other features will remain active"
@@ -208,7 +221,10 @@ class Plugin:
         (
             self.nested_desktop_mouse_enabled,
             self.nested_desktop_mouse_inertia_enabled,
+            self.nested_desktop_bindings_enabled,
+            self.nested_desktop_bindings,
         ) = self._load_nested_desktop_mouse_settings()
+        self.event_loop = None
         self.nested_desktop_mouse = (
             NestedDesktopMouseSupervisor(
                 plugin_root=PLUGIN_ROOT,
@@ -216,10 +232,14 @@ class Plugin:
                 inertia_enabled=(
                     self.nested_desktop_mouse_inertia_enabled
                 ),
+                bindings_enabled=self.nested_desktop_bindings_enabled,
+                bindings=self.nested_desktop_bindings,
+                action_callback=self._on_nested_desktop_action,
             )
             if NestedDesktopMouseSupervisor is not None
             else None
         )
+        self.nested_desktop_keyboard_visible = False
         self.input_lock = asyncio.Lock()
         self.held_key_codes = set()
         self.app_bridge = (
@@ -245,6 +265,7 @@ class Plugin:
         )
 
     async def _main(self):
+        self.event_loop = asyncio.get_running_loop()
         try:
             self.keyboard = VirtualKeyboard()
             logger.info("Created 4deus Mod uinput keyboard")
@@ -262,6 +283,7 @@ class Plugin:
         if self.keyboard is not None:
             self.keyboard.close()
             self.keyboard = None
+        self.event_loop = None
 
     async def _uninstall(self):
         await self._unload()
@@ -345,16 +367,47 @@ class Plugin:
         logger.info("Keyboard diagnostics: %s", payload[:4000])
         return True
 
+    def _on_nested_desktop_action(self, action: str):
+        if action != "SHOW_KEYBOARD":
+            return
+        loop = self.event_loop
+        emitter = getattr(decky_plugin, "emit", None)
+        if loop is None or emitter is None or loop.is_closed():
+            return
+
+        def dispatch():
+            loop.create_task(emitter("nested_desktop_action", action))
+
+        loop.call_soon_threadsafe(dispatch)
+
     async def get_nested_desktop_mouse_status(self):
         bridge = self.nested_desktop_mouse
         return {
             "available": bridge is not None,
+            "bindings": dict(self.nested_desktop_bindings),
+            "bindingsEnabled": self.nested_desktop_bindings_enabled,
             "enabled": self.nested_desktop_mouse_enabled,
             "inertiaEnabled": (
                 self.nested_desktop_mouse_inertia_enabled
             ),
             "running": bridge.running() if bridge is not None else False,
+            "suspended": self.nested_desktop_keyboard_visible,
         }
+
+    async def set_nested_desktop_keyboard_visible(self, visible: bool):
+        if not isinstance(visible, bool):
+            return False
+        if visible == self.nested_desktop_keyboard_visible:
+            return True
+        self.nested_desktop_keyboard_visible = visible
+        bridge = self.nested_desktop_mouse
+        if bridge is not None:
+            await asyncio.to_thread(bridge.set_suspended, visible)
+        logger.info(
+            "Nested Desktop input bridge %s for the Steam keyboard",
+            "paused" if visible else "resumed",
+        )
+        return True
 
     async def set_nested_desktop_mouse_enabled(self, enabled: bool):
         if not isinstance(enabled, bool):
@@ -368,6 +421,8 @@ class Plugin:
                 self._save_nested_desktop_mouse_settings,
                 enabled,
                 self.nested_desktop_mouse_inertia_enabled,
+                self.nested_desktop_bindings_enabled,
+                self.nested_desktop_bindings,
             )
             self.nested_desktop_mouse_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -405,6 +460,8 @@ class Plugin:
                 self._save_nested_desktop_mouse_settings,
                 self.nested_desktop_mouse_enabled,
                 enabled,
+                self.nested_desktop_bindings_enabled,
+                self.nested_desktop_bindings,
             )
             self.nested_desktop_mouse_inertia_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -427,9 +484,115 @@ class Plugin:
                 "error": str(error),
             }
 
+    async def set_nested_desktop_bindings_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "Bindings enabled must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                self.nested_desktop_mouse_enabled,
+                self.nested_desktop_mouse_inertia_enabled,
+                enabled,
+                self.nested_desktop_bindings,
+            )
+            self.nested_desktop_bindings_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_bindings,
+                    enabled,
+                    self.nested_desktop_bindings,
+                )
+            logger.info(
+                "Nested Desktop bindings %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception("Failed to change Nested Desktop bindings")
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    async def set_nested_desktop_binding(
+        self,
+        source: str,
+        action: str,
+    ):
+        if source not in NESTED_DESKTOP_BINDING_SOURCES:
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": f"Unknown binding source: {source}",
+            }
+        if action not in NESTED_DESKTOP_BINDING_ACTIONS:
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": f"Unknown binding action: {action}",
+            }
+
+        bindings = {
+            **self.nested_desktop_bindings,
+            source: action,
+        }
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                self.nested_desktop_mouse_enabled,
+                self.nested_desktop_mouse_inertia_enabled,
+                self.nested_desktop_bindings_enabled,
+                bindings,
+            )
+            self.nested_desktop_bindings = bindings
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_bindings,
+                    self.nested_desktop_bindings_enabled,
+                    bindings,
+                )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception("Failed to change a Nested Desktop binding")
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    async def reset_nested_desktop_bindings(self):
+        bindings = dict(DEFAULT_NESTED_DESKTOP_BINDINGS)
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                self.nested_desktop_mouse_enabled,
+                self.nested_desktop_mouse_inertia_enabled,
+                self.nested_desktop_bindings_enabled,
+                bindings,
+            )
+            self.nested_desktop_bindings = bindings
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_bindings,
+                    self.nested_desktop_bindings_enabled,
+                    bindings,
+                )
+            logger.info("Reset Nested Desktop bindings to Steam defaults")
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception("Failed to reset Nested Desktop bindings")
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
     def _load_nested_desktop_mouse_settings(
         self,
-    ) -> tuple[bool, bool]:
+    ) -> tuple[bool, bool, bool, dict[str, str]]:
         try:
             payload = json.loads(
                 self.nested_desktop_mouse_settings_path.read_text(
@@ -439,19 +602,33 @@ class Plugin:
             return (
                 payload.get("enabled", True) is not False,
                 payload.get("inertiaEnabled", True) is not False,
+                payload.get("bindingsEnabled", True) is not False,
+                normalize_nested_desktop_bindings(payload.get("bindings")),
             )
         except FileNotFoundError:
-            return True, True
+            return (
+                True,
+                True,
+                True,
+                dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
+            )
         except Exception:
             logger.exception(
                 "Failed to read the Nested Desktop mouse bridge settings"
             )
-            return True, True
+            return (
+                True,
+                True,
+                True,
+                dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
+            )
 
     def _save_nested_desktop_mouse_settings(
         self,
         enabled: bool,
         inertia_enabled: bool,
+        bindings_enabled: bool,
+        bindings: dict[str, str],
     ):
         path = self.nested_desktop_mouse_settings_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -461,6 +638,8 @@ class Plugin:
                 {
                     "enabled": enabled,
                     "inertiaEnabled": inertia_enabled,
+                    "bindingsEnabled": bindings_enabled,
+                    "bindings": normalize_nested_desktop_bindings(bindings),
                 },
                 indent=2,
             )

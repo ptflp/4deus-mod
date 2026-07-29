@@ -10,6 +10,7 @@ const getStrings = (language: string): Strings => {
   return {
     ...selected,
     keyboard: steamString("Settings_Page_Keyboard") ?? selected.keyboard,
+    hotkeys: steamString("Settings_InGame_Hotkeys") ?? selected.hotkeys,
     automatic: steamString("Broadcast_AutomaticResolution")
       ?? selected.automatic,
   };

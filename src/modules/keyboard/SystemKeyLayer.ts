@@ -1,11 +1,16 @@
 import {
   EMOJI_KEY,
+  findKeyBySystemName,
+  findNamedKey,
   isAltKey,
+  isKeyNameVisibleInLayer,
   isShiftKey,
   KEY_SELECTOR,
   languageSwitchModifiers,
   LAYOUT_KEY,
+  NATIVE_ALT_KEY,
   resolveSystemKey,
+  SYNTHETIC_ALT_KEY,
   SYNTHETIC_FUNCTION_KEY,
 } from "./systemKeys";
 import type {
@@ -34,6 +39,10 @@ const EMPTY_QUICK_ACTIONS: DeckQuickActions = {
   view: "",
   l1: "",
   r1: "",
+  l2: "",
+  r2: "",
+  l3: "",
+  r3: "",
   l4: "",
   r4: "",
   l5: "",
@@ -116,6 +125,10 @@ export class SystemKeyLayer {
     view: "none",
     l1: "none",
     r1: "none",
+    l2: "none",
+    r2: "none",
+    l3: "none",
+    r3: "none",
     l4: "none",
     r4: "none",
     l5: "none",
@@ -126,6 +139,10 @@ export class SystemKeyLayer {
     view: "",
     l1: "",
     r1: "",
+    l2: "",
+    r2: "",
+    l3: "",
+    r3: "",
     l4: "",
     r4: "",
     l5: "",
@@ -136,6 +153,10 @@ export class SystemKeyLayer {
     view: "",
     l1: "",
     r1: "",
+    l2: "",
+    r2: "",
+    l3: "",
+    r3: "",
     l4: "",
     r4: "",
     l5: "",
@@ -157,6 +178,10 @@ export class SystemKeyLayer {
   private inputQueue = Promise.resolve();
   private readonly heldBoundKeys = new Map<number, string>();
   private readonly activeBoundButtons = new Set<number>();
+  private readonly pressedBoundKeyElements = new Map<number, HTMLElement>();
+  private readonly pressedBoundKeyCounts = new Map<HTMLElement, number>();
+  private readonly boundVisualKeyCache = new Map<string, HTMLElement>();
+  private boundVisualKeyCacheLayer = -1;
   private lastSystemKey?: string;
 
   constructor(
@@ -219,6 +244,9 @@ export class SystemKeyLayer {
     this.functionLayer = false;
     this.deckButtonSecondLayerActive = false;
     this.activeBoundButtons.clear();
+    this.clearBoundKeyVisuals();
+    this.boundVisualKeyCache.clear();
+    this.boundVisualKeyCacheLayer = -1;
     this.passThroughKey = undefined;
     this.suppressNextClick = undefined;
     this.clearLanguageMenuInput();
@@ -249,6 +277,11 @@ export class SystemKeyLayer {
     this.deckButtonQuickActions = deckButtonQuickActions;
     this.deckButtonSecondLayerEnabled = deckButtonSecondLayerEnabled;
     this.deckButtonSecondLayerActions = deckButtonSecondLayerActions;
+    if (!enabled || !deckButtonBindingsEnabled) {
+      this.releaseHeldBoundKeys();
+      this.activeBoundButtons.clear();
+      this.clearBoundKeyVisuals();
+    }
     if (!enabled)
       this.languageSwitchMenu.hide();
     if (!deckButtonQuickActionsEnabled || !deckButtonSecondLayerEnabled)
@@ -1038,6 +1071,10 @@ export class SystemKeyLayer {
     detail: GamepadButtonDetail | undefined,
   ): boolean {
     const buttonCode = detail?.button;
+    if (this.isActiveBoundButtonRepeat(detail, buttonCode)) {
+      consume(event);
+      return true;
+    }
     const command = this.getBoundGamepadCommand(event, buttonCode);
     if (!command || buttonCode === undefined)
       return false;
@@ -1045,6 +1082,24 @@ export class SystemKeyLayer {
     this.activeBoundButtons.add(buttonCode);
     if (detail?.is_repeat)
       return true;
+    this.pressBoundKeyVisual(buttonCode, command);
+    this.activateBoundCommand(buttonCode, command);
+    return true;
+  }
+
+  private isActiveBoundButtonRepeat(
+    detail: GamepadButtonDetail | undefined,
+    buttonCode: number | undefined,
+  ): boolean {
+    return detail?.is_repeat === true
+      && buttonCode !== undefined
+      && this.activeBoundButtons.has(buttonCode);
+  }
+
+  private activateBoundCommand(
+    buttonCode: number,
+    command: DeckButtonCommand,
+  ): void {
     if (command.kind === "chord") {
       const chord = command.chord;
       this.queueSystemKey(
@@ -1053,19 +1108,25 @@ export class SystemKeyLayer {
         chord.withAlt,
         chord.withShift,
       );
-      return true;
+      return;
     }
     const action = command.action;
     if (HOLDABLE_BOUND_KEYS.has(action)) {
-      const alreadyHeld = Array.from(this.heldBoundKeys.values())
-        .includes(action);
+      const alreadyHeld = this.isBoundKeyHeld(action);
       this.heldBoundKeys.set(buttonCode, action);
       if (!alreadyHeld)
         this.queueBoundKeyState(action, true);
     } else {
       this.tapBoundKey(action);
     }
-    return true;
+  }
+
+  private isBoundKeyHeld(keyName: string): boolean {
+    for (const heldKey of this.heldBoundKeys.values()) {
+      if (heldKey === keyName)
+        return true;
+    }
+    return false;
   }
 
   private handleBoundGamepadButtonUp(
@@ -1075,12 +1136,13 @@ export class SystemKeyLayer {
     const buttonCode = detail?.button;
     if (buttonCode === undefined)
       return false;
+    this.releaseBoundKeyVisual(buttonCode);
     const heldKey = this.heldBoundKeys.get(buttonCode);
     if (heldKey) {
       consume(event);
       this.activeBoundButtons.delete(buttonCode);
       this.heldBoundKeys.delete(buttonCode);
-      if (!Array.from(this.heldBoundKeys.values()).includes(heldKey))
+      if (!this.isBoundKeyHeld(heldKey))
         this.queueBoundKeyState(heldKey, false);
       return true;
     }
@@ -1105,6 +1167,111 @@ export class SystemKeyLayer {
       .catch((error) => {
         console.error("[4deus Mod] Failed to set system key state", error);
       });
+  }
+
+  private pressBoundKeyVisual(
+    buttonCode: number,
+    command: DeckButtonCommand,
+  ): void {
+    this.releaseBoundKeyVisual(buttonCode);
+    const keyName = command.kind === "key"
+      ? command.action
+      : command.chord.keyName;
+    const key = this.findVisibleBoundKey(keyName);
+    if (!key)
+      return;
+    const pressedCount = this.pressedBoundKeyCounts.get(key) ?? 0;
+    this.pressedBoundKeyElements.set(buttonCode, key);
+    this.pressedBoundKeyCounts.set(key, pressedCount + 1);
+    if (pressedCount === 0)
+      key.classList.add(PRESSED_KEY_CLASS);
+  }
+
+  private releaseBoundKeyVisual(buttonCode: number): void {
+    const key = this.pressedBoundKeyElements.get(buttonCode);
+    if (!key)
+      return;
+    this.pressedBoundKeyElements.delete(buttonCode);
+    const pressedCount = this.pressedBoundKeyCounts.get(key) ?? 0;
+    if (pressedCount > 1) {
+      this.pressedBoundKeyCounts.set(key, pressedCount - 1);
+      return;
+    }
+    this.pressedBoundKeyCounts.delete(key);
+    key.classList.remove(PRESSED_KEY_CLASS);
+  }
+
+  private clearBoundKeyVisuals(): void {
+    this.pressedBoundKeyCounts.forEach((_, key) =>
+      key.classList.remove(PRESSED_KEY_CLASS));
+    this.pressedBoundKeyElements.clear();
+    this.pressedBoundKeyCounts.clear();
+  }
+
+  private findVisibleBoundKey(keyName: string): HTMLElement | undefined {
+    const keyboard = this.keyboard;
+    if (!keyboard || !this.isBoundKeyNameVisible(keyName))
+      return undefined;
+
+    this.updateBoundVisualKeyCacheLayer();
+    const key = this.getBoundVisualKey(keyboard, keyName);
+    return key && this.isVisibleElement(key) ? key : undefined;
+  }
+
+  private isBoundKeyNameVisible(keyName: string): boolean {
+    return isKeyNameVisibleInLayer(
+      keyName,
+      this.systemMode,
+      this.functionLayer,
+    );
+  }
+
+  private updateBoundVisualKeyCacheLayer(): void {
+    const layer = (this.systemMode ? 1 : 0) | (this.functionLayer ? 2 : 0);
+    if (layer === this.boundVisualKeyCacheLayer)
+      return;
+    this.boundVisualKeyCache.clear();
+    this.boundVisualKeyCacheLayer = layer;
+  }
+
+  private getBoundVisualKey(
+    keyboard: HTMLElement,
+    keyName: string,
+  ): HTMLElement | undefined {
+    let key = this.boundVisualKeyCache.get(keyName);
+    if (key && !key.isConnected) {
+      this.boundVisualKeyCache.delete(keyName);
+      key = undefined;
+    }
+    if (!key) {
+      key = this.findBoundVisualKey(keyboard, keyName);
+      if (key)
+        this.boundVisualKeyCache.set(keyName, key);
+    }
+    return key;
+  }
+
+  private findBoundVisualKey(
+    keyboard: HTMLElement,
+    keyName: string,
+  ): HTMLElement | undefined {
+    if (keyName === "KEY_LEFTCTRL")
+      return findNamedKey(keyboard, EMOJI_KEY) ?? undefined;
+    if (keyName === "KEY_LEFTALT") {
+      return findNamedKey(keyboard, SYNTHETIC_ALT_KEY)
+        ?? findNamedKey(keyboard, NATIVE_ALT_KEY)
+        ?? undefined;
+    }
+    return findKeyBySystemName(keyboard, keyName) ?? undefined;
+  }
+
+  private isVisibleElement(key: HTMLElement): boolean {
+    if (!key.isConnected || key.hidden || key.getClientRects().length === 0)
+      return false;
+    const style = key.ownerDocument.defaultView?.getComputedStyle(key);
+    return style?.display !== "none"
+      && style?.visibility !== "hidden"
+      && style?.visibility !== "collapse";
   }
 
   private releaseHeldBoundKeys(): void {

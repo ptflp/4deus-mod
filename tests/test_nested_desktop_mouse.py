@@ -1,9 +1,21 @@
 from pathlib import Path
+import os
 import struct
 import tempfile
+import threading
 import unittest
 
 from nested_desktop_mouse import (
+    BACK_BUTTON,
+    ACTION_MOUSE_LEFT,
+    ACTION_MOUSE_MIDDLE,
+    ACTION_MOUSE_RIGHT,
+    ACTION_SHOW_KEYBOARD,
+    BindingUpdate,
+    BUTTON_SOURCE_MASKS,
+    DEFAULT_NESTED_DESKTOP_BINDINGS,
+    EIS_KEY_CODES,
+    InputBindingTranslator,
     LEFT_PAD_TOUCHED,
     LEFT_TRIGGER,
     PointerUpdate,
@@ -12,16 +24,19 @@ from nested_desktop_mouse import (
     RIGHT_TRIGGER,
     TrackpadState,
     TrackpadTranslator,
+    NestedDesktopMouseRuntime,
     decode_gamescope_display,
     find_nested_desktop_session,
     find_steam_deck_hidraw,
     parse_trackpad_report,
+    should_forward_back_button,
     should_forward_pointer,
 )
 
 
 def trackpad_state(
     *,
+    back_pressed: bool = False,
     left_touched: bool = False,
     right_touched: bool = False,
     right_pressed: bool = False,
@@ -32,8 +47,14 @@ def trackpad_state(
     left_y: int = 0,
     right_x: int = 0,
     right_y: int = 0,
+    buttons: int = 0,
+    left_stick_x: int = 0,
+    left_stick_y: int = 0,
+    right_stick_x: int = 0,
+    right_stick_y: int = 0,
 ) -> TrackpadState:
     return TrackpadState(
+        back_pressed=back_pressed,
         left_touched=left_touched,
         right_touched=right_touched,
         right_pressed=right_pressed,
@@ -44,6 +65,11 @@ def trackpad_state(
         left_y=left_y,
         right_x=right_x,
         right_y=right_y,
+        buttons=buttons,
+        left_stick_x=left_stick_x,
+        left_stick_y=left_stick_y,
+        right_stick_x=right_stick_x,
+        right_stick_y=right_stick_y,
     )
 
 
@@ -61,7 +87,8 @@ class TrackpadReportTests(unittest.TestCase):
         report = bytearray(64)
         report[:3] = b"\x01\x00\x09"
         controls = (
-            LEFT_PAD_TOUCHED
+            BACK_BUTTON
+            | LEFT_PAD_TOUCHED
             | RIGHT_PAD_TOUCHED
             | RIGHT_PAD_PRESSED
             | LEFT_TRIGGER
@@ -70,6 +97,8 @@ class TrackpadReportTests(unittest.TestCase):
         report[8:12] = controls.to_bytes(4, "little")
         struct.pack_into("<hh", report, 16, 4321, -8765)
         struct.pack_into("<hh", report, 20, -1234, 5678)
+        struct.pack_into("<hh", report, 48, 12_345, -23_456)
+        struct.pack_into("<hh", report, 52, -9_876, 16_543)
         struct.pack_into("<H", report, 58, 3456)
 
         state = parse_trackpad_report(bytes(report))
@@ -77,6 +106,7 @@ class TrackpadReportTests(unittest.TestCase):
         self.assertEqual(
             state,
             trackpad_state(
+                back_pressed=True,
                 left_touched=True,
                 right_touched=True,
                 right_pressed=True,
@@ -87,6 +117,11 @@ class TrackpadReportTests(unittest.TestCase):
                 left_y=-8765,
                 right_x=-1234,
                 right_y=5678,
+                buttons=controls,
+                left_stick_x=12_345,
+                left_stick_y=-23_456,
+                right_stick_x=-9_876,
+                right_stick_y=16_543,
             ),
         )
 
@@ -95,6 +130,206 @@ class TrackpadReportTests(unittest.TestCase):
         self.assertIsNone(parse_trackpad_report(b"\x01\x00\x09"))
         self.assertIsNone(
             parse_trackpad_report(b"\x01\x00\x09" + b"\0" * 56)
+        )
+
+
+class InputBindingTranslatorTests(unittest.TestCase):
+    def test_maps_a_fresh_b_press_to_escape_state(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+
+        self.assertEqual(translator.translate(trackpad_state()), BindingUpdate())
+        self.assertEqual(
+            translator.translate(trackpad_state(buttons=BACK_BUTTON)),
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_ESC"], True),)),
+        )
+        self.assertEqual(
+            translator.translate(trackpad_state()),
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_ESC"], False),)),
+        )
+
+    def test_does_not_press_escape_when_b_was_already_held(self):
+        translator = InputBindingTranslator()
+        held = trackpad_state(buttons=BACK_BUTTON)
+        translator.translate(held)
+        translator.set_active(True)
+
+        self.assertEqual(translator.translate(held), BindingUpdate())
+        self.assertEqual(translator.translate(trackpad_state()), BindingUpdate())
+        self.assertEqual(
+            translator.translate(held),
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_ESC"], True),)),
+        )
+
+    def test_releases_escape_when_forwarding_stops(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+        translator.translate(trackpad_state(buttons=BACK_BUTTON))
+
+        self.assertEqual(
+            translator.set_active(False),
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_ESC"], False),)),
+        )
+        self.assertFalse(translator.injected_keys)
+
+    def test_shared_escape_stays_held_until_b_and_view_are_released(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+        b_and_view = BACK_BUTTON | BUTTON_SOURCE_MASKS["view"]
+
+        pressed = translator.translate(trackpad_state(buttons=b_and_view))
+        b_released = translator.translate(
+            trackpad_state(buttons=BUTTON_SOURCE_MASKS["view"])
+        )
+        released = translator.translate(trackpad_state())
+
+        self.assertEqual(
+            pressed,
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_ESC"], True),)),
+        )
+        self.assertEqual(b_released, BindingUpdate())
+        self.assertEqual(
+            released,
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_ESC"], False),)),
+        )
+
+    def test_none_removes_an_individual_binding(self):
+        translator = InputBindingTranslator({"b": "none"})
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+
+        self.assertEqual(
+            translator.translate(trackpad_state(buttons=BACK_BUTTON)),
+            BindingUpdate(),
+        )
+
+    def test_x_requests_the_steam_keyboard_on_press_only(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+        x_pressed = trackpad_state(buttons=BUTTON_SOURCE_MASKS["x"])
+
+        self.assertEqual(
+            translator.translate(x_pressed),
+            BindingUpdate(actions=(ACTION_SHOW_KEYBOARD,)),
+        )
+        self.assertEqual(translator.translate(x_pressed), BindingUpdate())
+        self.assertEqual(translator.translate(trackpad_state()), BindingUpdate())
+
+    def test_default_mouse_sources_are_aggregated(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+        r2_and_pad = (
+            BUTTON_SOURCE_MASKS["r2"]
+            | BUTTON_SOURCE_MASKS["rightPadClick"]
+        )
+
+        pressed = translator.translate(
+            trackpad_state(buttons=r2_and_pad, right_pressed=True)
+        )
+        pad_released = translator.translate(
+            trackpad_state(buttons=BUTTON_SOURCE_MASKS["r2"])
+        )
+        released = translator.translate(trackpad_state())
+
+        self.assertEqual(
+            pressed,
+            BindingUpdate(pointer=PointerUpdate(left_button=True)),
+        )
+        self.assertEqual(pad_released, BindingUpdate())
+        self.assertEqual(
+            released,
+            BindingUpdate(pointer=PointerUpdate(left_button=False)),
+        )
+
+    def test_pointer_defaults_cover_both_triggers_and_left_pad_click(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+        buttons = (
+            BUTTON_SOURCE_MASKS["l2"]
+            | BUTTON_SOURCE_MASKS["r2"]
+            | BUTTON_SOURCE_MASKS["leftPadClick"]
+        )
+
+        update = translator.translate(trackpad_state(buttons=buttons))
+
+        self.assertEqual(
+            update,
+            BindingUpdate(
+                pointer=PointerUpdate(
+                    left_button=True,
+                    right_button=True,
+                    middle_button=True,
+                )
+            ),
+        )
+
+    def test_right_pad_pressure_uses_hysteresis(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+
+        pressed = translator.translate(
+            trackpad_state(right_touched=True, right_pressure=2_100)
+        )
+        held = translator.translate(
+            trackpad_state(right_touched=True, right_pressure=1_500)
+        )
+        released = translator.translate(
+            trackpad_state(right_touched=True, right_pressure=900)
+        )
+
+        self.assertEqual(
+            pressed,
+            BindingUpdate(pointer=PointerUpdate(left_button=True)),
+        )
+        self.assertEqual(held, BindingUpdate())
+        self.assertEqual(
+            released,
+            BindingUpdate(pointer=PointerUpdate(left_button=False)),
+        )
+
+    def test_left_stick_directions_have_press_and_release_hysteresis(self):
+        translator = InputBindingTranslator()
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+
+        pressed = translator.translate(trackpad_state(left_stick_y=17_000))
+        held = translator.translate(trackpad_state(left_stick_y=13_000))
+        released = translator.translate(trackpad_state(left_stick_y=11_000))
+
+        self.assertEqual(
+            pressed,
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_UP"], True),)),
+        )
+        self.assertEqual(held, BindingUpdate())
+        self.assertEqual(
+            released,
+            BindingUpdate(key_events=((EIS_KEY_CODES["KEY_UP"], False),)),
+        )
+
+    def test_steam_defaults_include_keyboard_mouse_and_navigation(self):
+        self.assertEqual(DEFAULT_NESTED_DESKTOP_BINDINGS["a"], "KEY_ENTER")
+        self.assertEqual(DEFAULT_NESTED_DESKTOP_BINDINGS["b"], "KEY_ESC")
+        self.assertEqual(
+            DEFAULT_NESTED_DESKTOP_BINDINGS["x"],
+            ACTION_SHOW_KEYBOARD,
+        )
+        self.assertEqual(
+            DEFAULT_NESTED_DESKTOP_BINDINGS["l2"],
+            ACTION_MOUSE_RIGHT,
+        )
+        self.assertEqual(
+            DEFAULT_NESTED_DESKTOP_BINDINGS["r2"],
+            ACTION_MOUSE_LEFT,
+        )
+        self.assertEqual(
+            DEFAULT_NESTED_DESKTOP_BINDINGS["leftPadClick"],
+            ACTION_MOUSE_MIDDLE,
         )
 
 
@@ -139,6 +374,23 @@ class TrackpadTranslatorTests(unittest.TestCase):
 
         self.assertEqual(jump, PointerUpdate())
         self.assertEqual(resumed, PointerUpdate(dx=10))
+
+    def test_right_stick_moves_the_pointer_with_a_deadzone(self):
+        translator = TrackpadTranslator()
+        translator.set_active(True)
+
+        deadzone = translator.translate(
+            trackpad_state(right_stick_x=7_000)
+        )
+        moved = translator.translate(
+            trackpad_state(right_stick_x=32_767, right_stick_y=32_767)
+        )
+        stopped = translator.translate(trackpad_state())
+
+        self.assertEqual(deadzone, PointerUpdate())
+        self.assertEqual(moved, PointerUpdate(dx=18, dy=-18))
+        self.assertEqual(stopped, PointerUpdate())
+        self.assertFalse(translator.stick_active)
 
     def test_pointer_continues_with_inertia_after_a_flick(self):
         translator = TrackpadTranslator(scale=0.1)
@@ -212,108 +464,6 @@ class TrackpadTranslatorTests(unittest.TestCase):
         self.assertEqual(released, PointerUpdate())
         self.assertFalse(translator.pointer_inertia)
 
-    def test_maps_triggers_to_mouse_buttons_and_releases_on_stop(self):
-        translator = TrackpadTranslator()
-        translator.set_active(True)
-        translator.translate(trackpad_state())
-
-        pressed = translator.translate(
-            trackpad_state(left_trigger=True, right_trigger=True)
-        )
-        released = translator.set_active(False)
-
-        self.assertEqual(
-            pressed,
-            PointerUpdate(left_button=True, right_button=True),
-        )
-        self.assertEqual(
-            released,
-            PointerUpdate(left_button=False, right_button=False),
-        )
-
-    def test_maps_right_pad_press_to_left_mouse_button(self):
-        translator = TrackpadTranslator()
-        translator.set_active(True)
-        translator.translate(trackpad_state())
-
-        pressed = translator.translate(trackpad_state(right_pressed=True))
-        released = translator.translate(trackpad_state())
-
-        self.assertEqual(pressed, PointerUpdate(left_button=True))
-        self.assertEqual(released, PointerUpdate(left_button=False))
-
-    def test_maps_right_pad_pressure_to_left_mouse_button_with_hysteresis(self):
-        translator = TrackpadTranslator()
-        translator.set_active(True)
-        translator.translate(
-            trackpad_state(right_touched=True, right_pressure=500)
-        )
-
-        pressed = translator.translate(
-            trackpad_state(right_touched=True, right_pressure=2_100)
-        )
-        held = translator.translate(
-            trackpad_state(right_touched=True, right_pressure=1_500)
-        )
-        released = translator.translate(
-            trackpad_state(right_touched=True, right_pressure=900)
-        )
-
-        self.assertEqual(pressed, PointerUpdate(left_button=True))
-        self.assertEqual(held, PointerUpdate())
-        self.assertEqual(released, PointerUpdate(left_button=False))
-
-    def test_does_not_click_when_pressure_is_already_high_on_activation(self):
-        translator = TrackpadTranslator()
-        pressed = trackpad_state(
-            right_touched=True,
-            right_pressure=3_000,
-        )
-        translator.translate(pressed)
-        translator.set_active(True)
-
-        held = translator.translate(pressed)
-        released = translator.translate(trackpad_state())
-
-        self.assertEqual(held, PointerUpdate())
-        self.assertEqual(released, PointerUpdate())
-
-    def test_keeps_left_mouse_button_held_across_both_click_sources(self):
-        translator = TrackpadTranslator()
-        translator.set_active(True)
-        translator.translate(trackpad_state())
-
-        pad_pressed = translator.translate(
-            trackpad_state(right_pressed=True)
-        )
-        trigger_pressed = translator.translate(
-            trackpad_state(right_pressed=True, right_trigger=True)
-        )
-        pad_released = translator.translate(
-            trackpad_state(right_trigger=True)
-        )
-        trigger_released = translator.translate(trackpad_state())
-
-        self.assertEqual(pad_pressed, PointerUpdate(left_button=True))
-        self.assertEqual(trigger_pressed, PointerUpdate())
-        self.assertEqual(pad_released, PointerUpdate())
-        self.assertEqual(trigger_released, PointerUpdate(left_button=False))
-
-    def test_does_not_press_if_triggers_were_already_held_on_activation(self):
-        translator = TrackpadTranslator()
-        translator.translate(
-            trackpad_state(left_trigger=True, right_trigger=True)
-        )
-        translator.set_active(True)
-
-        held = translator.translate(
-            trackpad_state(left_trigger=True, right_trigger=True)
-        )
-        released = translator.translate(trackpad_state())
-
-        self.assertEqual(held, PointerUpdate())
-        self.assertEqual(released, PointerUpdate())
-
     def test_left_pad_scroll_continues_with_inertia_then_stops(self):
         translator = TrackpadTranslator(
             scroll_scale=0.1,
@@ -378,11 +528,11 @@ class TrackpadTranslatorTests(unittest.TestCase):
         self.assertEqual(stopped, PointerUpdate(scroll_stop_y=True))
         self.assertFalse(translator.scroll_inertia)
 
-    def test_idle_frames_can_be_skipped_after_initial_sync(self):
+    def test_idle_frames_can_be_skipped_immediately(self):
         translator = TrackpadTranslator()
         translator.set_active(True)
 
-        self.assertTrue(translator.needs_idle_tick)
+        self.assertFalse(translator.needs_idle_tick)
         translator.translate(trackpad_state())
 
         self.assertFalse(translator.needs_idle_tick)
@@ -486,6 +636,33 @@ class GamescopeFocusTests(unittest.TestCase):
     def test_decodes_gamescope_packed_display(self):
         self.assertEqual(decode_gamescope_display(packed_display(":1")), ":1")
 
+    def test_forwards_back_without_requiring_another_running_app(self):
+        nested_app = 3_058_091_282
+        self.assertTrue(
+            should_forward_back_button(
+                nested_app,
+                [nested_app],
+                [nested_app],
+                packed_display(":1"),
+            )
+        )
+        self.assertFalse(
+            should_forward_back_button(
+                nested_app,
+                [nested_app],
+                [nested_app],
+                packed_display(":0"),
+            )
+        )
+        self.assertFalse(
+            should_forward_back_button(
+                nested_app,
+                [632360],
+                [632360],
+                packed_display(":1"),
+            )
+        )
+
     def test_forwards_only_when_nested_desktop_is_frontmost_with_an_app(self):
         nested_app = 3_058_091_282
         self.assertTrue(
@@ -524,6 +701,26 @@ class GamescopeFocusTests(unittest.TestCase):
                 packed_display(":0"),
             )
         )
+
+
+class RuntimeSuspensionTests(unittest.TestCase):
+    def test_control_channel_pauses_and_resumes_without_restarting(self):
+        read_fd, write_fd = os.pipe()
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            control_fd=read_fd,
+        )
+        try:
+            os.write(write_fd, b"suspend\n")
+            runtime._read_control_commands()
+            self.assertTrue(runtime.suspended)
+
+            os.write(write_fd, b"resume\n")
+            runtime._read_control_commands()
+            self.assertFalse(runtime.suspended)
+        finally:
+            os.close(write_fd)
+            os.close(read_fd)
 
 
 class DiscoveryTests(unittest.TestCase):

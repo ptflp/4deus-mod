@@ -4,6 +4,7 @@ import argparse
 import ctypes
 import ctypes.util
 from dataclasses import dataclass
+import json
 import logging
 import math
 import os
@@ -17,7 +18,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Sequence
+from typing import Callable, Mapping, Sequence
 
 
 LOGGER = logging.getLogger("4deus-nested-mouse")
@@ -27,6 +28,8 @@ STEAM_UI_APP_ID = 769
 REPORT_HEADER = b"\x01\x00\x09"
 RIGHT_TRIGGER = 0x00000001
 LEFT_TRIGGER = 0x00000002
+BACK_BUTTON = 0x00000020
+LEFT_PAD_PRESSED = 0x00020000
 RIGHT_PAD_PRESSED = 0x00040000
 LEFT_PAD_TOUCHED = 0x00080000
 RIGHT_PAD_TOUCHED = 0x00100000
@@ -50,11 +53,15 @@ SCROLL_VELOCITY_BLEND = 0.55
 SCROLL_INERTIA_DECAY = 0.90
 SCROLL_INERTIA_START = 0.35
 SCROLL_INERTIA_STOP = 0.01
+RIGHT_STICK_DEADZONE = 8_000
+RIGHT_STICK_MAX_SPEED = 18.0
 INPUT_FRAME_INTERVAL = 1 / 60
 FOCUS_CHECK_INTERVAL = 0.25
 DISCOVERY_INTERVAL = 5.0
+KEYBOARD_DEVICE_GRACE = 0.5
 
 EI_DEVICE_CAP_POINTER = 1 << 0
+EI_DEVICE_CAP_KEYBOARD = 1 << 2
 EI_DEVICE_CAP_SCROLL = 1 << 4
 EI_DEVICE_CAP_BUTTON = 1 << 5
 EI_EVENT_DISCONNECT = 2
@@ -65,7 +72,192 @@ EI_EVENT_DEVICE_PAUSED = 7
 EI_EVENT_DEVICE_RESUMED = 8
 BTN_LEFT = 0x110
 BTN_RIGHT = 0x111
+BTN_MIDDLE = 0x112
+KEYBOARD_PORTAL_CAPABILITY = 1
 POINTER_PORTAL_CAPABILITY = 2
+LEFT_STICK_PRESS_THRESHOLD = 16_000
+LEFT_STICK_RELEASE_THRESHOLD = 12_000
+
+ACTION_NONE = "none"
+ACTION_SHOW_KEYBOARD = "SHOW_KEYBOARD"
+ACTION_MOUSE_LEFT = "MOUSE_LEFT"
+ACTION_MOUSE_RIGHT = "MOUSE_RIGHT"
+ACTION_MOUSE_MIDDLE = "MOUSE_MIDDLE"
+
+EIS_KEY_CODES = {
+    "KEY_ESC": 1,
+    "KEY_1": 2,
+    "KEY_2": 3,
+    "KEY_3": 4,
+    "KEY_4": 5,
+    "KEY_5": 6,
+    "KEY_6": 7,
+    "KEY_7": 8,
+    "KEY_8": 9,
+    "KEY_9": 10,
+    "KEY_0": 11,
+    "KEY_MINUS": 12,
+    "KEY_EQUAL": 13,
+    "KEY_BACKSPACE": 14,
+    "KEY_TAB": 15,
+    "KEY_Q": 16,
+    "KEY_W": 17,
+    "KEY_E": 18,
+    "KEY_R": 19,
+    "KEY_T": 20,
+    "KEY_Y": 21,
+    "KEY_U": 22,
+    "KEY_I": 23,
+    "KEY_O": 24,
+    "KEY_P": 25,
+    "KEY_LEFTBRACE": 26,
+    "KEY_RIGHTBRACE": 27,
+    "KEY_ENTER": 28,
+    "KEY_LEFTCTRL": 29,
+    "KEY_A": 30,
+    "KEY_S": 31,
+    "KEY_D": 32,
+    "KEY_F": 33,
+    "KEY_G": 34,
+    "KEY_H": 35,
+    "KEY_J": 36,
+    "KEY_K": 37,
+    "KEY_L": 38,
+    "KEY_SEMICOLON": 39,
+    "KEY_APOSTROPHE": 40,
+    "KEY_GRAVE": 41,
+    "KEY_LEFTSHIFT": 42,
+    "KEY_BACKSLASH": 43,
+    "KEY_Z": 44,
+    "KEY_X": 45,
+    "KEY_C": 46,
+    "KEY_V": 47,
+    "KEY_B": 48,
+    "KEY_N": 49,
+    "KEY_M": 50,
+    "KEY_COMMA": 51,
+    "KEY_DOT": 52,
+    "KEY_SLASH": 53,
+    "KEY_LEFTALT": 56,
+    "KEY_SPACE": 57,
+    "KEY_F1": 59,
+    "KEY_F2": 60,
+    "KEY_F3": 61,
+    "KEY_F4": 62,
+    "KEY_F5": 63,
+    "KEY_F6": 64,
+    "KEY_F7": 65,
+    "KEY_F8": 66,
+    "KEY_F9": 67,
+    "KEY_F10": 68,
+    "KEY_F11": 87,
+    "KEY_F12": 88,
+    "KEY_HOME": 102,
+    "KEY_UP": 103,
+    "KEY_PAGEUP": 104,
+    "KEY_LEFT": 105,
+    "KEY_RIGHT": 106,
+    "KEY_END": 107,
+    "KEY_DOWN": 108,
+    "KEY_PAGEDOWN": 109,
+    "KEY_INSERT": 110,
+    "KEY_DELETE": 111,
+    "KEY_LEFTMETA": 125,
+}
+
+NESTED_DESKTOP_BINDING_SOURCES = (
+    "a",
+    "b",
+    "x",
+    "y",
+    "dpadUp",
+    "dpadRight",
+    "dpadLeft",
+    "dpadDown",
+    "leftStickUp",
+    "leftStickRight",
+    "leftStickLeft",
+    "leftStickDown",
+    "view",
+    "menu",
+    "l1",
+    "r1",
+    "l2",
+    "r2",
+    "l3",
+    "r3",
+    "l4",
+    "r4",
+    "l5",
+    "r5",
+    "leftPadClick",
+    "rightPadClick",
+)
+
+DEFAULT_NESTED_DESKTOP_BINDINGS = {
+    "a": "KEY_ENTER",
+    "b": "KEY_ESC",
+    "x": ACTION_SHOW_KEYBOARD,
+    "y": "KEY_SPACE",
+    "dpadUp": "KEY_UP",
+    "dpadRight": "KEY_RIGHT",
+    "dpadLeft": "KEY_LEFT",
+    "dpadDown": "KEY_DOWN",
+    "leftStickUp": "KEY_UP",
+    "leftStickRight": "KEY_RIGHT",
+    "leftStickLeft": "KEY_LEFT",
+    "leftStickDown": "KEY_DOWN",
+    "view": "KEY_ESC",
+    "menu": "KEY_TAB",
+    "l1": "KEY_LEFTCTRL",
+    "r1": "KEY_LEFTALT",
+    "l2": ACTION_MOUSE_RIGHT,
+    "r2": ACTION_MOUSE_LEFT,
+    "l3": ACTION_NONE,
+    "r3": ACTION_MOUSE_LEFT,
+    "l4": "KEY_LEFTSHIFT",
+    "r4": "KEY_PAGEUP",
+    "l5": "KEY_LEFTMETA",
+    "r5": "KEY_PAGEDOWN",
+    "leftPadClick": ACTION_MOUSE_MIDDLE,
+    "rightPadClick": ACTION_MOUSE_LEFT,
+}
+
+NESTED_DESKTOP_BINDING_ACTIONS = frozenset(
+    (
+        ACTION_NONE,
+        ACTION_SHOW_KEYBOARD,
+        ACTION_MOUSE_LEFT,
+        ACTION_MOUSE_RIGHT,
+        ACTION_MOUSE_MIDDLE,
+        *EIS_KEY_CODES,
+    )
+)
+
+BUTTON_SOURCE_MASKS = {
+    "r2": 1 << 0,
+    "l2": 1 << 1,
+    "r1": 1 << 2,
+    "l1": 1 << 3,
+    "y": 1 << 4,
+    "b": 1 << 5,
+    "x": 1 << 6,
+    "a": 1 << 7,
+    "dpadUp": 1 << 8,
+    "dpadRight": 1 << 9,
+    "dpadLeft": 1 << 10,
+    "dpadDown": 1 << 11,
+    "view": 1 << 12,
+    "menu": 1 << 14,
+    "l5": 1 << 15,
+    "r5": 1 << 16,
+    "leftPadClick": 1 << 17,
+    "rightPadClick": 1 << 18,
+    "l3": 1 << 22,
+    "r3": 1 << 26,
+    "l4": 1 << 41,
+    "r4": 1 << 42,
+}
 
 
 @dataclass(frozen=True)
@@ -79,6 +271,7 @@ class NestedDesktopSession:
 
 @dataclass(frozen=True)
 class TrackpadState:
+    back_pressed: bool
     left_touched: bool
     right_touched: bool
     right_pressed: bool
@@ -89,6 +282,11 @@ class TrackpadState:
     left_y: int
     right_x: int
     right_y: int
+    buttons: int = 0
+    left_stick_x: int = 0
+    left_stick_y: int = 0
+    right_stick_x: int = 0
+    right_stick_y: int = 0
 
 
 @dataclass(frozen=True)
@@ -97,6 +295,7 @@ class PointerUpdate:
     dy: int = 0
     left_button: bool | None = None
     right_button: bool | None = None
+    middle_button: bool | None = None
     scroll_x: float = 0.0
     scroll_y: float = 0.0
     scroll_stop_x: bool = False
@@ -109,6 +308,7 @@ class PointerUpdate:
             and self.dy == 0
             and self.left_button is None
             and self.right_button is None
+            and self.middle_button is None
             and self.scroll_x == 0
             and self.scroll_y == 0
             and not self.scroll_stop_x
@@ -122,15 +322,19 @@ def parse_trackpad_report(report: bytes) -> TrackpadState | None:
         or report[:3] != REPORT_HEADER
     ):
         return None
-    controls = int.from_bytes(report[8:12], "little")
+    buttons = int.from_bytes(report[8:16], "little")
+    controls = buttons & 0xFFFFFFFF
     left_x, left_y = struct.unpack_from("<hh", report, LEFT_PAD_X_OFFSET)
     right_x, right_y = struct.unpack_from("<hh", report, RIGHT_PAD_X_OFFSET)
+    left_stick_x, left_stick_y = struct.unpack_from("<hh", report, 48)
+    right_stick_x, right_stick_y = struct.unpack_from("<hh", report, 52)
     right_pressure = struct.unpack_from(
         "<H",
         report,
         RIGHT_PAD_PRESSURE_OFFSET,
     )[0]
     return TrackpadState(
+        back_pressed=bool(controls & BACK_BUTTON),
         left_touched=bool(controls & LEFT_PAD_TOUCHED),
         right_touched=bool(controls & RIGHT_PAD_TOUCHED),
         right_pressed=bool(controls & RIGHT_PAD_PRESSED),
@@ -141,6 +345,11 @@ def parse_trackpad_report(report: bytes) -> TrackpadState | None:
         left_y=left_y,
         right_x=right_x,
         right_y=right_y,
+        buttons=buttons,
+        left_stick_x=left_stick_x,
+        left_stick_y=left_stick_y,
+        right_stick_x=right_stick_x,
+        right_stick_y=right_stick_y,
     )
 
 
@@ -158,14 +367,226 @@ def should_forward_pointer(
     focusable_apps: Sequence[int],
     mouse_focus_display: Sequence[int],
 ) -> bool:
+    if not should_forward_back_button(
+        session_app_id,
+        focused_app,
+        focused_gfx_app,
+        mouse_focus_display,
+    ):
+        return False
+    ignored = {0, STEAM_UI_APP_ID, session_app_id}
+    return any(app_id not in ignored for app_id in focusable_apps)
+
+
+def should_forward_back_button(
+    session_app_id: int,
+    focused_app: Sequence[int],
+    focused_gfx_app: Sequence[int],
+    mouse_focus_display: Sequence[int],
+) -> bool:
     if not focused_app or focused_app[0] != session_app_id:
         return False
     if not focused_gfx_app or focused_gfx_app[0] != session_app_id:
         return False
     if decode_gamescope_display(mouse_focus_display) in ("", ":0"):
         return False
-    ignored = {0, STEAM_UI_APP_ID, session_app_id}
-    return any(app_id not in ignored for app_id in focusable_apps)
+    return True
+
+
+@dataclass(frozen=True)
+class BindingUpdate:
+    key_events: tuple[tuple[int, bool], ...] = ()
+    pointer: PointerUpdate = PointerUpdate()
+    actions: tuple[str, ...] = ()
+
+    @property
+    def empty(self) -> bool:
+        return not self.key_events and self.pointer.empty and not self.actions
+
+
+def normalize_nested_desktop_bindings(
+    bindings: Mapping[str, object] | None,
+) -> dict[str, str]:
+    normalized = dict(DEFAULT_NESTED_DESKTOP_BINDINGS)
+    if not isinstance(bindings, Mapping):
+        return normalized
+    for source in NESTED_DESKTOP_BINDING_SOURCES:
+        action = bindings.get(source)
+        if isinstance(action, str) and action in NESTED_DESKTOP_BINDING_ACTIONS:
+            normalized[source] = action
+    return normalized
+
+
+class InputBindingTranslator:
+    def __init__(
+        self,
+        bindings: Mapping[str, object] | None = None,
+    ):
+        self.bindings = normalize_nested_desktop_bindings(bindings)
+        self.active = False
+        self.last_sources = {
+            source: False for source in NESTED_DESKTOP_BINDING_SOURCES
+        }
+        self.injected_keys: set[int] = set()
+        self.injected_mouse: set[str] = set()
+        self.right_pressure_pressed = False
+        self.needs_sync = False
+
+    @property
+    def has_key_actions(self) -> bool:
+        return any(action in EIS_KEY_CODES for action in self.bindings.values())
+
+    @property
+    def has_pointer_actions(self) -> bool:
+        return any(
+            action in (
+                ACTION_MOUSE_LEFT,
+                ACTION_MOUSE_RIGHT,
+                ACTION_MOUSE_MIDDLE,
+            )
+            for action in self.bindings.values()
+        )
+
+    @property
+    def has_actions(self) -> bool:
+        return any(
+            action != ACTION_NONE for action in self.bindings.values()
+        )
+
+    def set_active(self, active: bool) -> BindingUpdate:
+        if active == self.active:
+            return BindingUpdate()
+        self.active = active
+        self.needs_sync = active
+        if active:
+            return BindingUpdate()
+        key_events = tuple(
+            (key_code, False) for key_code in sorted(self.injected_keys)
+        )
+        pointer = self._mouse_update(set())
+        self.injected_keys.clear()
+        self.injected_mouse.clear()
+        self.right_pressure_pressed = False
+        self.last_sources = {
+            source: False for source in NESTED_DESKTOP_BINDING_SOURCES
+        }
+        return BindingUpdate(key_events=key_events, pointer=pointer)
+
+    def _stick_pressed(
+        self,
+        value: int,
+        positive: bool,
+        was_pressed: bool,
+    ) -> bool:
+        threshold = (
+            LEFT_STICK_RELEASE_THRESHOLD
+            if was_pressed
+            else LEFT_STICK_PRESS_THRESHOLD
+        )
+        return value >= threshold if positive else value <= -threshold
+
+    def _source_states(self, state: TrackpadState) -> dict[str, bool]:
+        states = {
+            source: bool(state.buttons & mask)
+            for source, mask in BUTTON_SOURCE_MASKS.items()
+        }
+        if (
+            not state.right_touched
+            or state.right_pressure <= RIGHT_PAD_RELEASE_THRESHOLD
+        ):
+            self.right_pressure_pressed = False
+        elif state.right_pressure >= RIGHT_PAD_PRESS_THRESHOLD:
+            self.right_pressure_pressed = True
+        states["rightPadClick"] = bool(
+            states["rightPadClick"] or self.right_pressure_pressed
+        )
+        stick_values = {
+            "leftStickUp": (state.left_stick_y, True),
+            "leftStickRight": (state.left_stick_x, True),
+            "leftStickLeft": (state.left_stick_x, False),
+            "leftStickDown": (state.left_stick_y, False),
+        }
+        for source, (value, positive) in stick_values.items():
+            states[source] = self._stick_pressed(
+                value,
+                positive,
+                self.last_sources[source],
+            )
+        return {
+            source: states.get(source, False)
+            for source in NESTED_DESKTOP_BINDING_SOURCES
+        }
+
+    def _mouse_update(self, desired: set[str]) -> PointerUpdate:
+        values: dict[str, bool | None] = {
+            ACTION_MOUSE_LEFT: None,
+            ACTION_MOUSE_RIGHT: None,
+            ACTION_MOUSE_MIDDLE: None,
+        }
+        for action in values:
+            was_pressed = action in self.injected_mouse
+            is_pressed = action in desired
+            if was_pressed != is_pressed:
+                values[action] = is_pressed
+        return PointerUpdate(
+            left_button=values[ACTION_MOUSE_LEFT],
+            right_button=values[ACTION_MOUSE_RIGHT],
+            middle_button=values[ACTION_MOUSE_MIDDLE],
+        )
+
+    def translate(self, state: TrackpadState) -> BindingUpdate:
+        sources = self._source_states(state)
+        if not self.active:
+            self.last_sources = sources
+            return BindingUpdate()
+        if self.needs_sync:
+            self.needs_sync = False
+            self.last_sources = sources
+            return BindingUpdate()
+
+        desired_keys = {
+            EIS_KEY_CODES[action]
+            for source, pressed in sources.items()
+            if pressed
+            for action in (self.bindings[source],)
+            if action in EIS_KEY_CODES
+        }
+        desired_mouse = {
+            action
+            for source, pressed in sources.items()
+            if pressed
+            for action in (self.bindings[source],)
+            if action in (
+                ACTION_MOUSE_LEFT,
+                ACTION_MOUSE_RIGHT,
+                ACTION_MOUSE_MIDDLE,
+            )
+        }
+        key_events = tuple(
+            (key_code, False)
+            for key_code in sorted(self.injected_keys - desired_keys)
+        ) + tuple(
+            (key_code, True)
+            for key_code in sorted(desired_keys - self.injected_keys)
+        )
+        actions = tuple(
+            ACTION_SHOW_KEYBOARD
+            for source, pressed in sources.items()
+            if (
+                pressed
+                and not self.last_sources[source]
+                and self.bindings[source] == ACTION_SHOW_KEYBOARD
+            )
+        )
+        pointer = self._mouse_update(desired_mouse)
+        self.last_sources = sources
+        self.injected_keys = desired_keys
+        self.injected_mouse = desired_mouse
+        return BindingUpdate(
+            key_events=key_events,
+            pointer=pointer,
+            actions=actions,
+        )
 
 
 class TrackpadTranslator:
@@ -187,6 +608,9 @@ class TrackpadTranslator:
         self.previous_left_position: tuple[int, int] | None = None
         self.fraction_x = 0.0
         self.fraction_y = 0.0
+        self.stick_fraction_x = 0.0
+        self.stick_fraction_y = 0.0
+        self.stick_active = False
         self.pointer_velocity_x = 0.0
         self.pointer_velocity_y = 0.0
         self.pointer_inertia = False
@@ -194,13 +618,7 @@ class TrackpadTranslator:
         self.scroll_inertia = False
         self.scroll_pending_y = 0
         self.scroll_active = False
-        self.last_left_trigger = False
-        self.last_left_click = False
-        self.right_pressure_pressed = False
-        self.injected_left_button = False
-        self.injected_right_button = False
         self.scrolling = False
-        self.needs_button_sync = True
 
     def set_active(self, active: bool) -> PointerUpdate:
         if active == self.active:
@@ -212,6 +630,9 @@ class TrackpadTranslator:
         self.previous_left_position = None
         self.fraction_x = 0.0
         self.fraction_y = 0.0
+        self.stick_fraction_x = 0.0
+        self.stick_fraction_y = 0.0
+        self.stick_active = False
         self.pointer_velocity_x = 0.0
         self.pointer_velocity_y = 0.0
         self.pointer_inertia = False
@@ -219,20 +640,10 @@ class TrackpadTranslator:
         self.scroll_inertia = False
         self.scroll_pending_y = 0
         self.scroll_active = False
-        self.needs_button_sync = True
         update = PointerUpdate(
-            left_button=(
-                False if not active and self.injected_left_button else None
-            ),
-            right_button=(
-                False if not active and self.injected_right_button else None
-            ),
             scroll_stop_y=not active and was_scrolling,
         )
         if not active:
-            self.injected_left_button = False
-            self.injected_right_button = False
-            self.right_pressure_pressed = False
             self.scrolling = False
         return update
 
@@ -311,6 +722,37 @@ class TrackpadTranslator:
             self.pointer_inertia = False
         return result
 
+    def _stick_axis_motion(self, value: int) -> float:
+        magnitude = abs(value)
+        if magnitude <= RIGHT_STICK_DEADZONE:
+            return 0.0
+        normalized = min(
+            1.0,
+            (magnitude - RIGHT_STICK_DEADZONE)
+            / (32_767 - RIGHT_STICK_DEADZONE),
+        )
+        motion = RIGHT_STICK_MAX_SPEED * normalized * normalized
+        return math.copysign(motion, value)
+
+    def _translate_stick_pointer(
+        self,
+        state: TrackpadState,
+    ) -> tuple[int, int]:
+        move_x = self._stick_axis_motion(state.right_stick_x)
+        move_y = -self._stick_axis_motion(state.right_stick_y)
+        self.stick_active = bool(move_x or move_y)
+        if not self.stick_active:
+            self.stick_fraction_x = 0.0
+            self.stick_fraction_y = 0.0
+            return 0, 0
+        self.stick_fraction_x += move_x
+        self.stick_fraction_y += move_y
+        dx = math.trunc(self.stick_fraction_x)
+        dy = math.trunc(self.stick_fraction_y)
+        self.stick_fraction_x -= dx
+        self.stick_fraction_y -= dy
+        return dx, dy
+
     def _translate_scroll(self, state: TrackpadState) -> tuple[float, bool]:
         if state.left_touched:
             if self.previous_left_position is None:
@@ -381,62 +823,19 @@ class TrackpadTranslator:
             return 0.0, True
         return 0.0, False
 
-    def _pressure_click(self, state: TrackpadState) -> bool:
-        if (
-            not state.right_touched
-            or state.right_pressure <= RIGHT_PAD_RELEASE_THRESHOLD
-        ):
-            self.right_pressure_pressed = False
-        elif state.right_pressure >= RIGHT_PAD_PRESS_THRESHOLD:
-            self.right_pressure_pressed = True
-        return self.right_pressure_pressed
-
     def translate(self, state: TrackpadState) -> PointerUpdate:
-        pressure_click = self._pressure_click(state)
-        left_click = (
-            state.right_trigger
-            or state.right_pressed
-            or pressure_click
-        )
         if not self.active:
             self.previous_right_position = None
             self.previous_left_position = None
-            self.last_left_trigger = state.left_trigger
-            self.last_left_click = left_click
             return PointerUpdate()
 
-        left_button: bool | None = None
-        right_button: bool | None = None
-        if self.needs_button_sync:
-            self.last_left_trigger = state.left_trigger
-            self.last_left_click = left_click
-            self.needs_button_sync = False
-        else:
-            if left_click != self.last_left_click:
-                self.last_left_click = left_click
-                if left_click:
-                    self.injected_left_button = True
-                    left_button = True
-                elif self.injected_left_button:
-                    self.injected_left_button = False
-                    left_button = False
-            if state.left_trigger != self.last_left_trigger:
-                self.last_left_trigger = state.left_trigger
-                if state.left_trigger:
-                    self.injected_right_button = True
-                    right_button = True
-                elif self.injected_right_button:
-                    self.injected_right_button = False
-                    right_button = False
-
         dx, dy = self._translate_pointer(state)
+        stick_dx, stick_dy = self._translate_stick_pointer(state)
         scroll_y, scroll_stop_y = self._translate_scroll(state)
 
         return PointerUpdate(
-            dx=dx,
-            dy=dy,
-            left_button=left_button,
-            right_button=right_button,
+            dx=dx + stick_dx,
+            dy=dy + stick_dy,
             scroll_y=scroll_y,
             scroll_stop_y=scroll_stop_y,
         )
@@ -444,16 +843,11 @@ class TrackpadTranslator:
     @property
     def needs_idle_tick(self) -> bool:
         return bool(
-            self.needs_button_sync
-            or self.previous_right_position is not None
+            self.previous_right_position is not None
             or self.previous_left_position is not None
             or self.pointer_inertia
             or self.scroll_inertia
-            or self.last_left_trigger
-            or self.last_left_click
-            or self.right_pressure_pressed
-            or self.injected_left_button
-            or self.injected_right_button
+            or self.stick_active
             or self.scrolling
         )
 
@@ -765,8 +1159,11 @@ class EisConnection:
         self.cookie = None
         self.ei = None
         self.pointer_device = None
+        self.keyboard_device = None
         self.ready = False
+        self.keyboard_ready = False
         self.emulating = False
+        self.keyboard_emulating = False
         self.sequence = 0
         self.lib = ctypes.CDLL(
             ctypes.util.find_library("ei") or "libei.so.1"
@@ -785,7 +1182,10 @@ class EisConnection:
                 "org.kde.KWin.EIS.RemoteDesktop",
             )
             fd_object, cookie = self.remote.connectToEIS(
-                dbus.Int32(POINTER_PORTAL_CAPABILITY)
+                dbus.Int32(
+                    KEYBOARD_PORTAL_CAPABILITY
+                    | POINTER_PORTAL_CAPABILITY
+                )
             )
             backend_fd = fd_object.take()
             self.cookie = int(cookie)
@@ -795,7 +1195,7 @@ class EisConnection:
                 raise RuntimeError("Cannot create a libei sender")
             self.lib.ei_configure_name(
                 self.ei,
-                b"4deus Mod Nested Desktop pointer",
+                b"4deus Mod Nested Desktop input",
             )
             result = self.lib.ei_setup_backend_fd(self.ei, backend_fd)
             if result != 0:
@@ -856,6 +1256,11 @@ class EisConnection:
             ctypes.c_uint32,
             ctypes.c_bool,
         ]
+        self.lib.ei_device_keyboard_key.argtypes = [
+            pointer,
+            ctypes.c_uint32,
+            ctypes.c_bool,
+        ]
         self.lib.ei_device_scroll_delta.argtypes = [
             pointer,
             ctypes.c_double,
@@ -877,11 +1282,28 @@ class EisConnection:
 
     def _wait_until_ready(self):
         deadline = time.monotonic() + 3
+        pointer_ready_since = None
         while time.monotonic() < deadline:
             self.dispatch()
-            if self.ready:
+            if self.ready and self.keyboard_ready:
                 return
+            if self.ready:
+                now = time.monotonic()
+                if pointer_ready_since is None:
+                    pointer_ready_since = now
+                elif now - pointer_ready_since >= KEYBOARD_DEVICE_GRACE:
+                    LOGGER.warning(
+                        "KWin did not provide an EIS keyboard device; "
+                        "pointer forwarding remains available"
+                    )
+                    return
             select.select([self.lib.ei_get_fd(self.ei)], [], [], 0.1)
+        if self.ready:
+            LOGGER.warning(
+                "KWin did not provide an EIS keyboard device; "
+                "pointer forwarding remains available"
+            )
+            return
         raise RuntimeError("KWin did not provide an EIS pointer device")
 
     def dispatch(self):
@@ -907,6 +1329,7 @@ class EisConnection:
             self.lib.ei_seat_bind_capabilities(
                 self.lib.ei_event_get_seat(event),
                 ctypes.c_int(EI_DEVICE_CAP_POINTER),
+                ctypes.c_int(EI_DEVICE_CAP_KEYBOARD),
                 ctypes.c_int(EI_DEVICE_CAP_SCROLL),
                 ctypes.c_int(EI_DEVICE_CAP_BUTTON),
                 ctypes.c_void_p(),
@@ -930,21 +1353,41 @@ class EisConnection:
                 )
             ):
                 self.pointer_device = self.lib.ei_device_ref(candidate)
+            if (
+                self.keyboard_device is None
+                and self.lib.ei_device_has_capability(
+                    candidate,
+                    EI_DEVICE_CAP_KEYBOARD,
+                )
+            ):
+                self.keyboard_device = self.lib.ei_device_ref(candidate)
             return
         event_device = self.lib.ei_event_get_device(event)
-        if event_device != self.pointer_device:
-            return
         if event_type == EI_EVENT_DEVICE_RESUMED:
-            self.ready = True
+            if event_device == self.pointer_device:
+                self.ready = True
+            if event_device == self.keyboard_device:
+                self.keyboard_ready = True
         elif event_type == EI_EVENT_DEVICE_PAUSED:
-            self.ready = False
-            self.emulating = False
+            if event_device == self.pointer_device:
+                self.ready = False
+                self.emulating = False
+            if event_device == self.keyboard_device:
+                self.keyboard_ready = False
+                self.keyboard_emulating = False
         elif event_type == EI_EVENT_DEVICE_REMOVED:
-            self.ready = False
-            self.emulating = False
-            self.pointer_device = self.lib.ei_device_unref(
-                self.pointer_device
-            )
+            if event_device == self.pointer_device:
+                self.ready = False
+                self.emulating = False
+                self.pointer_device = self.lib.ei_device_unref(
+                    self.pointer_device
+                )
+            if event_device == self.keyboard_device:
+                self.keyboard_ready = False
+                self.keyboard_emulating = False
+                self.keyboard_device = self.lib.ei_device_unref(
+                    self.keyboard_device
+                )
 
     def set_emulating(self, active: bool) -> bool:
         self.dispatch()
@@ -953,19 +1396,50 @@ class EisConnection:
         if active:
             if not self.ready or self.pointer_device is None:
                 return False
-            self.sequence = (self.sequence + 1) & 0xFFFFFFFF
-            if self.sequence == 0:
-                self.sequence = 1
-            self.lib.ei_device_start_emulating(
-                self.pointer_device,
-                self.sequence,
-            )
+            if (
+                self.pointer_device != self.keyboard_device
+                or not self.keyboard_emulating
+            ):
+                self._start_emulating(self.pointer_device)
             self.emulating = True
         elif self.pointer_device is not None:
-            self.lib.ei_device_stop_emulating(self.pointer_device)
+            if (
+                self.pointer_device != self.keyboard_device
+                or not self.keyboard_emulating
+            ):
+                self.lib.ei_device_stop_emulating(self.pointer_device)
             self.emulating = False
         self.lib.ei_dispatch(self.ei)
         return self.ready
+
+    def set_keyboard_emulating(self, active: bool) -> bool:
+        self.dispatch()
+        if active == self.keyboard_emulating:
+            return self.keyboard_ready
+        if active:
+            if not self.keyboard_ready or self.keyboard_device is None:
+                return False
+            if (
+                self.keyboard_device != self.pointer_device
+                or not self.emulating
+            ):
+                self._start_emulating(self.keyboard_device)
+            self.keyboard_emulating = True
+        elif self.keyboard_device is not None:
+            if (
+                self.keyboard_device != self.pointer_device
+                or not self.emulating
+            ):
+                self.lib.ei_device_stop_emulating(self.keyboard_device)
+            self.keyboard_emulating = False
+        self.lib.ei_dispatch(self.ei)
+        return self.keyboard_ready
+
+    def _start_emulating(self, device):
+        self.sequence = (self.sequence + 1) & 0xFFFFFFFF
+        if self.sequence == 0:
+            self.sequence = 1
+        self.lib.ei_device_start_emulating(device, self.sequence)
 
     def inject(self, update: PointerUpdate):
         if (
@@ -1005,8 +1479,32 @@ class EisConnection:
                 BTN_RIGHT,
                 update.right_button,
             )
+        if update.middle_button is not None:
+            self.lib.ei_device_button_button(
+                self.pointer_device,
+                BTN_MIDDLE,
+                update.middle_button,
+            )
         self.lib.ei_device_frame(
             self.pointer_device,
+            self.lib.ei_now(self.ei),
+        )
+        self.lib.ei_dispatch(self.ei)
+
+    def inject_key(self, key_code: int, pressed: bool):
+        if (
+            not self.keyboard_ready
+            or not self.keyboard_emulating
+            or self.keyboard_device is None
+        ):
+            return
+        self.lib.ei_device_keyboard_key(
+            self.keyboard_device,
+            key_code,
+            pressed,
+        )
+        self.lib.ei_device_frame(
+            self.keyboard_device,
             self.lib.ei_now(self.ei),
         )
         self.lib.ei_dispatch(self.ei)
@@ -1014,8 +1512,17 @@ class EisConnection:
     def close(self):
         if self.ei is not None:
             try:
-                if self.emulating and self.pointer_device is not None:
-                    self.lib.ei_device_stop_emulating(self.pointer_device)
+                active_devices = {
+                    device
+                    for device, active in (
+                        (self.pointer_device, self.emulating),
+                        (self.keyboard_device, self.keyboard_emulating),
+                    )
+                    if device is not None and active
+                }
+                for device in active_devices:
+                    self.lib.ei_device_stop_emulating(device)
+                if active_devices:
                     self.lib.ei_dispatch(self.ei)
             except Exception:
                 pass
@@ -1023,7 +1530,15 @@ class EisConnection:
                 self.pointer_device = self.lib.ei_device_unref(
                     self.pointer_device
                 )
+            if self.keyboard_device is not None:
+                self.keyboard_device = self.lib.ei_device_unref(
+                    self.keyboard_device
+                )
             self.ei = self.lib.ei_unref(self.ei)
+        self.ready = False
+        self.keyboard_ready = False
+        self.emulating = False
+        self.keyboard_emulating = False
         if self.remote is not None and self.cookie is not None:
             try:
                 self.remote.disconnect(self.dbus.Int32(self.cookie))
@@ -1047,6 +1562,11 @@ class NestedDesktopMouseRuntime:
         sys_class_hidraw: Path = Path("/sys/class/hidraw"),
         dev_root: Path = Path("/dev"),
         inertia_enabled: bool = True,
+        bindings_enabled: bool = True,
+        bindings: Mapping[str, object] | None = None,
+        action_callback: Callable[[str], None] | None = None,
+        suspended: bool = False,
+        control_fd: int | None = None,
     ):
         self.stop_event = stop_event
         self.proc_root = proc_root
@@ -1060,7 +1580,14 @@ class NestedDesktopMouseRuntime:
         self.translator = TrackpadTranslator(
             inertia_enabled=inertia_enabled,
         )
+        self.bindings_enabled = bindings_enabled
+        self.binding_translator = InputBindingTranslator(bindings)
+        self.action_callback = action_callback
+        self.suspended = suspended
+        self.control_fd = control_fd
+        self.control_buffer = b""
         self.forwarding = False
+        self.binding_forwarding = False
         self.next_input_frame = 0.0
 
     def run(self):
@@ -1068,6 +1595,7 @@ class NestedDesktopMouseRuntime:
         next_focus_check = 0.0
         try:
             while not self.stop_event.is_set():
+                self._read_control_commands()
                 now = time.monotonic()
                 if now >= next_discovery:
                     self._discover()
@@ -1078,11 +1606,60 @@ class NestedDesktopMouseRuntime:
                 self._read_reports(0.04)
         finally:
             self._set_forwarding(False)
+            self._set_binding_forwarding(False)
             self._close_hidraw()
             if self.inner_eis is not None:
                 self.inner_eis.close()
             if self.outer_x11 is not None:
                 self.outer_x11.close()
+
+    def set_suspended(self, suspended: bool):
+        if suspended == self.suspended:
+            return
+        self.suspended = suspended
+        if suspended:
+            self._set_forwarding(False)
+            self._set_binding_forwarding(False)
+        self.next_input_frame = 0.0
+        LOGGER.info(
+            "Nested Desktop input bridge %s for the Steam keyboard",
+            "paused" if suspended else "resumed",
+        )
+
+    def _read_control_commands(self):
+        control_fd = self.control_fd
+        if control_fd is None:
+            return
+        try:
+            readable, _, _ = select.select([control_fd], [], [], 0)
+            if not readable:
+                return
+            chunk = os.read(control_fd, 4096)
+            if not chunk:
+                self.control_fd = None
+                self.control_buffer = b""
+                return
+            self.control_buffer += chunk
+            lines = self.control_buffer.split(b"\n")
+            self.control_buffer = lines.pop()
+            for line in lines:
+                command = line.strip()
+                if command == b"suspend":
+                    self.set_suspended(True)
+                elif command == b"resume":
+                    self.set_suspended(False)
+                elif command:
+                    LOGGER.warning(
+                        "Ignoring unknown bridge control command %r",
+                        command,
+                    )
+        except (OSError, ValueError) as error:
+            LOGGER.warning(
+                "Lost the Nested Desktop bridge control channel: %s",
+                error,
+            )
+            self.control_fd = None
+            self.control_buffer = b""
 
     def _discover(self):
         if self.outer_x11 is None:
@@ -1103,6 +1680,7 @@ class NestedDesktopMouseRuntime:
         )
         if discovered_session != self.session:
             self._set_forwarding(False)
+            self._set_binding_forwarding(False)
             if self.inner_eis is not None:
                 self.inner_eis.close()
                 self.inner_eis = None
@@ -1146,50 +1724,64 @@ class NestedDesktopMouseRuntime:
 
     def _refresh_forwarding(self):
         if (
-            self.outer_x11 is None
+            self.suspended
+            or self.outer_x11 is None
             or self.inner_eis is None
             or self.session is None
             or self.hidraw_fd is None
         ):
             self._set_forwarding(False)
+            self._set_binding_forwarding(False)
             return
         try:
-            self.inner_eis.dispatch()
-            if not self.inner_eis.ready:
-                self._set_forwarding(False)
-                return
-
+            inner_eis = self.inner_eis
+            inner_eis.dispatch()
             app_id = self.session.app_id
             focused_app = self.outer_x11.cardinals(
                 "GAMESCOPE_FOCUSED_APP"
             )
-            if not focused_app or focused_app[0] != app_id:
-                self._set_forwarding(False)
-                return
             focused_gfx_app = self.outer_x11.cardinals(
                 "GAMESCOPE_FOCUSED_APP_GFX"
             )
-            if not focused_gfx_app or focused_gfx_app[0] != app_id:
-                self._set_forwarding(False)
-                return
             mouse_focus_display = self.outer_x11.cardinals(
                 "GAMESCOPE_MOUSE_FOCUS_DISPLAY"
             )
-            if decode_gamescope_display(mouse_focus_display) in ("", ":0"):
-                self._set_forwarding(False)
-                return
             focusable_apps = self.outer_x11.cardinals(
                 "GAMESCOPE_FOCUSABLE_APPS"
             )
-            ignored = {0, STEAM_UI_APP_ID, app_id}
+            binding_capabilities_ready = (
+                (
+                    not self.binding_translator.has_key_actions
+                    or inner_eis.keyboard_ready
+                )
+                and (
+                    not self.binding_translator.has_pointer_actions
+                    or inner_eis.ready
+                )
+            )
+            self._set_binding_forwarding(
+                self.bindings_enabled
+                and self.binding_translator.has_actions
+                and binding_capabilities_ready
+                and should_forward_back_button(
+                    app_id,
+                    focused_app,
+                    focused_gfx_app,
+                    mouse_focus_display,
+                )
+            )
             self._set_forwarding(
-                any(value not in ignored for value in focusable_apps)
+                inner_eis.ready
+                and should_forward_pointer(
+                    app_id,
+                    focused_app,
+                    focused_gfx_app,
+                    focusable_apps,
+                    mouse_focus_display,
+                )
             )
         except Exception as error:
-            LOGGER.warning("Lost the Nested Desktop EIS input: %s", error)
-            self.inner_eis.close()
-            self.inner_eis = None
-            self._set_forwarding(False)
+            self._handle_eis_loss(error)
 
     def _set_forwarding(self, active: bool):
         if active == self.forwarding:
@@ -1204,15 +1796,14 @@ class NestedDesktopMouseRuntime:
             update = self.translator.set_active(active)
             if inner_eis is not None:
                 inner_eis.inject(update)
-                if not active:
+                if not active and not (
+                    self.binding_forwarding
+                    and self.binding_translator.has_pointer_actions
+                ):
                     inner_eis.set_emulating(False)
         except Exception as error:
-            LOGGER.warning("Lost the Nested Desktop EIS input: %s", error)
-            if inner_eis is not None:
-                inner_eis.close()
-            self.inner_eis = None
+            self._handle_eis_loss(error)
             active = False
-            self.translator.set_active(False)
         if active != self.forwarding:
             self.next_input_frame = 0.0
         if active == self.forwarding:
@@ -1223,11 +1814,81 @@ class NestedDesktopMouseRuntime:
         else:
             LOGGER.info("Nested Desktop trackpad forwarding disabled")
 
+    def _set_binding_forwarding(self, active: bool):
+        if active == self.binding_forwarding:
+            return
+        inner_eis = self.inner_eis
+        try:
+            if active:
+                active = bool(inner_eis is not None)
+                if (
+                    active
+                    and self.binding_translator.has_pointer_actions
+                ):
+                    active = bool(inner_eis.set_emulating(True))
+                if (
+                    active
+                    and self.binding_translator.has_key_actions
+                ):
+                    active = bool(inner_eis.set_keyboard_emulating(True))
+            update = self.binding_translator.set_active(active)
+            if inner_eis is not None:
+                self._inject_binding_update(update)
+                if not active:
+                    if self.binding_translator.has_key_actions:
+                        inner_eis.set_keyboard_emulating(False)
+                    if (
+                        self.binding_translator.has_pointer_actions
+                        and not self.forwarding
+                    ):
+                        inner_eis.set_emulating(False)
+        except Exception as error:
+            self._handle_eis_loss(error)
+            active = False
+        if active != self.binding_forwarding:
+            self.next_input_frame = 0.0
+        if active == self.binding_forwarding:
+            return
+        self.binding_forwarding = active
+        if active:
+            LOGGER.info("Nested Desktop configurable bindings enabled")
+        else:
+            LOGGER.info("Nested Desktop configurable bindings disabled")
+
+    def _inject_binding_update(self, update: BindingUpdate):
+        inner_eis = self.inner_eis
+        if inner_eis is not None:
+            inner_eis.inject(update.pointer)
+            for key_code, pressed in update.key_events:
+                inner_eis.inject_key(key_code, pressed)
+        callback = self.action_callback
+        if callback is not None:
+            for action in update.actions:
+                try:
+                    callback(action)
+                except Exception:
+                    LOGGER.exception(
+                        "Failed to dispatch Nested Desktop action %s",
+                        action,
+                    )
+
+    def _handle_eis_loss(self, error: Exception):
+        LOGGER.warning("Lost the Nested Desktop EIS input: %s", error)
+        inner_eis = self.inner_eis
+        if inner_eis is not None:
+            inner_eis.close()
+        self.inner_eis = None
+        self.translator.set_active(False)
+        self.binding_translator.set_active(False)
+        self.forwarding = False
+        self.binding_forwarding = False
+        self.next_input_frame = 0.0
+
     def _read_reports(self, timeout: float):
         if self.hidraw_fd is None:
             self.stop_event.wait(timeout)
             return
-        if not self.forwarding:
+        if not self.forwarding and not self.binding_forwarding:
             self.stop_event.wait(timeout)
             return
 
@@ -1264,29 +1925,31 @@ class NestedDesktopMouseRuntime:
             state = parse_trackpad_report(latest_report)
             if state is None:
                 return
+            binding_update = (
+                self.binding_translator.translate(state)
+                if self.binding_forwarding
+                else BindingUpdate()
+            )
             if (
                 not state.left_touched
                 and not state.right_touched
-                and not state.left_trigger
-                and not state.right_trigger
-                and not state.right_pressed
-                and state.right_pressure <= RIGHT_PAD_RELEASE_THRESHOLD
+                and abs(state.right_stick_x) <= RIGHT_STICK_DEADZONE
+                and abs(state.right_stick_y) <= RIGHT_STICK_DEADZONE
                 and not self.translator.needs_idle_tick
+                and binding_update.empty
             ):
                 return
-            update = self.translator.translate(state)
+            update = (
+                self.translator.translate(state)
+                if self.forwarding
+                else PointerUpdate()
+            )
             if self.inner_eis is not None:
                 try:
                     self.inner_eis.inject(update)
+                    self._inject_binding_update(binding_update)
                 except Exception as error:
-                    LOGGER.warning(
-                        "Lost the Nested Desktop EIS input: %s",
-                        error,
-                    )
-                    self.inner_eis.close()
-                    self.inner_eis = None
-                    self.translator.set_active(False)
-                    self.forwarding = False
+                    self._handle_eis_loss(error)
                     return
         except (OSError, ValueError) as error:
             LOGGER.warning("Lost the Steam Deck trackpad device: %s", error)
@@ -1308,10 +1971,17 @@ class NestedDesktopMouseSupervisor:
         plugin_root: str | Path,
         logger: logging.Logger,
         inertia_enabled: bool = True,
+        bindings_enabled: bool = True,
+        bindings: Mapping[str, object] | None = None,
+        action_callback: Callable[[str], None] | None = None,
     ):
         self.plugin_root = Path(plugin_root)
         self.logger = logger
         self.inertia_enabled = inertia_enabled
+        self.bindings_enabled = bindings_enabled
+        self.bindings = normalize_nested_desktop_bindings(bindings)
+        self.action_callback = action_callback
+        self.suspended = False
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
         self.process: subprocess.Popen | None = None
@@ -1356,20 +2026,89 @@ class NestedDesktopMouseSupervisor:
     def set_inertia_enabled(self, enabled: bool):
         if enabled == self.inertia_enabled:
             return
+        self._restart_with(lambda: setattr(self, "inertia_enabled", enabled))
+
+    def set_bindings(
+        self,
+        enabled: bool,
+        bindings: Mapping[str, object],
+    ):
+        normalized = normalize_nested_desktop_bindings(bindings)
+        if (
+            enabled == self.bindings_enabled
+            and normalized == self.bindings
+        ):
+            return
+
+        def apply():
+            self.bindings_enabled = enabled
+            self.bindings = normalized
+
+        self._restart_with(apply)
+
+    def set_suspended(self, suspended: bool):
+        if not isinstance(suspended, bool):
+            raise TypeError("Suspended must be a boolean")
+        with self.process_lock:
+            if suspended == self.suspended:
+                return
+            self.suspended = suspended
+            process = self.process
+            if process is not None and process.poll() is None:
+                self._write_control(process, suspended)
+
+    def _write_control(
+        self,
+        process: subprocess.Popen,
+        suspended: bool,
+    ):
+        stream = process.stdin
+        if stream is None:
+            return
+        try:
+            stream.write(b"suspend\n" if suspended else b"resume\n")
+            stream.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            if process.poll() is None:
+                self.logger.warning(
+                    "Failed to update Nested Desktop bridge suspension"
+                )
+
+    def _restart_with(self, apply: Callable[[], None]):
         was_started = bool(
             self.thread is not None and self.thread.is_alive()
         )
         if was_started:
             self.stop()
-        self.inertia_enabled = enabled
+        apply()
         if was_started:
             self.start()
+
+    def _dispatch_action(self, action: str):
+        if action != ACTION_SHOW_KEYBOARD:
+            self.logger.warning(
+                "Ignoring unknown Nested Desktop worker action %s",
+                action,
+            )
+            return
+        callback = self.action_callback
+        if callback is None:
+            return
+        try:
+            callback(action)
+        except Exception:
+            self.logger.exception(
+                "Failed to dispatch Nested Desktop worker action %s",
+                action,
+            )
 
     def _supervise(self):
         worker_path = self.plugin_root / Path(__file__).name
         python_executable = shutil.which("python3") or "/usr/bin/python3"
         while not self.stop_event.is_set():
             try:
+                with self.process_lock:
+                    launch_suspended = self.suspended
                 command = [
                     python_executable,
                     str(worker_path),
@@ -1377,11 +2116,27 @@ class NestedDesktopMouseSupervisor:
                 ]
                 if not self.inertia_enabled:
                     command.append("--no-inertia")
+                if not self.bindings_enabled:
+                    command.append("--no-bindings")
+                if launch_suspended:
+                    command.append("--suspended")
+                command.extend(
+                    (
+                        "--bindings-json",
+                        json.dumps(
+                            self.bindings,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        ),
+                    )
+                )
                 process = subprocess.Popen(
                     command,
                     cwd=self.plugin_root,
                     env={**os.environ, "PYTHONUNBUFFERED": "1"},
                     close_fds=True,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
                 )
             except Exception:
                 self.logger.exception(
@@ -1393,9 +2148,28 @@ class NestedDesktopMouseSupervisor:
 
             with self.process_lock:
                 self.process = process
+                if self.suspended != launch_suspended:
+                    self._write_control(process, self.suspended)
             self.logger.info("Started the Nested Desktop mouse bridge")
-            while process.poll() is None and not self.stop_event.wait(0.5):
-                pass
+            action_buffer = b""
+            while process.poll() is None and not self.stop_event.is_set():
+                output = process.stdout
+                if output is None:
+                    self.stop_event.wait(0.5)
+                    continue
+                readable, _, _ = select.select([output], [], [], 0.5)
+                if not readable:
+                    continue
+                chunk = os.read(output.fileno(), 4096)
+                if not chunk:
+                    continue
+                action_buffer += chunk
+                lines = action_buffer.split(b"\n")
+                action_buffer = lines.pop()
+                for line in lines:
+                    action = line.decode("utf-8", errors="replace").strip()
+                    if action:
+                        self._dispatch_action(action)
             if self.stop_event.is_set():
                 if process.poll() is None:
                     process.terminate()
@@ -1404,7 +2178,15 @@ class NestedDesktopMouseSupervisor:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait(timeout=1)
+                if process.stdout is not None:
+                    process.stdout.close()
+                if process.stdin is not None:
+                    process.stdin.close()
                 break
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stdin is not None:
+                process.stdin.close()
             self.logger.warning(
                 "Nested Desktop mouse bridge exited with code %s; restarting",
                 process.returncode,
@@ -1433,7 +2215,13 @@ def _configure_parent_death_signal():
         LOGGER.debug("Unable to configure the parent-death signal")
 
 
-def run_worker(inertia_enabled: bool = True) -> int:
+def run_worker(
+    inertia_enabled: bool = True,
+    bindings_enabled: bool = True,
+    bindings: Mapping[str, object] | None = None,
+    suspended: bool = False,
+    control_fd: int | None = None,
+) -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -1449,6 +2237,11 @@ def run_worker(inertia_enabled: bool = True) -> int:
     runtime = NestedDesktopMouseRuntime(
         stop_event,
         inertia_enabled=inertia_enabled,
+        bindings_enabled=bindings_enabled,
+        bindings=bindings,
+        action_callback=lambda action: print(action, flush=True),
+        suspended=suspended,
+        control_fd=control_fd,
     )
     runtime.run()
     return 0
@@ -1458,10 +2251,25 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--no-inertia", action="store_true")
+    parser.add_argument("--no-bindings", action="store_true")
+    parser.add_argument("--suspended", action="store_true")
+    parser.add_argument("--bindings-json", default="{}")
     arguments = parser.parse_args()
     if not arguments.worker:
         parser.error("--worker is required")
-    return run_worker(inertia_enabled=not arguments.no_inertia)
+    try:
+        bindings = json.loads(arguments.bindings_json)
+    except json.JSONDecodeError as error:
+        parser.error(f"invalid --bindings-json: {error}")
+    if not isinstance(bindings, dict):
+        parser.error("--bindings-json must contain an object")
+    return run_worker(
+        inertia_enabled=not arguments.no_inertia,
+        bindings_enabled=not arguments.no_bindings,
+        bindings=bindings,
+        suspended=arguments.suspended,
+        control_fd=sys.stdin.fileno(),
+    )
 
 
 if __name__ == "__main__":

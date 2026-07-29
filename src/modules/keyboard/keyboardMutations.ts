@@ -2,6 +2,12 @@ const MOD_CLASS_PREFIX = "fourdeus-";
 const KEY_SELECTOR = "div[data-key-row][data-key-col]";
 const SHIFT_KEY_ROW = "3";
 const SHIFT_KEY_COLUMN = "0";
+export const KEYBOARD_IDENTITY_ATTRIBUTES = [
+  "data-key",
+  "data-key-col",
+  "data-key-row",
+];
+export const SHIFT_STATE_ATTRIBUTES = ["class"];
 const MOD_NODE_SELECTOR = [
   ".fourdeus-secondary-label",
   ".fourdeus-system-key-label",

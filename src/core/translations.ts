@@ -1,4 +1,5 @@
 import { appBridgeTranslations } from "./appBridgeTranslations";
+import { nestedDesktopTranslations } from "./nestedDesktopTranslations";
 import { systemToolsTranslations } from "./systemToolsTranslations";
 
 export interface Strings {
@@ -23,6 +24,8 @@ export interface Strings {
   invalidQuickAction: string;
   secondHotkeyLayer: string;
   secondHotkeyLayerDescription: string;
+  hotkeys: string;
+  quickActions: string;
   appBridge: string;
   appBridgeEnabledDescription: string;
   appBridgeQuickSetup: string;
@@ -65,6 +68,12 @@ export interface Strings {
   nestedDesktopMouseBridgeDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
+  nestedDesktopHotkeys: string;
+  nestedDesktopHotkeysDescription: string;
+  nestedDesktopHotkeysEnabled: string;
+  nestedDesktopHotkeysEnabledDescription: string;
+  resetNestedDesktopHotkeys: string;
+  nestedDesktopHotkeysReset: string;
   labels: string;
   labelsDescription: string;
   secondaryLayout: string;
@@ -123,6 +132,8 @@ type Values = [
   appBridgeReady?: string,
   appBridgeRustDeskDescription?: string,
   addOrFixRustDesk?: string,
+  hotkeys?: string,
+  quickActions?: string,
 ];
 
 const define = ([
@@ -146,7 +157,7 @@ const define = ([
   languageSwitchShortcutDescription = "Tap the layout key to switch language; hold it to choose one of four modes",
   languageSwitchShortcutChoice = "Language shortcut",
   deckButtonBindings = "Steam Deck button bindings",
-  deckButtonBindingsDescription = "Use shoulder or rear buttons as keys while the virtual keyboard is open",
+  deckButtonBindingsDescription = "Use shoulder, trigger, stick-click, or rear buttons as keys while the virtual keyboard is open",
   keyBinding = "Key",
   quickAction = "Quick action",
   quickActionsDescription = "Enable custom one-button key combinations; valid combinations override regular bindings",
@@ -174,6 +185,8 @@ const define = ([
   appBridgeReady = "Profile and Steam shortcut are ready",
   appBridgeRustDeskDescription = "Add RustDesk or repair its Steam shortcut with the Gamescope/X11 compatibility profile",
   addOrFixRustDesk = "Add / Fix RustDesk",
+  hotkeys = "Hotkeys",
+  quickActions = "Quick actions",
 ]: Values): Strings => ({
   keyboard,
   enabled,
@@ -196,6 +209,8 @@ const define = ([
   invalidQuickAction,
   secondHotkeyLayer,
   secondHotkeyLayerDescription,
+  hotkeys,
+  quickActions,
   appBridge,
   appBridgeEnabledDescription,
   appBridgeQuickSetup,
@@ -238,6 +253,12 @@ const define = ([
   nestedDesktopMouseBridgeDescription: "Restores the right-trackpad cursor and click in Nested Desktop while another Game Mode app is running",
   nestedDesktopTrackpadInertia: "Trackpad inertia",
   nestedDesktopTrackpadInertiaDescription: "Continues cursor and scroll movement after a fast swipe; disable to stop immediately when a trackpad is released",
+  nestedDesktopHotkeys: "Nested Desktop bindings",
+  nestedDesktopHotkeysDescription: "Configure controls sent directly to Nested Desktop, including while a game is running in parallel",
+  nestedDesktopHotkeysEnabled: "Controller bindings",
+  nestedDesktopHotkeysEnabledDescription: "Send configured keyboard and mouse actions while Nested Desktop has focus",
+  resetNestedDesktopHotkeys: "Reset to Steam defaults",
+  nestedDesktopHotkeysReset: "Nested Desktop bindings reset",
   labels,
   labelsDescription,
   secondaryLayout,
@@ -268,7 +289,7 @@ export const english = define([
   "Tap the layout key to switch language; hold it to choose one of four modes",
   "Language shortcut",
   "Steam Deck button bindings",
-  "Use shoulder or rear buttons as keys while the virtual keyboard is open",
+  "Use shoulder, trigger, stick-click, or rear buttons as keys while the virtual keyboard is open",
   "Key",
   "Quick action",
   "Enable custom one-button key combinations; valid combinations override regular bindings",
@@ -296,6 +317,8 @@ export const english = define([
   "Profile and Steam shortcut are ready",
   "Add RustDesk or repair its Steam shortcut with the Gamescope/X11 compatibility profile",
   "Add / Fix RustDesk",
+  "Hotkeys",
+  "Quick actions",
 ]);
 
 const russian = define([
@@ -319,7 +342,7 @@ const russian = define([
   "Нажмите кнопку раскладки для смены языка; удерживайте её для выбора одного из четырёх режимов",
   "Сочетание для смены языка",
   "Бинды кнопок Steam Deck",
-  "Использовать бамперы или задние кнопки как клавиши, пока открыта виртуальная клавиатура",
+  "Использовать бамперы, триггеры, нажатия стиков или задние кнопки как клавиши, пока открыта виртуальная клавиатура",
   "Клавиша",
   "Быстрое действие",
   "Включить пользовательские сочетания на одну кнопку; корректное сочетание перекрывает обычный бинд",
@@ -347,6 +370,8 @@ const russian = define([
   "Профиль и ярлык Steam готовы",
   "Добавить RustDesk или исправить его ярлык Steam профилем совместимости Gamescope/X11",
   "Добавить / исправить RustDesk",
+  "Хоткеи",
+  "Быстрые действия",
 ]);
 
 const german = define([
@@ -895,6 +920,14 @@ export const translations: Record<string, Strings> = Object.fromEntries(
         ?? (
           language === "sc_schinese"
             ? systemToolsTranslations.schinese
+            : undefined
+        )
+      ),
+      ...(
+        nestedDesktopTranslations[language]
+        ?? (
+          language === "sc_schinese"
+            ? nestedDesktopTranslations.schinese
             : undefined
         )
       ),

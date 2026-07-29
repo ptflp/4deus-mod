@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { appBridgeTranslations } from "../src/core/appBridgeTranslations.ts";
+import { nestedDesktopTranslations } from "../src/core/nestedDesktopTranslations.ts";
 import { systemToolsTranslations } from "../src/core/systemToolsTranslations.ts";
 
 const GETTING_STARTED_ANCHORS: Record<string, string> = {
@@ -121,6 +122,37 @@ test("System Tools has complete translations for every Steam locale", () => {
 
   for (const [language, strings] of Object.entries(systemToolsTranslations)) {
     for (const key of SYSTEM_TOOLS_KEYS)
+      assert.ok(strings[key].trim(), `${language}.${key}`);
+  }
+});
+
+const NESTED_DESKTOP_KEYS = [
+  "nestedDesktopHotkeys",
+  "nestedDesktopHotkeysDescription",
+  "nestedDesktopHotkeysEnabled",
+  "nestedDesktopHotkeysEnabledDescription",
+  "resetNestedDesktopHotkeys",
+  "nestedDesktopHotkeysReset",
+] as const;
+
+test("Nested Desktop bindings have complete Steam locale translations", () => {
+  const expectedLanguages = [
+    "english", "arabic", "brazilian", "bulgarian", "czech", "danish",
+    "dutch", "finnish", "french", "german", "greek", "hungarian",
+    "indonesian", "italian", "japanese", "koreana", "latam", "malay",
+    "norwegian", "polish", "portuguese", "romanian", "russian", "schinese",
+    "spanish", "swedish", "tchinese", "thai", "turkish", "ukrainian",
+    "vietnamese",
+  ];
+  assert.deepEqual(
+    Object.keys(nestedDesktopTranslations).sort(),
+    expectedLanguages.sort(),
+  );
+
+  for (const [language, strings] of Object.entries(
+    nestedDesktopTranslations,
+  )) {
+    for (const key of NESTED_DESKTOP_KEYS)
       assert.ok(strings[key].trim(), `${language}.${key}`);
   }
 });

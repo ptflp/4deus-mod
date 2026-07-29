@@ -15,14 +15,9 @@ import {
 import { useStrings } from "../../core/localization";
 import {
   AUTO_LAYOUT,
-  type DeckButtonAction,
   type LanguageSwitchShortcut,
   type SettingsStore,
 } from "../../core/settings";
-import {
-  DECK_BUTTONS,
-} from "./deckButtonBindings";
-import { QuickActionEditor } from "./QuickActionEditor";
 import {
   getEnabledLayouts,
   getLayoutDisplayName,
@@ -35,21 +30,6 @@ interface KeyboardPanelProps {
 
 const layoutSignature = (layouts: SteamKeyboardLayout[]): string =>
   layouts.map((layout) => `${layout.layout}:${layout.name}`).join(",");
-
-const deckButtonActionOptions: Array<{
-  data: DeckButtonAction;
-  label: string;
-}> = [
-  { data: "none", label: "—" },
-  { data: "KEY_ESC", label: "Esc" },
-  { data: "KEY_SPACE", label: "Space" },
-  { data: "KEY_BACKSPACE", label: "Backspace" },
-  { data: "KEY_ENTER", label: "Enter" },
-  { data: "KEY_TAB", label: "Tab" },
-  { data: "KEY_LEFTCTRL", label: "Ctrl" },
-  { data: "KEY_LEFTALT", label: "Alt" },
-  { data: "KEY_LEFTSHIFT", label: "Shift" },
-];
 
 export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
   const strings = useStrings();
@@ -92,62 +72,6 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
   )
     ? keyboard.secondaryLayout
     : AUTO_LAYOUT;
-
-  const deckButtonBindingRow = (
-    button: (typeof DECK_BUTTONS)[number],
-  ) => {
-    if (
-      keyboard.deckButtonQuickActionsEnabled
-      && keyboard.deckButtonSecondLayerEnabled
-      && button.button === "r4"
-    ) {
-      return null;
-    }
-    return (
-    <>
-      <PanelSectionRow>
-        <DropdownItem
-          label={`${button.label} — ${strings.keyBinding}`}
-          menuLabel={button.label}
-          rgOptions={deckButtonActionOptions}
-          selectedOption={keyboard.deckButtonBindings[button.button]}
-          onChange={({ data }) => settings.updateKeyboard({
-            deckButtonBindings: {
-              ...keyboard.deckButtonBindings,
-              [button.button]: data.toString() as DeckButtonAction,
-            },
-          })}
-        />
-      </PanelSectionRow>
-      {keyboard.deckButtonQuickActionsEnabled && (
-        <QuickActionEditor
-          actions={keyboard.deckButtonQuickActions}
-          button={button.button}
-          buttonLabel={button.label}
-          setNumber={1}
-          strings={strings}
-          onChange={(deckButtonQuickActions) => settings.updateKeyboard({
-            deckButtonQuickActions,
-          })}
-        />
-      )}
-      {keyboard.deckButtonQuickActionsEnabled
-        && keyboard.deckButtonSecondLayerEnabled
-        && button.button !== "r4" && (
-        <QuickActionEditor
-          actions={keyboard.deckButtonSecondLayerActions}
-          button={button.button}
-          buttonLabel={button.label}
-          setNumber={2}
-          strings={strings}
-          onChange={(deckButtonSecondLayerActions) => settings.updateKeyboard({
-            deckButtonSecondLayerActions,
-          })}
-        />
-      )}
-    </>
-    );
-  };
 
   return (
     <PanelSection title={strings.keyboard}>
@@ -208,47 +132,6 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
             })}
           />
         </PanelSectionRow>
-      )}
-      <PanelSectionRow>
-        <ToggleField
-          label={strings.deckButtonBindings}
-          description={strings.deckButtonBindingsDescription}
-          checked={keyboard.deckButtonBindingsEnabled}
-          onChange={(deckButtonBindingsEnabled) => settings.updateKeyboard({
-            deckButtonBindingsEnabled,
-          })}
-        />
-      </PanelSectionRow>
-      {keyboard.deckButtonBindingsEnabled && (
-        <>
-          <PanelSectionRow>
-            <ToggleField
-              label={strings.quickAction}
-              description={strings.quickActionsDescription}
-              checked={keyboard.deckButtonQuickActionsEnabled}
-              onChange={(deckButtonQuickActionsEnabled) =>
-                settings.updateKeyboard({ deckButtonQuickActionsEnabled })}
-            />
-          </PanelSectionRow>
-          {keyboard.deckButtonQuickActionsEnabled && (
-            <PanelSectionRow>
-              <ToggleField
-                label={strings.secondHotkeyLayer}
-                description={strings.secondHotkeyLayerDescription}
-                checked={keyboard.deckButtonSecondLayerEnabled}
-                onChange={(deckButtonSecondLayerEnabled) =>
-                  settings.updateKeyboard({ deckButtonSecondLayerEnabled })}
-              />
-            </PanelSectionRow>
-          )}
-          {deckButtonBindingRow(DECK_BUTTONS[0])}
-          {deckButtonBindingRow(DECK_BUTTONS[1])}
-          {deckButtonBindingRow(DECK_BUTTONS[2])}
-          {deckButtonBindingRow(DECK_BUTTONS[3])}
-          {deckButtonBindingRow(DECK_BUTTONS[4])}
-          {deckButtonBindingRow(DECK_BUTTONS[5])}
-          {deckButtonBindingRow(DECK_BUTTONS[6])}
-        </>
       )}
       <PanelSectionRow>
         <ToggleField

@@ -3,8 +3,15 @@ import test from "node:test";
 
 import {
   isRelevantKeyClassChange,
+  KEYBOARD_IDENTITY_ATTRIBUTES,
   normalizedNativeClasses,
+  SHIFT_STATE_ATTRIBUTES,
 } from "../src/modules/keyboard/keyboardMutations.ts";
+
+test("regular keys are not observed for focus class churn", () => {
+  assert.equal(KEYBOARD_IDENTITY_ATTRIBUTES.includes("class"), false);
+  assert.deepEqual(SHIFT_STATE_ATTRIBUTES, ["class"]);
+});
 
 test("mod-owned classes do not change the native class signature", () => {
   const before = "Panel Focusable";

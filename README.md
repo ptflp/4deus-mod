@@ -88,8 +88,18 @@ layout and text input.
   controller layout, and play history.
 - Refreshes all four Steam artwork slots from the bundled branded SteamOS
   artwork whenever Add / Repair runs.
-- Restores the right-trackpad cursor and click, trigger clicks, and left-pad
-  scrolling in Nested Desktop while another Game Mode application is running.
+- Restores right-trackpad and right-stick cursor control, configurable clicks,
+  and left-pad scrolling in Nested Desktop while another Game Mode application
+  is running.
+- Provides configurable controller bindings that are sent directly to Nested
+  Desktop while it owns focus, including when a parallel game retains Steam
+  Input.
+- Starts with Steam's Desktop Configuration: A/Enter, B/Escape, X/keyboard,
+  Y/Space, D-pad and left-stick arrows, View/Escape, Menu/Tab, L1/Ctrl,
+  R1/Alt, L2/right click, R2/left click, R3/left click, L4/Shift, R4/Page Up,
+  L5/Meta, R5/Page Down, and trackpad clicks.
+- Lets every binding be reassigned or cleared, provides a master binding
+  switch, and can reset the complete set to Steam defaults.
 - Activates the input bridge only while Nested Desktop is frontmost, with
   configurable cursor and scroll inertia that is saved between sessions.
 

@@ -1,3 +1,9 @@
+import type {
+  NestedDesktopBindingAction,
+  NestedDesktopBindings,
+  NestedDesktopBindingSource,
+} from "./nestedDesktopBindings";
+
 export interface MangoHudFixStatus {
   available: boolean;
   current: boolean;
@@ -34,10 +40,13 @@ export interface SteamOsArtworkResult {
 
 export interface NestedDesktopMouseStatus {
   available: boolean;
+  bindings: NestedDesktopBindings;
+  bindingsEnabled: boolean;
   enabled: boolean;
   error?: string;
   inertiaEnabled: boolean;
   running: boolean;
+  suspended: boolean;
 }
 
 export interface SystemToolsApi {
@@ -56,4 +65,12 @@ export interface SystemToolsApi {
   setNestedDesktopMouseInertiaEnabled(
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopBindingsEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopBinding(
+    source: NestedDesktopBindingSource,
+    action: NestedDesktopBindingAction,
+  ): Promise<NestedDesktopMouseStatus>;
+  resetNestedDesktopBindings(): Promise<NestedDesktopMouseStatus>;
 }

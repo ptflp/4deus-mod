@@ -8,6 +8,10 @@ export type DeckButton =
   | "view"
   | "l1"
   | "r1"
+  | "l2"
+  | "r2"
+  | "l3"
+  | "r3"
   | "l4"
   | "r4"
   | "l5"
@@ -30,6 +34,10 @@ const emptyQuickActions = (): DeckQuickActions => ({
   view: "",
   l1: "",
   r1: "",
+  l2: "",
+  r2: "",
+  l3: "",
+  r3: "",
   l4: "",
   r4: "",
   l5: "",
@@ -103,6 +111,10 @@ const defaults: ModSettings = {
       view: "none",
       l1: "KEY_ESC",
       r1: "KEY_SPACE",
+      l2: "none",
+      r2: "none",
+      l3: "none",
+      r3: "none",
       l4: "none",
       r4: "none",
       l5: "none",

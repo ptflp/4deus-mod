@@ -88,6 +88,39 @@ const POSITIONS_BY_KEY_NAME = new Map(
   ].map(([position, keyName]) => [keyName, position]),
 );
 
+const FUNCTION_LAYER_KEY_NAMES = new Set([
+  ...Array.from({ length: 12 }, (_, index) => `KEY_F${index + 1}`),
+  "KEY_DELETE",
+  "KEY_LEFTMETA",
+]);
+
+const FUNCTION_LAYER_REPLACED_KEY_NAMES = new Set(
+  Object.entries(KEY_NAMES_BY_POSITION)
+    .filter(([position]) => position.startsWith("0:") && position !== "0:0")
+    .map(([, keyName]) => keyName),
+);
+
+export const isKeyNameVisibleInLayer = (
+  keyName: string,
+  systemMode: boolean,
+  functionLayer: boolean,
+): boolean => {
+  if (
+    keyName === "KEY_ESC"
+    || keyName === "KEY_LEFTCTRL"
+    || keyName === "KEY_LEFTALT"
+  ) {
+    return systemMode;
+  }
+  if (keyName === "KEY_GRAVE")
+    return !systemMode;
+  if (FUNCTION_LAYER_KEY_NAMES.has(keyName))
+    return systemMode && functionLayer;
+  if (FUNCTION_LAYER_REPLACED_KEY_NAMES.has(keyName))
+    return !systemMode || !functionLayer;
+  return true;
+};
+
 export const languageSwitchModifiers = (
   shortcut: LanguageSwitchShortcut,
 ): { keyName: string; withAlt: boolean; withControl: boolean; withMeta: boolean } => ({

@@ -1,4 +1,10 @@
-import { callable, definePlugin, routerHook } from "@decky/api";
+import {
+  addEventListener,
+  callable,
+  definePlugin,
+  removeEventListener,
+  routerHook,
+} from "@decky/api";
 import { staticClasses } from "@decky/ui";
 import { FaSlidersH } from "react-icons/fa";
 
@@ -12,6 +18,10 @@ import type {
   PreparedAppBridgeProfile,
 } from "./modules/appBridge/types";
 import { KeyboardFeature } from "./modules/keyboard/KeyboardFeature";
+import type {
+  NestedDesktopBindingAction,
+  NestedDesktopBindingSource,
+} from "./modules/systemTools/nestedDesktopBindings";
 import type {
   MangoHudFixStatus,
   NestedDesktopMouseStatus,
@@ -43,6 +53,9 @@ export default definePlugin(() => {
   );
   const logKeyboardDiagnostics = callable<[string], boolean>(
     "log_keyboard_diagnostics",
+  );
+  const setNestedDesktopKeyboardVisible = callable<[boolean], boolean>(
+    "set_nested_desktop_keyboard_visible",
   );
   const appBridgeApi = {
     getStatus: callable<[], AppBridgeStatus>("get_app_bridge_status"),
@@ -95,15 +108,34 @@ export default definePlugin(() => {
       [boolean],
       NestedDesktopMouseStatus
     >("set_nested_desktop_mouse_inertia_enabled"),
+    setNestedDesktopBindingsEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_bindings_enabled"),
+    setNestedDesktopBinding: callable<
+      [NestedDesktopBindingSource, NestedDesktopBindingAction],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_binding"),
+    resetNestedDesktopBindings: callable<
+      [],
+      NestedDesktopMouseStatus
+    >("reset_nested_desktop_bindings"),
   };
-  const host = new ModuleHost([
-    new KeyboardFeature(
-      settings,
-      sendSystemKey,
-      setSystemKeyState,
-      logKeyboardDiagnostics,
-    ),
-  ]);
+  const keyboardFeature = new KeyboardFeature(
+    settings,
+    sendSystemKey,
+    setSystemKeyState,
+    logKeyboardDiagnostics,
+    setNestedDesktopKeyboardVisible,
+  );
+  const host = new ModuleHost([keyboardFeature]);
+  const nestedDesktopActionListener = addEventListener<[string]>(
+    "nested_desktop_action",
+    (action) => {
+      if (action === "SHOW_KEYBOARD")
+        keyboardFeature.showKeyboard();
+    },
+  );
   const KeyboardRoute = () => <KeyboardSettingsRoute settings={settings} />;
   const AppBridgeRoute = () => (
     <AppBridgeSettingsRoute api={appBridgeApi} settings={settings} />
@@ -128,6 +160,10 @@ export default definePlugin(() => {
     content: <ModsPanel settings={settings} />,
     icon: <FaSlidersH />,
     onDismount: () => {
+      removeEventListener(
+        "nested_desktop_action",
+        nestedDesktopActionListener,
+      );
       routerHook.removeRoute(SYSTEM_TOOLS_SETTINGS_ROUTE);
       routerHook.removeRoute(APP_BRIDGE_SETTINGS_ROUTE);
       routerHook.removeRoute(KEYBOARD_SETTINGS_ROUTE);

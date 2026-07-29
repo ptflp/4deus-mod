@@ -40,6 +40,8 @@ class RecordingMouseBridge:
         self.stopped = 0
         self.is_running = True
         self.inertia_values = []
+        self.binding_values = []
+        self.suspended_values = []
 
     def start(self):
         self.started += 1
@@ -54,6 +56,12 @@ class RecordingMouseBridge:
 
     def set_inertia_enabled(self, enabled):
         self.inertia_values.append(enabled)
+
+    def set_bindings(self, enabled, bindings):
+        self.binding_values.append((enabled, dict(bindings)))
+
+    def set_suspended(self, suspended):
+        self.suspended_values.append(suspended)
 
 
 class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
@@ -192,6 +200,22 @@ class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_keyboard_visibility_suspends_without_stopping_bridge(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        paused = await plugin.set_nested_desktop_keyboard_visible(True)
+        duplicate = await plugin.set_nested_desktop_keyboard_visible(True)
+        resumed = await plugin.set_nested_desktop_keyboard_visible(False)
+
+        self.assertTrue(paused)
+        self.assertTrue(duplicate)
+        self.assertTrue(resumed)
+        self.assertEqual(bridge.suspended_values, [True, False])
+        self.assertEqual(bridge.started, 0)
+        self.assertEqual(bridge.stopped, 0)
+
     async def test_setting_is_persisted_and_controls_the_bridge(self):
         plugin = plugin_backend.Plugin()
         bridge = RecordingMouseBridge()
@@ -210,11 +234,21 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bridge.stopped, 1)
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
-                {"enabled": False, "inertiaEnabled": True},
+                {
+                    "enabled": False,
+                    "inertiaEnabled": True,
+                    "bindingsEnabled": True,
+                    "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                },
             )
             self.assertEqual(
                 plugin._load_nested_desktop_mouse_settings(),
-                (False, True),
+                (
+                    False,
+                    True,
+                    True,
+                    plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                ),
             )
 
             enabled = await plugin.set_nested_desktop_mouse_enabled(True)
@@ -224,11 +258,21 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bridge.started, 1)
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
-                {"enabled": True, "inertiaEnabled": True},
+                {
+                    "enabled": True,
+                    "inertiaEnabled": True,
+                    "bindingsEnabled": True,
+                    "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                },
             )
             self.assertEqual(
                 plugin._load_nested_desktop_mouse_settings(),
-                (True, True),
+                (
+                    True,
+                    True,
+                    True,
+                    plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                ),
             )
 
     async def test_invalid_value_does_not_change_the_setting(self):
@@ -269,7 +313,12 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bridge.inertia_values, [False])
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
-                {"enabled": True, "inertiaEnabled": False},
+                {
+                    "enabled": True,
+                    "inertiaEnabled": False,
+                    "bindingsEnabled": True,
+                    "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                },
             )
 
     async def test_invalid_inertia_value_does_not_change_the_setting(self):
@@ -304,8 +353,70 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(
                 plugin._load_nested_desktop_mouse_settings(),
-                (False, True),
+                (
+                    False,
+                    True,
+                    True,
+                    plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                ),
             )
+
+    async def test_bindings_can_be_disabled_and_persisted(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_nested_desktop_bindings_enabled(False)
+
+            self.assertFalse(result["bindingsEnabled"])
+            self.assertEqual(
+                bridge.binding_values,
+                [(False, plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS)],
+            )
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["bindingsEnabled"])
+
+    async def test_binding_can_be_removed_and_reset_to_steam_defaults(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            plugin.nested_desktop_mouse_settings_path = (
+                Path(directory) / "nested-desktop-mouse.json"
+            )
+
+            removed = await plugin.set_nested_desktop_binding("b", "none")
+            reset = await plugin.reset_nested_desktop_bindings()
+
+            self.assertEqual(removed["bindings"]["b"], "none")
+            self.assertEqual(reset["bindings"]["b"], "KEY_ESC")
+            self.assertEqual(
+                bridge.binding_values[-1],
+                (True, plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS),
+            )
+
+    async def test_invalid_binding_is_rejected_without_persisting(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_nested_desktop_binding(
+                "unknown",
+                "KEY_ESC",
+            )
+
+            self.assertIn("error", result)
+            self.assertFalse(settings_path.exists())
+            self.assertEqual(bridge.binding_values, [])
 
 
 if __name__ == "__main__":

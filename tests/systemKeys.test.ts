@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isKeyNameVisibleInLayer,
   isShiftKey,
   LANGUAGE_SWITCH_OPTIONS,
   languageSwitchModifiers,
@@ -103,20 +104,45 @@ test("language switch choices occupy two keys for each trackpad", () => {
   assert.equal(resolveLanguageSwitchOption(keyAt(2, 4)), undefined);
 });
 
-test("Steam Deck shoulder and rear button codes resolve configured keys", () => {
+test("bound-key visuals follow the keyboard's visible layer", () => {
+  assert.equal(isKeyNameVisibleInLayer("KEY_A", false, false), true);
+  assert.equal(isKeyNameVisibleInLayer("KEY_LEFTSHIFT", false, false), true);
+  assert.equal(isKeyNameVisibleInLayer("KEY_ESC", false, false), false);
+  assert.equal(isKeyNameVisibleInLayer("KEY_ESC", true, false), true);
+  assert.equal(isKeyNameVisibleInLayer("KEY_LEFTCTRL", false, false), false);
+  assert.equal(isKeyNameVisibleInLayer("KEY_LEFTCTRL", true, false), true);
+  assert.equal(isKeyNameVisibleInLayer("KEY_GRAVE", false, false), true);
+  assert.equal(isKeyNameVisibleInLayer("KEY_GRAVE", true, false), false);
+  assert.equal(isKeyNameVisibleInLayer("KEY_1", true, false), true);
+  assert.equal(isKeyNameVisibleInLayer("KEY_1", true, true), false);
+  assert.equal(isKeyNameVisibleInLayer("KEY_F1", true, false), false);
+  assert.equal(isKeyNameVisibleInLayer("KEY_F1", true, true), true);
+  assert.equal(isKeyNameVisibleInLayer("KEY_BACKSPACE", true, true), false);
+  assert.equal(isKeyNameVisibleInLayer("KEY_DELETE", true, true), true);
+});
+
+test("Steam Deck shoulder, trigger, stick, and rear codes resolve keys", () => {
   const bindings: DeckButtonBindings = {
     view: "none",
     l1: "KEY_ESC",
     r1: "KEY_SPACE",
-    l4: "KEY_BACKSPACE",
-    r4: "KEY_ENTER",
+    l2: "KEY_BACKSPACE",
+    r2: "KEY_ENTER",
+    l3: "KEY_HOME",
+    r3: "KEY_END",
+    l4: "KEY_TAB",
+    r4: "KEY_LEFTALT",
     l5: "KEY_LEFTSHIFT",
     r5: "KEY_LEFTCTRL",
   };
   assert.equal(resolveDeckButtonAction(bindings, 5), "KEY_ESC");
   assert.equal(resolveDeckButtonAction(bindings, 6), "KEY_SPACE");
-  assert.equal(resolveDeckButtonAction(bindings, 23), "KEY_BACKSPACE");
-  assert.equal(resolveDeckButtonAction(bindings, 25), "KEY_ENTER");
+  assert.equal(resolveDeckButtonAction(bindings, 7), "KEY_BACKSPACE");
+  assert.equal(resolveDeckButtonAction(bindings, 8), "KEY_ENTER");
+  assert.equal(resolveDeckButtonAction(bindings, 15), "KEY_HOME");
+  assert.equal(resolveDeckButtonAction(bindings, 16), "KEY_END");
+  assert.equal(resolveDeckButtonAction(bindings, 23), "KEY_TAB");
+  assert.equal(resolveDeckButtonAction(bindings, 25), "KEY_LEFTALT");
   assert.equal(resolveDeckButtonAction(bindings, 24), "KEY_LEFTSHIFT");
   assert.equal(resolveDeckButtonAction(bindings, 26), "KEY_LEFTCTRL");
   assert.equal(resolveDeckButtonAction(bindings, 13), undefined);
@@ -128,6 +154,10 @@ test("quick actions take priority over regular button bindings", () => {
     view: "KEY_TAB",
     l1: "KEY_ESC",
     r1: "none",
+    l2: "none",
+    r2: "KEY_ENTER",
+    l3: "none",
+    r3: "none",
     l4: "KEY_LEFTCTRL",
     r4: "KEY_LEFTSHIFT",
     l5: "none",
@@ -137,6 +167,10 @@ test("quick actions take priority over regular button bindings", () => {
     view: "M",
     l1: "none",
     r1: "none",
+    l2: "none",
+    r2: "Ctrl+Enter",
+    l3: "none",
+    r3: "none",
     l4: "Ctrl+Shift+Delete",
     r4: "none",
     l5: "none",
@@ -155,6 +189,16 @@ test("quick actions take priority over regular button bindings", () => {
   assert.deepEqual(resolveDeckButtonCommand(bindings, quickActions, 5), {
     action: "KEY_ESC",
     kind: "key",
+  });
+  assert.deepEqual(resolveDeckButtonCommand(bindings, quickActions, 8), {
+    chord: {
+      keyName: "KEY_ENTER",
+      label: "Ctrl + Enter",
+      withAlt: false,
+      withControl: true,
+      withShift: false,
+    },
+    kind: "chord",
   });
   assert.deepEqual(resolveDeckButtonCommand(bindings, quickActions, 13), {
     chord: {
