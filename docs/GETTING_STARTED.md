@@ -35,7 +35,7 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Then on your Steam Deck:
 
 1. Open the **Quick Access** menu and select **Decky**.
-2. Open **Decky Settings** using the cog button.
+2. Select **Open Decky Settings** using the cog button.
 3. Under **General**, enable **Developer mode**.
 4. Open the new **Developer** tab.
 5. Paste the URL into **Install Plugin from URL** and select **Install**.
@@ -67,7 +67,7 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 2. افتح **Decky Settings** باستخدام زر الترس.
 3. ضمن **General**، فعّل **Developer mode**.
 4. افتح علامة التبويب الجديدة **Developer**.
-5. الصق الرابط في **Install Plugin from URL** واختر **Install**.
+5. الصق الرابط في **Install Plugin from URL** واختر **تنصيب**.
 
 يقوم هذا الرابط دائمًا بتنزيل ملف ZIP من أحدث إصدار مستقر على GitHub.
 
@@ -93,10 +93,10 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Depois, no Steam Deck:
 
 1. Abra o menu **Quick Access** e selecione **Decky**.
-2. Abra **Decky Settings** usando o botão de engrenagem.
-3. Em **General**, ative **Developer mode**.
-4. Abra a nova aba **Developer**.
-5. Cole o URL em **Install Plugin from URL** e selecione **Install**.
+2. Use o botão de engrenagem **Abrir Definições Decky**.
+3. Em **Geral**, ative **Modo Deselvolvedor**.
+4. Abra a nova aba **Desenvolvedor**.
+5. Cole o URL em **Instalar Plugin a partir da URL** e selecione **Instalar**.
 
 O URL sempre baixa o ZIP da versão estável mais recente no GitHub.
 
@@ -122,10 +122,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 След това на своя Steam Deck:
 
 1. Отворете менюто **Quick Access** и изберете **Decky**.
-2. Отворете **Decky Settings** чрез бутона със зъбно колело.
-3. В **General** включете **Developer mode**.
-4. Отворете новия раздел **Developer**.
-5. Поставете URL адреса в **Install Plugin from URL** и изберете **Install**.
+2. Натиснете бутона със зъбно колело **Отворете настройките на Decky**.
+3. В **Общи** включете **Режим за разработчици**.
+4. Отворете новия раздел **Разработчик**.
+5. Поставете URL адреса в **Инсталиране на добавка от адрес в Интернет** и
+   изберете **Инсталиране**.
 
 URL адресът винаги изтегля ZIP файла от най-новата стабилна версия в GitHub.
 
@@ -151,10 +152,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Potom na zařízení Steam Deck:
 
 1. Otevřete nabídku **Quick Access** a vyberte **Decky**.
-2. Tlačítkem ozubeného kola otevřete **Decky Settings**.
-3. V části **General** zapněte **Developer mode**.
-4. Otevřete novou kartu **Developer**.
-5. Vložte adresu do pole **Install Plugin from URL** a vyberte **Install**.
+2. Použijte tlačítko ozubeného kola **Otevřít nastavení Decky**.
+3. V části **Obecné** zapněte **Vývojářský režim**.
+4. Otevřete novou kartu **Vývojář**.
+5. Vložte adresu do pole **Instalovat plugin z URL** a vyberte
+   **Instalovat**.
 
 Tato adresa vždy stáhne ZIP nejnovější stabilní verze z GitHubu.
 
@@ -209,10 +211,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Vervolgens op je Steam Deck:
 
 1. Open het menu **Quick Access** en selecteer **Decky**.
-2. Open **Decky Settings** met de tandwielknop.
-3. Schakel onder **General** de optie **Developer mode** in.
-4. Open het nieuwe tabblad **Developer**.
-5. Plak de URL in **Install Plugin from URL** en selecteer **Install**.
+2. Gebruik de tandwielknop **Decky-instellingen openen**.
+3. Schakel onder **Algemeen** de optie **Ontwikkelaarsmodus** in.
+4. Open het nieuwe tabblad **Ontwikkelaar**.
+5. Plak de URL in **Installeer plug-in via een URL** en selecteer
+   **Installeren**.
 
 De URL downloadt altijd het ZIP-bestand van de nieuwste stabiele GitHub-release.
 
@@ -238,10 +241,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Tee sitten Steam Deckillä seuraavat toimet:
 
 1. Avaa **Quick Access** -valikko ja valitse **Decky**.
-2. Avaa **Decky Settings** rataskuvakkeella.
-3. Ota **Developer mode** käyttöön kohdassa **General**.
-4. Avaa uusi **Developer**-välilehti.
-5. Liitä URL kohtaan **Install Plugin from URL** ja valitse **Install**.
+2. Valitse rataskuvake **Avaa Decky-asetukset**.
+3. Ota **Kehittäjätila** käyttöön kohdassa **Yleinen**.
+4. Avaa uusi **Kehittäjä**-välilehti.
+5. Liitä URL kohtaan **Asenna laajennus URL-osoitteesta** ja valitse
+   **Asenna**.
 
 URL lataa aina uusimman vakaan GitHub-julkaisun ZIP-tiedoston.
 
@@ -267,10 +271,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Puis, sur votre Steam Deck :
 
 1. Ouvrez le menu **Quick Access** et sélectionnez **Decky**.
-2. Ouvrez **Decky Settings** à l'aide du bouton en forme d'engrenage.
-3. Dans **General**, activez **Developer mode**.
-4. Ouvrez le nouvel onglet **Developer**.
-5. Collez l'URL dans **Install Plugin from URL**, puis sélectionnez **Install**.
+2. Utilisez le bouton en forme d'engrenage **Ouvrir les paramètres de Decky**.
+3. Dans **Général**, activez **Mode développeur**.
+4. Ouvrez le nouvel onglet **Développeur**.
+5. Collez l'URL dans **Installer le plugin à partir d'un URL**, puis
+   sélectionnez **Installer**.
 
 Cette URL télécharge toujours le ZIP de la dernière version stable sur GitHub.
 
@@ -296,10 +301,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Führe dann auf deinem Steam Deck folgende Schritte aus:
 
 1. Öffne das Menü **Quick Access** und wähle **Decky**.
-2. Öffne **Decky Settings** über die Zahnrad-Schaltfläche.
-3. Aktiviere unter **General** den **Developer mode**.
-4. Öffne den neuen Tab **Developer**.
-5. Füge die URL unter **Install Plugin from URL** ein und wähle **Install**.
+2. Wähle die Zahnrad-Schaltfläche **Decky Einstellungen Öffnen**.
+3. Aktiviere unter **Allgemein** die **Entwickleroptionen**.
+4. Öffne den neuen Tab **Entwickler**.
+5. Füge die URL unter **Installiere Erweiterung via URL** ein und wähle
+   **Installieren**.
 
 Die URL lädt immer die ZIP-Datei der neuesten stabilen GitHub-Version herunter.
 
@@ -325,10 +331,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Στη συνέχεια, στο Steam Deck:
 
 1. Ανοίξτε το μενού **Quick Access** και επιλέξτε **Decky**.
-2. Ανοίξτε το **Decky Settings** με το κουμπί γραναζιού.
-3. Στην ενότητα **General**, ενεργοποιήστε το **Developer mode**.
-4. Ανοίξτε τη νέα καρτέλα **Developer**.
-5. Επικολλήστε το URL στο **Install Plugin from URL** και επιλέξτε **Install**.
+2. Χρησιμοποιήστε το κουμπί γραναζιού **Άνοιγμα Ρυθμίσεων Decky**.
+3. Στην ενότητα **Γενικά**, ενεργοποιήστε τη **Λειτουργία προγραμματιστή**.
+4. Ανοίξτε τη νέα καρτέλα **Προγραμματιστής**.
+5. Επικολλήστε το URL στο **Εγκατάσταση επέκτασης απο URL** και επιλέξτε
+   **Εγκατάσταση**.
 
 Το URL κατεβάζει πάντα το ZIP της τελευταίας σταθερής έκδοσης από το GitHub.
 
@@ -413,10 +420,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Quindi, su Steam Deck:
 
 1. Apri il menu **Quick Access** e seleziona **Decky**.
-2. Apri **Decky Settings** usando il pulsante a forma di ingranaggio.
-3. In **General**, attiva **Developer mode**.
-4. Apri la nuova scheda **Developer**.
-5. Incolla l'URL in **Install Plugin from URL** e seleziona **Install**.
+2. Usa il pulsante a forma di ingranaggio **Apri le impostazioni di Decky**.
+3. In **Generali**, attiva **Modalità sviluppatore**.
+4. Apri la nuova scheda **Sviluppatore**.
+5. Incolla l'URL in **Installa plugin da un'indirizzo web** e seleziona
+   **Installa**.
 
 L'URL scarica sempre lo ZIP dell'ultima versione stabile da GitHub.
 
@@ -442,10 +450,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Steam Deck で次の操作を行います。
 
 1. **Quick Access** メニューを開き、**Decky** を選択します。
-2. 歯車ボタンから **Decky Settings** を開きます。
-3. **General** で **Developer mode** を有効にします。
-4. 新しく表示された **Developer** タブを開きます。
-5. **Install Plugin from URL** に URL を貼り付け、**Install** を選択します。
+2. 歯車ボタンの **Decky設定を開く** を選択します。
+3. **一般** で **開発者モード** を有効にします。
+4. 新しく表示された **開発者** タブを開きます。
+5. **URLからプラグインをインストール** に URL を貼り付け、
+   **インストール** を選択します。
 
 この URL からは、常に GitHub の最新安定版 ZIP がダウンロードされます。
 
@@ -471,10 +480,10 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Steam Deck에서 다음 단계를 진행합니다.
 
 1. **Quick Access** 메뉴를 열고 **Decky**를 선택합니다.
-2. 톱니바퀴 버튼으로 **Decky Settings**를 엽니다.
-3. **General**에서 **Developer mode**를 활성화합니다.
-4. 새로 표시된 **Developer** 탭을 엽니다.
-5. **Install Plugin from URL**에 URL을 붙여 넣고 **Install**을 선택합니다.
+2. 톱니바퀴 버튼에서 **Decky 설정 열기**를 선택합니다.
+3. **일반**에서 **개발자 모드**를 활성화합니다.
+4. 새로 표시된 **개발자** 탭을 엽니다.
+5. **URL에서 플러그인 설치**에 URL을 붙여 넣고 **설치**를 선택합니다.
 
 이 URL은 항상 GitHub의 최신 안정 릴리스 ZIP을 다운로드합니다.
 
@@ -587,10 +596,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Następnie na Steam Decku:
 
 1. Otwórz menu **Quick Access** i wybierz **Decky**.
-2. Otwórz **Decky Settings** przyciskiem koła zębatego.
-3. W sekcji **General** włącz **Developer mode**.
-4. Otwórz nową kartę **Developer**.
-5. Wklej adres do **Install Plugin from URL** i wybierz **Install**.
+2. Użyj przycisku koła zębatego **Otwórz ustawienia Decky**.
+3. W sekcji **Ogólne** włącz **Tryb dewelopera**.
+4. Otwórz nową kartę **Deweloper**.
+5. Wklej adres do **Zainstaluj plugin z adresu URL** i wybierz
+   **Zainstaluj**.
 
 Ten adres zawsze pobiera ZIP najnowszej stabilnej wersji z GitHuba.
 
@@ -617,10 +627,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Depois, no Steam Deck:
 
 1. Abra o menu **Quick Access** e selecione **Decky**.
-2. Abra **Decky Settings** através do botão da roda dentada.
-3. Em **General**, ative **Developer mode**.
-4. Abra o novo separador **Developer**.
-5. Cole o URL em **Install Plugin from URL** e selecione **Install**.
+2. Use o botão da roda dentada **Abrir as Definições Decky**.
+3. Em **Geral**, ative **Modo de programador**.
+4. Abra o novo separador **Programador**.
+5. Cole o URL em **Instalar plugin a partir de um URL** e selecione
+   **Instalar**.
 
 O URL transfere sempre o ZIP da versão estável mais recente no GitHub.
 
@@ -646,10 +657,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Apoi, pe Steam Deck:
 
 1. Deschide meniul **Quick Access** și selectează **Decky**.
-2. Deschide **Decky Settings** folosind butonul cu roată dințată.
-3. În **General**, activează **Developer mode**.
-4. Deschide noua filă **Developer**.
-5. Lipește URL-ul în **Install Plugin from URL** și selectează **Install**.
+2. Folosește butonul cu roată dințată **Deschide Setările Decky**.
+3. În **General**, activează **Mod dezvoltator**.
+4. Deschide noua filă **Dezvoltator**.
+5. Lipește URL-ul în **Instalați pluginul de la URL** și selectează
+   **Instalați**.
 
 URL-ul descarcă întotdeauna arhiva ZIP a celei mai recente versiuni stabile de
 pe GitHub.
@@ -676,10 +688,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Затем на Steam Deck:
 
 1. Откройте меню **Quick Access** и выберите **Decky**.
-2. Откройте **Decky Settings** кнопкой с шестерёнкой.
-3. В разделе **General** включите **Developer mode**.
-4. Откройте появившуюся вкладку **Developer**.
-5. Вставьте ссылку в **Install Plugin from URL** и выберите **Install**.
+2. Нажмите кнопку с шестерёнкой **Открыть настройки Decky**.
+3. В разделе **Общее** включите **Режим разработчика**.
+4. Откройте появившуюся вкладку **Разработчик**.
+5. Вставьте ссылку в **Установить плагин из URL** и выберите
+   **Установить**.
 
 Ссылка всегда скачивает ZIP последней стабильной версии с GitHub.
 
@@ -704,10 +717,10 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 然后在 Steam Deck 上执行以下操作：
 
 1. 打开 **Quick Access** 菜单并选择 **Decky**。
-2. 使用齿轮按钮打开 **Decky Settings**。
-3. 在 **General** 中启用 **Developer mode**。
-4. 打开新出现的 **Developer** 选项卡。
-5. 将 URL 粘贴到 **Install Plugin from URL**，然后选择 **Install**。
+2. 使用齿轮按钮选择 **打开 Decky 设置**。
+3. 在 **通用** 中启用 **开发者模式**。
+4. 打开新出现的 **开发者** 选项卡。
+5. 将 URL 粘贴到 **从 URL 安装插件**，然后选择 **安装**。
 
 此 URL 始终下载 GitHub 上最新稳定版本的 ZIP 文件。
 
@@ -733,10 +746,10 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Después, en tu Steam Deck:
 
 1. Abre el menú **Quick Access** y selecciona **Decky**.
-2. Abre **Decky Settings** con el botón de engranaje.
-3. En **General**, activa **Developer mode**.
-4. Abre la nueva pestaña **Developer**.
-5. Pega la URL en **Install Plugin from URL** y selecciona **Install**.
+2. Usa el botón de engranaje **Abrir los ajustes de Decky**.
+3. En **General**, activa **Modo desarrollador**.
+4. Abre la nueva pestaña **Desarrollador**.
+5. Pega la URL en **Instalar plugin desde URL** y selecciona **Instalar**.
 
 La URL siempre descarga el ZIP de la versión estable más reciente de GitHub.
 
@@ -762,10 +775,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Gör sedan följande på din Steam Deck:
 
 1. Öppna menyn **Quick Access** och välj **Decky**.
-2. Öppna **Decky Settings** med kugghjulsknappen.
-3. Aktivera **Developer mode** under **General**.
-4. Öppna den nya fliken **Developer**.
-5. Klistra in URL:en i **Install Plugin from URL** och välj **Install**.
+2. Använd kugghjulsknappen **Öppna Decky-inställningar**.
+3. Aktivera **Utvecklarläge** under **Allmänt**.
+4. Öppna den nya fliken **Utvecklare**.
+5. Klistra in URL:en i **Installera insticksmodul från URL** och välj
+   **Installera**.
 
 URL:en hämtar alltid ZIP-filen från den senaste stabila GitHub-utgåvan.
 
@@ -790,10 +804,10 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 接著在 Steam Deck 上執行下列操作：
 
 1. 開啟 **Quick Access** 選單並選擇 **Decky**。
-2. 使用齒輪按鈕開啟 **Decky Settings**。
-3. 在 **General** 中啟用 **Developer mode**。
-4. 開啟新出現的 **Developer** 分頁。
-5. 將 URL 貼到 **Install Plugin from URL**，然後選擇 **Install**。
+2. 使用齒輪按鈕選擇 **開啟 Decky 設定**。
+3. 在 **一般** 中啟用 **開發人員模式**。
+4. 開啟新出現的 **開發人員** 分頁。
+5. 將 URL 貼到 **從網址安裝外掛程式**，然後選擇 **安裝**。
 
 此 URL 一律會下載 GitHub 上最新穩定版本的 ZIP 檔案。
 
@@ -848,10 +862,10 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Ardından Steam Deck'te:
 
 1. **Quick Access** menüsünü açın ve **Decky**'yi seçin.
-2. Dişli düğmesini kullanarak **Decky Settings**'i açın.
-3. **General** bölümünde **Developer mode** seçeneğini etkinleştirin.
-4. Yeni **Developer** sekmesini açın.
-5. URL'yi **Install Plugin from URL** alanına yapıştırın ve **Install**'ı seçin.
+2. Dişli düğmesinden **Decky Ayarlarını Aç** seçeneğini kullanın.
+3. **Genel** bölümünde **Geliştirici modu** seçeneğini etkinleştirin.
+4. Yeni **Geliştirici** sekmesini açın.
+5. URL'yi **URL'den Eklenti Yükle** alanına yapıştırın ve **Yükle**'yi seçin.
 
 Bu URL her zaman GitHub'daki en son kararlı sürümün ZIP dosyasını indirir.
 
@@ -877,10 +891,11 @@ https://github.com/ptflp/4deus-mod/releases/latest/download/4deusMod.zip
 Потім на Steam Deck:
 
 1. Відкрийте меню **Quick Access** і виберіть **Decky**.
-2. Відкрийте **Decky Settings** кнопкою із шестернею.
-3. У розділі **General** увімкніть **Developer mode**.
-4. Відкрийте нову вкладку **Developer**.
-5. Вставте посилання в **Install Plugin from URL** і виберіть **Install**.
+2. Натисніть кнопку із шестернею **Відкрити налаштування Decky**.
+3. У розділі **Загальне** увімкніть **Розробницький режим**.
+4. Відкрийте нову вкладку **Розробник**.
+5. Вставте посилання у **Встановити плагін з URL** і виберіть
+   **Встановити**.
 
 Посилання завжди завантажує ZIP останньої стабільної версії з GitHub.
 
