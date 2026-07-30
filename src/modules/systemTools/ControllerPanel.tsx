@@ -55,7 +55,7 @@ export const ControllerPanel = ({ api }: ControllerPanelProps) => {
         <ToggleField
           label={strings.trackpadAutoRecovery}
           description={strings.trackpadAutoRecoveryDescription}
-          checked={status?.autoRecoveryEnabled ?? true}
+          checked={status?.autoRecoveryEnabled ?? false}
           disabled={busy || status?.available === false}
           onChange={(enabled) => void setEnabled(enabled)}
         />

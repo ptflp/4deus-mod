@@ -417,7 +417,7 @@ const define = ([
   rustDeskScrollInertiaDescription: "Adds a short natural glide after fast wheel scrolling; disabled by default and does not affect trackpad inertia",
   controller: "Controller",
   trackpadAutoRecovery: "Automatic trackpad recovery",
-  trackpadAutoRecoveryDescription: "Detects a swipe combined with a physical click and briefly reconnects the built-in controller only after both trackpads are released; limited to once every 30 seconds",
+  trackpadAutoRecoveryDescription: "Automatically recovers frozen or stuck trackpads. Disabled by default",
   nestedDesktopHotkeys: "Nested Desktop bindings",
   nestedDesktopHotkeysDescription: "Configure controls sent directly to Nested Desktop, including while a game is running in parallel",
   nestedDesktopHotkeysEnabled: "Controller bindings",

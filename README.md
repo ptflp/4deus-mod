@@ -147,6 +147,9 @@ pnpm check
 pnpm build
 ```
 
+See [Backend architecture](docs/BACKEND_ARCHITECTURE.md) for the Python module
+boundaries and stable Decky/worker entrypoints.
+
 Enable **Keyboard diagnostics** in the keyboard settings to write state,
 refresh, and mutation counters to Decky's `4deusMod` log every five seconds.
 The option is disabled by default and resets to off whenever the plugin

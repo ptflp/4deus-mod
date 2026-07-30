@@ -11,7 +11,7 @@
     "check:complexity": "eslint src",
     "check:types": "tsc --noEmit",
     "test": "pnpm test:frontend && pnpm test:backend",
-    "test:backend": "python -m py_compile main.py trackpad_metrics.py && python -m unittest discover -s tests -p 'test_*.py'",
+    "test:backend": "PYTHONPYCACHEPREFIX=/tmp/4deus-mod-pycache python -m compileall -q main.py nested_desktop_mouse.py trackpad_metrics.py fourdeus_backend && PYTHONPYCACHEPREFIX=/tmp/4deus-mod-pycache python -m unittest discover -s tests -p 'test_*.py'",
     "test:frontend": "node --experimental-strip-types --test tests/*.test.ts",
     "watch": "rollup -c -w"
   },

@@ -1,0 +1,1 @@
+"""Decky RPC endpoint groups."""

@@ -1,5 +1,4 @@
 import asyncio
-import importlib.util
 import json
 import logging
 from pathlib import Path
@@ -17,14 +16,9 @@ decky_plugin.DECKY_USER_HOME = str(PROJECT_ROOT)
 decky_plugin.DECKY_PLUGIN_DIR = str(PROJECT_ROOT)
 sys.modules.setdefault("decky_plugin", decky_plugin)
 
-spec = importlib.util.spec_from_file_location(
-    "fourdeus_main",
-    PROJECT_ROOT / "main.py",
-)
-if spec is None or spec.loader is None:
-    raise RuntimeError("Unable to load the plugin backend")
-plugin_backend = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(plugin_backend)
+from fourdeus_backend import plugin as plugin_backend
+from fourdeus_backend.endpoints import controller as controller_endpoints
+import main as decky_entrypoint
 
 
 class RecordingKeyboard:
@@ -37,6 +31,11 @@ class RecordingKeyboard:
 
     def close(self):
         self.closed = True
+
+
+class EntrypointTests(unittest.TestCase):
+    def test_decky_entrypoint_exports_the_backend_plugin(self):
+        self.assertIs(decky_entrypoint.Plugin, plugin_backend.Plugin)
 
 
 class RecordingMouseBridge:
@@ -768,15 +767,16 @@ class DeveloperSettingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_auto_recovery_defaults_on_and_persists(self):
+    async def test_auto_recovery_defaults_off_and_persists(self):
         plugin = plugin_backend.Plugin()
         monitor = RecordingTrackpadMetrics()
         plugin.trackpad_metrics = monitor
-        plugin.trackpad_auto_recovery_enabled = True
+        plugin.trackpad_auto_recovery_enabled = False
 
         with tempfile.TemporaryDirectory() as directory:
             settings_path = Path(directory) / "controller-settings.json"
             plugin.controller_settings_path = settings_path
+            self.assertFalse(plugin._load_controller_settings())
 
             disabled = await plugin.set_trackpad_auto_recovery_enabled(False)
 
@@ -792,6 +792,7 @@ class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(enabled["autoRecoveryEnabled"])
             self.assertTrue(enabled["monitoring"])
+            self.assertTrue(plugin._load_controller_settings())
             self.assertEqual(
                 monitor.configurations[-1],
                 (False, True),
@@ -802,7 +803,7 @@ class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
         plugin.trackpad_metrics = None
 
         with patch.object(
-            plugin_backend,
+            controller_endpoints,
             "power_cycle_steam_deck_controller",
             return_value=Path("/dev/hidraw7"),
         ) as power_cycle:
