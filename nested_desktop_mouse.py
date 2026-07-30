@@ -9,6 +9,7 @@ import logging
 import math
 import os
 from pathlib import Path
+import pwd
 import re
 import select
 import shutil
@@ -2137,7 +2138,6 @@ class NestedDesktopMouseRuntime:
             except OSError:
                 pass
             while not self.stop_event.is_set():
-                self._read_control_commands()
                 now = time.monotonic()
                 if now >= next_discovery:
                     self._discover()
@@ -2145,7 +2145,15 @@ class NestedDesktopMouseRuntime:
                 if now >= next_focus_check:
                     self._refresh_forwarding()
                     next_focus_check = now + FOCUS_CHECK_INTERVAL
-                self._read_reports(0.04)
+                next_deadline = min(next_discovery, next_focus_check)
+                timeout = max(
+                    0.0,
+                    min(
+                        FOCUS_CHECK_INTERVAL,
+                        next_deadline - time.monotonic(),
+                    ),
+                )
+                self._read_reports(timeout)
         finally:
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
@@ -2178,9 +2186,6 @@ class NestedDesktopMouseRuntime:
         if control_fd is None:
             return
         try:
-            readable, _, _ = select.select([control_fd], [], [], 0)
-            if not readable:
-                return
             chunk = os.read(control_fd, 4096)
             if not chunk:
                 self.control_fd = None
@@ -2207,6 +2212,64 @@ class NestedDesktopMouseRuntime:
             )
             self.control_fd = None
             self.control_buffer = b""
+
+    def _read_auxiliary_events(
+        self,
+        timeout: float,
+        *,
+        include_remote: bool = True,
+    ):
+        control_fd = self.control_fd
+        rustdesk_fd = self.rustdesk_fd if include_remote else None
+        relay = (
+            self.rustdesk_relay_socket
+            if include_remote
+            else None
+        )
+        descriptors = [
+            descriptor
+            for descriptor in (control_fd, rustdesk_fd, relay)
+            if descriptor is not None
+        ]
+        if not descriptors:
+            self.stop_event.wait(max(0.0, timeout))
+            return
+        try:
+            readable, _, _ = select.select(
+                descriptors,
+                [],
+                [],
+                max(0.0, timeout),
+            )
+        except InterruptedError:
+            return
+        except (OSError, ValueError) as error:
+            LOGGER.warning(
+                "Lost a Nested Desktop auxiliary input: %s",
+                error,
+            )
+            if control_fd is not None:
+                self.control_fd = None
+                self.control_buffer = b""
+            if include_remote:
+                self._close_rustdesk_joystick()
+                self._set_remote_relaying(False)
+            return
+
+        if control_fd is not None and control_fd in readable:
+            self._read_control_commands()
+        if (
+            rustdesk_fd is not None
+            and rustdesk_fd == self.rustdesk_fd
+            and rustdesk_fd in readable
+        ):
+            self._read_rustdesk_events()
+        if (
+            relay is not None
+            and relay is self.rustdesk_relay_socket
+            and relay in readable
+        ):
+            self._read_rustdesk_relay_events()
 
     def _discover(self):
         if self.outer_x11 is None:
@@ -2722,47 +2785,26 @@ class NestedDesktopMouseRuntime:
             self._handle_eis_loss(error)
 
     def _read_reports(self, timeout: float):
-        self._read_rustdesk_relay_events()
-        if self.rustdesk_fd is not None:
-            try:
-                readable, _, _ = select.select(
-                    [self.rustdesk_fd],
-                    [],
-                    [],
-                    0,
-                )
-                if readable:
-                    self._read_rustdesk_events()
-            except (OSError, ValueError) as error:
-                LOGGER.warning(
-                    "Lost the RustDesk pointer device: %s",
-                    error,
-                )
-                self._close_rustdesk_joystick()
         if self.hidraw_fd is None:
-            self._wait_for_rustdesk(timeout)
+            self._read_auxiliary_events(timeout)
             return
         if not self.forwarding and not self.binding_forwarding:
-            self._wait_for_rustdesk(timeout)
+            self._read_auxiliary_events(timeout)
             return
 
         now = time.monotonic()
         if now < self.next_input_frame:
-            self.stop_event.wait(
-                min(timeout, self.next_input_frame - now)
+            self._read_auxiliary_events(
+                min(timeout, self.next_input_frame - now),
+                include_remote=False,
             )
             return
-        self.next_input_frame = now + INPUT_FRAME_INTERVAL
+        self._read_auxiliary_events(0)
+        if not self.forwarding and not self.binding_forwarding:
+            return
+        self.next_input_frame = time.monotonic() + INPUT_FRAME_INTERVAL
 
         try:
-            readable, _, _ = select.select(
-                [self.hidraw_fd],
-                [],
-                [],
-                0,
-            )
-            if not readable:
-                return
             latest_report: bytes | None = None
             while True:
                 try:
@@ -2817,32 +2859,6 @@ class NestedDesktopMouseRuntime:
                 pass
         self.hidraw_fd = None
         self.hidraw_path = None
-
-    def _wait_for_rustdesk(self, timeout: float):
-        rustdesk_fd = self.rustdesk_fd
-        relay = self.rustdesk_relay_socket
-        descriptors = [
-            descriptor
-            for descriptor in (rustdesk_fd, relay)
-            if descriptor is not None
-        ]
-        if not descriptors:
-            self.stop_event.wait(timeout)
-            return
-        try:
-            readable, _, _ = select.select(
-                descriptors,
-                [],
-                [],
-                timeout,
-            )
-            if rustdesk_fd is not None and rustdesk_fd in readable:
-                self._read_rustdesk_events()
-            if relay is not None and relay in readable:
-                self._read_rustdesk_relay_events()
-        except (OSError, ValueError) as error:
-            LOGGER.warning("Lost the RustDesk pointer device: %s", error)
-            self._close_rustdesk_joystick()
 
     def _close_rustdesk_joystick(self):
         self._set_remote_forwarding(False)
@@ -3021,14 +3037,31 @@ class NestedDesktopMouseSupervisor:
                     str(worker_path),
                     "--worker",
                 ]
+                worker_user = None
+                worker_group = None
+                worker_groups = None
+                environment = {
+                    **os.environ,
+                    "PYTHONUNBUFFERED": "1",
+                }
                 if self.run_as_user and os.geteuid() == 0:
-                    command = [
-                        "/usr/bin/runuser",
-                        "-u",
+                    account = pwd.getpwnam(self.run_as_user)
+                    worker_user = account.pw_uid
+                    worker_group = account.pw_gid
+                    worker_groups = os.getgrouplist(
                         self.run_as_user,
-                        "--",
-                        *command,
-                    ]
+                        account.pw_gid,
+                    )
+                    environment.update(
+                        {
+                            "HOME": account.pw_dir,
+                            "LOGNAME": account.pw_name,
+                            "USER": account.pw_name,
+                            "XDG_RUNTIME_DIR": (
+                                f"/run/user/{account.pw_uid}"
+                            ),
+                        }
+                    )
                 if not self.inertia_enabled:
                     command.append("--no-inertia")
                 if not self.bindings_enabled:
@@ -3050,10 +3083,13 @@ class NestedDesktopMouseSupervisor:
                 process = subprocess.Popen(
                     command,
                     cwd=self.plugin_root,
-                    env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                    env=environment,
                     close_fds=True,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
+                    user=worker_user,
+                    group=worker_group,
+                    extra_groups=worker_groups,
                 )
             except Exception:
                 self.logger.exception(

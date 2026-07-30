@@ -196,48 +196,6 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
 
   return (
     <>
-      <PanelSection title={strings.mangoHudFix}>
-        <PanelSectionRow>
-          <div>{strings.mangoHudFixDescription}</div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <div>{`${strings.systemToolsStatus}: ${
-            statusLabel(status, strings)
-          }`}</div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <DialogButton
-            disabled={busy || !status?.available}
-            onClick={() => void runAction(
-              api.installMangoHudFix,
-              strings.mangoHudFixApplied,
-            )}
-            style={{ width: "100%" }}
-          >
-            {strings.installOrRepairMangoHudFix}
-          </DialogButton>
-        </PanelSectionRow>
-        {status?.installed && (
-          <PanelSectionRow>
-            <DialogButton
-              disabled={busy}
-              onClick={() => void runAction(
-                api.removeMangoHudFix,
-                strings.mangoHudFixRemoved,
-              )}
-              style={{ width: "100%" }}
-            >
-              {strings.removeMangoHudFix}
-            </DialogButton>
-          </PanelSectionRow>
-        )}
-        {mangoHudMessage && (
-          <PanelSectionRow>
-            <div>{mangoHudMessage}</div>
-          </PanelSectionRow>
-        )}
-      </PanelSection>
-
       <PanelSection title={strings.steamOsApplication}>
         <PanelSectionRow>
           <div>{strings.steamOsApplicationDescription}</div>
@@ -301,6 +259,48 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
         {steamOsMessage && (
           <PanelSectionRow>
             <div>{steamOsMessage}</div>
+          </PanelSectionRow>
+        )}
+      </PanelSection>
+
+      <PanelSection title={strings.mangoHudFix}>
+        <PanelSectionRow>
+          <div>{strings.mangoHudFixDescription}</div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <div>{`${strings.systemToolsStatus}: ${
+            statusLabel(status, strings)
+          }`}</div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <DialogButton
+            disabled={busy || !status?.available}
+            onClick={() => void runAction(
+              api.installMangoHudFix,
+              strings.mangoHudFixApplied,
+            )}
+            style={{ width: "100%" }}
+          >
+            {strings.installOrRepairMangoHudFix}
+          </DialogButton>
+        </PanelSectionRow>
+        {status?.installed && (
+          <PanelSectionRow>
+            <DialogButton
+              disabled={busy}
+              onClick={() => void runAction(
+                api.removeMangoHudFix,
+                strings.mangoHudFixRemoved,
+              )}
+              style={{ width: "100%" }}
+            >
+              {strings.removeMangoHudFix}
+            </DialogButton>
+          </PanelSectionRow>
+        )}
+        {mangoHudMessage && (
+          <PanelSectionRow>
+            <div>{mangoHudMessage}</div>
           </PanelSectionRow>
         )}
       </PanelSection>

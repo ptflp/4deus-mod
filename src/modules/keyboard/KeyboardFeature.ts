@@ -111,10 +111,7 @@ export class KeyboardFeature implements ModModule {
       () => this.runSafely("poll active window", () => this.bindActiveWindow()),
       ACTIVE_WINDOW_POLL_MS,
     );
-    this.diagnosticTimer = window.setInterval(
-      () => this.runSafely("report diagnostics", () => this.reportDiagnostics()),
-      DIAGNOSTIC_INTERVAL_MS,
-    );
+    this.syncDiagnosticTimer();
   }
 
   stop(): void {
@@ -339,8 +336,29 @@ export class KeyboardFeature implements ModModule {
   }
 
   private applySettings(): void {
+    this.syncDiagnosticTimer();
     this.applyEnterBehavior();
     this.refresh();
+  }
+
+  private syncDiagnosticTimer(): void {
+    const enabled = this.settings.getSnapshot().keyboard.diagnostics;
+    if (enabled && this.diagnosticTimer === undefined) {
+      this.diagnosticTimer = window.setInterval(
+        () =>
+          this.runSafely(
+            "report diagnostics",
+            () => this.reportDiagnostics(),
+          ),
+        DIAGNOSTIC_INTERVAL_MS,
+      );
+      return;
+    }
+    if (enabled || this.diagnosticTimer === undefined)
+      return;
+    window.clearInterval(this.diagnosticTimer);
+    this.diagnosticTimer = undefined;
+    this.resetDiagnosticCounters();
   }
 
   private reportDiagnostics(): void {

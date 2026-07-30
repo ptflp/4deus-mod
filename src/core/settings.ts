@@ -159,6 +159,7 @@ const readSettings = (): ModSettings => {
         deckButtonSecondLayerActions: normalizeQuickActions(
           parsed.keyboard?.deckButtonSecondLayerActions,
         ),
+        diagnostics: false,
       },
       version: 1,
     };
