@@ -60,11 +60,26 @@ RIGHT_STICK_MAX_SPEED = 18.0
 INPUT_FRAME_INTERVAL = 1 / 60
 FOCUS_CHECK_INTERVAL = 0.25
 DISCOVERY_INTERVAL = 5.0
+CURSOR_IMAGE_REFRESH_INTERVAL = 0.25
+CURSOR_OUTLINE_RADIUS = 1
+CURSOR_OUTLINE_PIXEL = 0xFFFFFFFF
 KEYBOARD_DEVICE_GRACE = 0.5
 RUSTDESK_MOUSE_NAME = "mouce-library-fake-mouse"
 RUSTDESK_POINTER_RELAY_SOCKET = Path(
     "/run/user/1000/4deus-mod-rustdesk-pointer-relay.sock"
 )
+RUSTDESK_CONNECTION_CHECK_INTERVAL = 0.5
+RUSTDESK_CONNECTION_STALE_GRACE = 2.0
+RUSTDESK_IPC_TIMEOUT = 0.01
+RUSTDESK_IPC_MAX_FRAME = 4_096
+RUSTDESK_SCROLL_UNIT = 90
+RUSTDESK_SCROLL_INERTIA_BURST_GAP = 0.14
+RUSTDESK_SCROLL_INERTIA_DELAY = 0.05
+RUSTDESK_SCROLL_INERTIA_MIN_EVENTS = 3
+RUSTDESK_SCROLL_INERTIA_RETAIN = 0.35
+RUSTDESK_SCROLL_INERTIA_GAIN = 0.45
+RUSTDESK_SCROLL_INERTIA_DECAY = 0.82
+RUSTDESK_SCROLL_INERTIA_STOP = 4.0
 LEGACY_RUSTDESK_POINTER_SYNC_MARKER = Path(
     "/run/user/1000/4deus-mod-rustdesk-pointer-sync"
 )
@@ -77,8 +92,11 @@ JOYSTICK_AXIS_SPAN = 65_534
 LINUX_INPUT_EVENT = struct.Struct("@llHHi")
 LINUX_EV_SYN = 0
 LINUX_EV_KEY = 1
+LINUX_EV_REL = 2
 LINUX_EV_ABS = 3
 LINUX_SYN_REPORT = 0
+LINUX_REL_HWHEEL = 6
+LINUX_REL_WHEEL = 8
 LINUX_ABS_X = 0
 LINUX_ABS_Y = 1
 RUSTDESK_ABS_MAX_X = 1280
@@ -105,9 +123,17 @@ LEFT_STICK_RELEASE_THRESHOLD = 12_000
 
 ACTION_NONE = "none"
 ACTION_SHOW_KEYBOARD = "SHOW_KEYBOARD"
+ACTION_HIDE_KEYBOARD = "HIDE_KEYBOARD"
 ACTION_MOUSE_LEFT = "MOUSE_LEFT"
 ACTION_MOUSE_RIGHT = "MOUSE_RIGHT"
 ACTION_MOUSE_MIDDLE = "MOUSE_MIDDLE"
+MOUSE_BINDING_ACTIONS = frozenset(
+    (
+        ACTION_MOUSE_LEFT,
+        ACTION_MOUSE_RIGHT,
+        ACTION_MOUSE_MIDDLE,
+    )
+)
 
 EIS_KEY_CODES = {
     "KEY_ESC": 1,
@@ -293,6 +319,7 @@ class NestedDesktopSession:
     xauthority: Path
     dbus_address: str
     wayland_display: str = "wayland-0"
+    software_cursor_forced: bool = False
 
 
 @dataclass(frozen=True)
@@ -326,6 +353,8 @@ class PointerUpdate:
     middle_button: bool | None = None
     scroll_x: float = 0.0
     scroll_y: float = 0.0
+    scroll_discrete_x: int = 0
+    scroll_discrete_y: int = 0
     scroll_stop_x: bool = False
     scroll_stop_y: bool = False
 
@@ -341,6 +370,8 @@ class PointerUpdate:
             and self.middle_button is None
             and self.scroll_x == 0
             and self.scroll_y == 0
+            and self.scroll_discrete_x == 0
+            and self.scroll_discrete_y == 0
             and not self.scroll_stop_x
             and not self.scroll_stop_y
         )
@@ -401,12 +432,90 @@ def parse_linux_input_events(data: bytes) -> tuple[LinuxInputEvent, ...]:
     return tuple(events)
 
 
+def encode_rustdesk_ipc_frame(payload: bytes) -> bytes:
+    payload_length = len(payload)
+    if payload_length <= 0x3F:
+        header_length = 1
+    elif payload_length <= 0x3FFF:
+        header_length = 2
+    elif payload_length <= 0x3FFFFF:
+        header_length = 3
+    elif payload_length <= 0x3FFFFFFF:
+        header_length = 4
+    else:
+        raise ValueError("RustDesk IPC frame is too large")
+    encoded_length = (payload_length << 2) | (header_length - 1)
+    return encoded_length.to_bytes(header_length, "little") + payload
+
+
+def _receive_exact(connection: socket.socket, length: int) -> bytes:
+    result = bytearray()
+    while len(result) < length:
+        chunk = connection.recv(length - len(result))
+        if not chunk:
+            raise EOFError("RustDesk IPC response was truncated")
+        result.extend(chunk)
+    return bytes(result)
+
+
+def receive_rustdesk_ipc_frame(
+    connection: socket.socket,
+    maximum_length: int = RUSTDESK_IPC_MAX_FRAME,
+) -> bytes:
+    first = _receive_exact(connection, 1)
+    header_length = (first[0] & 0x03) + 1
+    header = first + _receive_exact(connection, header_length - 1)
+    payload_length = int.from_bytes(header, "little") >> 2
+    if payload_length > maximum_length:
+        raise ValueError("RustDesk IPC response is too large")
+    return _receive_exact(connection, payload_length)
+
+
+def query_rustdesk_video_connection_count(
+    ipc_path: Path,
+    timeout: float = RUSTDESK_IPC_TIMEOUT,
+) -> int | None:
+    request = json.dumps(
+        {"t": "VideoConnCount", "c": None},
+        separators=(",", ":"),
+    ).encode()
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(timeout)
+            client.connect(str(ipc_path))
+            client.sendall(encode_rustdesk_ipc_frame(request))
+            response = json.loads(
+                receive_rustdesk_ipc_frame(client).decode()
+            )
+    except (
+        EOFError,
+        json.JSONDecodeError,
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+    ):
+        return None
+    if not isinstance(response, dict):
+        return None
+    count = response.get("c")
+    if (
+        response.get("t") != "VideoConnCount"
+        or isinstance(count, bool)
+        or not isinstance(count, int)
+        or count < 0
+    ):
+        return None
+    return count
+
+
 class RustDeskRelayTranslator:
     def __init__(self):
         self.axes = [0, 0]
         self.axis_known = [False, False]
         self.axis_changed = False
         self.pending_buttons: dict[str, bool] = {}
+        self.pending_scroll_x = 0
+        self.pending_scroll_y = 0
 
     @staticmethod
     def _coordinate(
@@ -468,12 +577,20 @@ class RustDeskRelayTranslator:
                     event.value
                 )
                 continue
+            if event.event_type == LINUX_EV_REL:
+                if event.code == LINUX_REL_HWHEEL:
+                    self.pending_scroll_x += event.value
+                elif event.code == LINUX_REL_WHEEL:
+                    self.pending_scroll_y += event.value
+                continue
             if (
                 event.event_type != LINUX_EV_SYN
                 or event.code != LINUX_SYN_REPORT
                 or (
                     not self.axis_changed
                     and not self.pending_buttons
+                    and not self.pending_scroll_x
+                    and not self.pending_scroll_y
                 )
             ):
                 continue
@@ -489,11 +606,135 @@ class RustDeskRelayTranslator:
                     left_button=self.pending_buttons.get("left"),
                     right_button=self.pending_buttons.get("right"),
                     middle_button=self.pending_buttons.get("middle"),
+                    scroll_discrete_x=(
+                        self.pending_scroll_x * RUSTDESK_SCROLL_UNIT
+                    ),
+                    scroll_discrete_y=(
+                        -self.pending_scroll_y * RUSTDESK_SCROLL_UNIT
+                    ),
                 )
             )
             self.axis_changed = False
             self.pending_buttons = {}
+            self.pending_scroll_x = 0
+            self.pending_scroll_y = 0
         return tuple(updates)
+
+
+class RustDeskScrollInertia:
+    def __init__(self, enabled: bool = False):
+        self.enabled = enabled
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
+        self.last_input_time: float | None = None
+        self.last_direction = (0, 0)
+        self.burst_events = 0
+        self.armed = False
+        self.next_tick = 0.0
+
+    def reset(self):
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
+        self.last_input_time = None
+        self.last_direction = (0, 0)
+        self.burst_events = 0
+        self.armed = False
+        self.next_tick = 0.0
+
+    @staticmethod
+    def _direction(value: int) -> int:
+        return (value > 0) - (value < 0)
+
+    @staticmethod
+    def _push_velocity(current: float, delta: int) -> float:
+        if delta == 0:
+            return current
+        if current * delta <= 0:
+            return delta * RUSTDESK_SCROLL_INERTIA_GAIN
+        velocity = (
+            current * RUSTDESK_SCROLL_INERTIA_RETAIN
+            + delta * RUSTDESK_SCROLL_INERTIA_GAIN
+        )
+        maximum = RUSTDESK_SCROLL_UNIT * 2
+        return max(-maximum, min(maximum, velocity))
+
+    def observe(self, update: PointerUpdate, now: float):
+        if not self.enabled:
+            return
+        delta_x = update.scroll_discrete_x
+        delta_y = update.scroll_discrete_y
+        if not delta_x and not delta_y:
+            return
+
+        direction = (
+            self._direction(delta_x),
+            self._direction(delta_y),
+        )
+        in_same_burst = bool(
+            self.last_input_time is not None
+            and now - self.last_input_time
+            <= RUSTDESK_SCROLL_INERTIA_BURST_GAP
+            and direction == self.last_direction
+        )
+        if in_same_burst:
+            self.burst_events += 1
+        else:
+            self.velocity_x = 0.0
+            self.velocity_y = 0.0
+            self.burst_events = 1
+            self.armed = False
+
+        self.velocity_x = self._push_velocity(
+            self.velocity_x,
+            delta_x,
+        )
+        self.velocity_y = self._push_velocity(
+            self.velocity_y,
+            delta_y,
+        )
+        self.last_input_time = now
+        self.last_direction = direction
+        self.armed = bool(
+            self.armed
+            or self.burst_events >= RUSTDESK_SCROLL_INERTIA_MIN_EVENTS
+        )
+        self.next_tick = now + RUSTDESK_SCROLL_INERTIA_DELAY
+
+    @property
+    def active(self) -> bool:
+        return bool(
+            self.enabled
+            and self.armed
+            and (
+                abs(self.velocity_x) >= RUSTDESK_SCROLL_INERTIA_STOP
+                or abs(self.velocity_y) >= RUSTDESK_SCROLL_INERTIA_STOP
+            )
+        )
+
+    def timeout(self, now: float, maximum: float) -> float:
+        maximum = max(0.0, maximum)
+        if not self.active:
+            return maximum
+        return min(maximum, max(0.0, self.next_tick - now))
+
+    def tick(self, now: float) -> PointerUpdate:
+        if not self.active or now < self.next_tick:
+            return PointerUpdate()
+        update = PointerUpdate(
+            scroll_discrete_x=round(self.velocity_x),
+            scroll_discrete_y=round(self.velocity_y),
+        )
+        self.velocity_x *= RUSTDESK_SCROLL_INERTIA_DECAY
+        self.velocity_y *= RUSTDESK_SCROLL_INERTIA_DECAY
+        if abs(self.velocity_x) < RUSTDESK_SCROLL_INERTIA_STOP:
+            self.velocity_x = 0.0
+        if abs(self.velocity_y) < RUSTDESK_SCROLL_INERTIA_STOP:
+            self.velocity_y = 0.0
+        if not self.velocity_x and not self.velocity_y:
+            self.reset()
+        else:
+            self.next_tick = now + INPUT_FRAME_INTERVAL
+        return update
 
 
 class RustDeskMouseTranslator:
@@ -695,8 +936,11 @@ class InputBindingTranslator:
     def __init__(
         self,
         bindings: Mapping[str, object] | None = None,
+        pointer_actions_enabled: bool = True,
     ):
         self.bindings = normalize_nested_desktop_bindings(bindings)
+        self.pointer_actions_enabled = pointer_actions_enabled
+        self.pointer_activation_blocked = False
         self.active = False
         self.last_sources = {
             source: False for source in NESTED_DESKTOP_BINDING_SOURCES
@@ -713,12 +957,15 @@ class InputBindingTranslator:
     @property
     def has_pointer_actions(self) -> bool:
         return any(
-            action in (
-                ACTION_MOUSE_LEFT,
-                ACTION_MOUSE_RIGHT,
-                ACTION_MOUSE_MIDDLE,
-            )
+            action in MOUSE_BINDING_ACTIONS
             for action in self.bindings.values()
+        )
+
+    @property
+    def pointer_actions_active(self) -> bool:
+        return (
+            self.pointer_actions_enabled
+            and self.has_pointer_actions
         )
 
     @property
@@ -732,6 +979,7 @@ class InputBindingTranslator:
             return BindingUpdate()
         self.active = active
         self.needs_sync = active
+        self.pointer_activation_blocked = False
         if active:
             return BindingUpdate()
         key_events = tuple(
@@ -745,6 +993,20 @@ class InputBindingTranslator:
             source: False for source in NESTED_DESKTOP_BINDING_SOURCES
         }
         return BindingUpdate(key_events=key_events, pointer=pointer)
+
+    def set_pointer_actions_enabled(
+        self,
+        enabled: bool,
+    ) -> PointerUpdate:
+        if enabled == self.pointer_actions_enabled:
+            return PointerUpdate()
+        self.pointer_actions_enabled = enabled
+        self.pointer_activation_blocked = enabled
+        if enabled:
+            return PointerUpdate()
+        pointer = self._mouse_update(set())
+        self.injected_mouse.clear()
+        return pointer
 
     def _stick_pressed(
         self,
@@ -816,6 +1078,14 @@ class InputBindingTranslator:
         if self.needs_sync:
             self.needs_sync = False
             self.last_sources = sources
+            self.pointer_activation_blocked = bool(
+                self.pointer_actions_enabled
+                and any(
+                    pressed
+                    and self.bindings[source] in MOUSE_BINDING_ACTIONS
+                    for source, pressed in sources.items()
+                )
+            )
             return BindingUpdate()
 
         desired_keys = {
@@ -825,17 +1095,21 @@ class InputBindingTranslator:
             for action in (self.bindings[source],)
             if action in EIS_KEY_CODES
         }
-        desired_mouse = {
-            action
-            for source, pressed in sources.items()
-            if pressed
-            for action in (self.bindings[source],)
-            if action in (
-                ACTION_MOUSE_LEFT,
-                ACTION_MOUSE_RIGHT,
-                ACTION_MOUSE_MIDDLE,
-            )
-        }
+        desired_mouse = (
+            {
+                action
+                for source, pressed in sources.items()
+                if pressed
+                for action in (self.bindings[source],)
+                if action in MOUSE_BINDING_ACTIONS
+            }
+            if self.pointer_actions_enabled
+            else set()
+        )
+        if self.pointer_activation_blocked:
+            if not desired_mouse:
+                self.pointer_activation_blocked = False
+            desired_mouse = set()
         key_events = tuple(
             (key_code, False)
             for key_code in sorted(self.injected_keys - desired_keys)
@@ -1201,6 +1475,31 @@ def _find_steam_app_id(
     return None
 
 
+def _find_inherited_environment_value(
+    pid: int,
+    key: str,
+    proc_root: Path,
+    maximum_depth: int = 24,
+) -> str | None:
+    current_pid = pid
+    for _ in range(maximum_depth):
+        process_directory = proc_root / str(current_pid)
+        value = _read_environ(
+            process_directory / "environ"
+        ).get(key)
+        if value is not None:
+            return value
+        parent_pid = _read_parent_pid(process_directory)
+        if (
+            parent_pid is None
+            or parent_pid <= 1
+            or parent_pid == current_pid
+        ):
+            return None
+        current_pid = parent_pid
+    return None
+
+
 def find_nested_desktop_session(
     proc_root: Path = Path("/proc"),
 ) -> NestedDesktopSession | None:
@@ -1249,6 +1548,14 @@ def find_nested_desktop_session(
             xauthority=authority_path,
             dbus_address=dbus_address,
             wayland_display=wayland_display,
+            software_cursor_forced=(
+                _find_inherited_environment_value(
+                    pid,
+                    "KWIN_FORCE_SW_CURSOR",
+                    proc_root,
+                )
+                == "1"
+            ),
         )
     return None
 
@@ -1526,6 +1833,628 @@ class X11Connection:
             self.x11.XCloseDisplay(display)
 
 
+class _XFixesCursorImage(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_short),
+        ("y", ctypes.c_short),
+        ("width", ctypes.c_ushort),
+        ("height", ctypes.c_ushort),
+        ("xhot", ctypes.c_ushort),
+        ("yhot", ctypes.c_ushort),
+        ("cursor_serial", ctypes.c_ulong),
+        ("pixels", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class _XSetWindowAttributes(ctypes.Structure):
+    _fields_ = [
+        ("background_pixmap", ctypes.c_ulong),
+        ("background_pixel", ctypes.c_ulong),
+        ("border_pixmap", ctypes.c_ulong),
+        ("border_pixel", ctypes.c_ulong),
+        ("bit_gravity", ctypes.c_int),
+        ("win_gravity", ctypes.c_int),
+        ("backing_store", ctypes.c_int),
+        ("backing_planes", ctypes.c_ulong),
+        ("backing_pixel", ctypes.c_ulong),
+        ("save_under", ctypes.c_int),
+        ("event_mask", ctypes.c_long),
+        ("do_not_propagate_mask", ctypes.c_long),
+        ("override_redirect", ctypes.c_int),
+        ("colormap", ctypes.c_ulong),
+        ("cursor", ctypes.c_ulong),
+    ]
+
+
+class _XImage(ctypes.Structure):
+    _fields_ = [
+        ("width", ctypes.c_int),
+        ("height", ctypes.c_int),
+        ("xoffset", ctypes.c_int),
+        ("format", ctypes.c_int),
+        ("data", ctypes.c_void_p),
+        ("byte_order", ctypes.c_int),
+        ("bitmap_unit", ctypes.c_int),
+        ("bitmap_bit_order", ctypes.c_int),
+        ("bitmap_pad", ctypes.c_int),
+        ("depth", ctypes.c_int),
+        ("bytes_per_line", ctypes.c_int),
+        ("bits_per_pixel", ctypes.c_int),
+        ("red_mask", ctypes.c_ulong),
+        ("green_mask", ctypes.c_ulong),
+        ("blue_mask", ctypes.c_ulong),
+        ("obdata", ctypes.c_void_p),
+    ]
+
+
+@dataclass(frozen=True)
+class CursorSnapshot:
+    x: int
+    y: int
+    width: int
+    height: int
+    xhot: int
+    yhot: int
+    serial: int
+    pixels: tuple[int, ...]
+
+
+def cursor_alpha_mask(
+    pixels: Sequence[int],
+    width: int,
+    height: int,
+) -> bytes:
+    row_bytes = (width + 7) // 8
+    mask = bytearray(row_bytes * height)
+    for y in range(height):
+        row_offset = y * width
+        mask_offset = y * row_bytes
+        for x in range(width):
+            if (int(pixels[row_offset + x]) >> 24) & 0xFF:
+                mask[mask_offset + (x // 8)] |= 1 << (x % 8)
+    return bytes(mask)
+
+
+def outlined_cursor_snapshot(
+    snapshot: CursorSnapshot,
+    radius: int = CURSOR_OUTLINE_RADIUS,
+) -> CursorSnapshot:
+    """Adds a light outline while preserving the cursor's exact hotspot."""
+    if radius <= 0:
+        return snapshot
+
+    width = snapshot.width + (radius * 2)
+    height = snapshot.height + (radius * 2)
+    pixels = [0] * (width * height)
+    for source_y in range(snapshot.height):
+        source_row = source_y * snapshot.width
+        for source_x in range(snapshot.width):
+            source_pixel = snapshot.pixels[source_row + source_x]
+            if not ((source_pixel >> 24) & 0xFF):
+                continue
+            center_x = source_x + radius
+            center_y = source_y + radius
+            for outline_y in range(
+                center_y - radius,
+                center_y + radius + 1,
+            ):
+                outline_row = outline_y * width
+                for outline_x in range(
+                    center_x - radius,
+                    center_x + radius + 1,
+                ):
+                    pixels[outline_row + outline_x] = (
+                        CURSOR_OUTLINE_PIXEL
+                    )
+
+    for source_y in range(snapshot.height):
+        source_row = source_y * snapshot.width
+        target_row = (source_y + radius) * width + radius
+        for source_x in range(snapshot.width):
+            source_pixel = snapshot.pixels[source_row + source_x]
+            if (source_pixel >> 24) & 0xFF:
+                pixels[target_row + source_x] = source_pixel
+
+    return CursorSnapshot(
+        x=snapshot.x,
+        y=snapshot.y,
+        width=width,
+        height=height,
+        xhot=snapshot.xhot + radius,
+        yhot=snapshot.yhot + radius,
+        serial=snapshot.serial,
+        pixels=tuple(pixels),
+    )
+
+
+class NestedDesktopCursorOverlay:
+    """Draws KWin's cursor into the nested framebuffer on demand."""
+
+    CW_OVERRIDE_REDIRECT = 1 << 9
+    CW_SAVE_UNDER = 1 << 10
+    SHAPE_BOUNDING = 0
+    SHAPE_INPUT = 2
+    SHAPE_SET = 0
+    Z_PIXMAP = 2
+
+    def __init__(self, session: NestedDesktopSession):
+        self.connection = X11Connection(
+            session.display,
+            session.xauthority,
+        )
+        self.x11 = self.connection.x11
+        self.display = self.connection.display
+        self.root = self.connection.root
+        self.xfixes = ctypes.CDLL(
+            ctypes.util.find_library("Xfixes") or "libXfixes.so.3"
+        )
+        self.xext = ctypes.CDLL(
+            ctypes.util.find_library("Xext") or "libXext.so.6"
+        )
+        self._configure_libraries()
+        self.screen = self.x11.XDefaultScreen(self.display)
+        self.visual = self.x11.XDefaultVisual(
+            self.display,
+            self.screen,
+        )
+        self.depth = self.x11.XDefaultDepth(
+            self.display,
+            self.screen,
+        )
+        self.screen_width = self.x11.XDisplayWidth(
+            self.display,
+            self.screen,
+        )
+        self.screen_height = self.x11.XDisplayHeight(
+            self.display,
+            self.screen,
+        )
+        self.window = 0
+        self.gc = None
+        self.visible = False
+        self.cursor_serial: int | None = None
+        self.cursor_width = 1
+        self.cursor_height = 1
+        self.cursor_xhot = 0
+        self.cursor_yhot = 0
+        self.pointer_x = 0.0
+        self.pointer_y = 0.0
+        self.position_primed = False
+        self.window_position: tuple[int, int] | None = None
+        self.rendered_snapshot: CursorSnapshot | None = None
+        self.next_image_refresh = 0.0
+
+    def _configure_libraries(self):
+        pointer = ctypes.c_void_p
+        window = ctypes.c_ulong
+        self.x11.XDefaultScreen.argtypes = [pointer]
+        self.x11.XDefaultScreen.restype = ctypes.c_int
+        self.x11.XDefaultVisual.argtypes = [pointer, ctypes.c_int]
+        self.x11.XDefaultVisual.restype = pointer
+        self.x11.XDefaultDepth.argtypes = [pointer, ctypes.c_int]
+        self.x11.XDefaultDepth.restype = ctypes.c_int
+        self.x11.XDisplayWidth.argtypes = [pointer, ctypes.c_int]
+        self.x11.XDisplayWidth.restype = ctypes.c_int
+        self.x11.XDisplayHeight.argtypes = [pointer, ctypes.c_int]
+        self.x11.XDisplayHeight.restype = ctypes.c_int
+        self.x11.XCreateSimpleWindow.argtypes = [
+            pointer,
+            window,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint,
+            ctypes.c_uint,
+            ctypes.c_uint,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+        ]
+        self.x11.XCreateSimpleWindow.restype = window
+        self.x11.XChangeWindowAttributes.argtypes = [
+            pointer,
+            window,
+            ctypes.c_ulong,
+            ctypes.POINTER(_XSetWindowAttributes),
+        ]
+        self.x11.XCreateGC.argtypes = [
+            pointer,
+            window,
+            ctypes.c_ulong,
+            pointer,
+        ]
+        self.x11.XCreateGC.restype = pointer
+        self.x11.XFreeGC.argtypes = [pointer, pointer]
+        self.x11.XCreateImage.argtypes = [
+            pointer,
+            pointer,
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.c_int,
+            pointer,
+            ctypes.c_uint,
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.c_int,
+        ]
+        self.x11.XCreateImage.restype = ctypes.POINTER(_XImage)
+        self.x11.XPutImage.argtypes = [
+            pointer,
+            window,
+            pointer,
+            ctypes.POINTER(_XImage),
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint,
+            ctypes.c_uint,
+        ]
+        self.x11.XCreateBitmapFromData.argtypes = [
+            pointer,
+            window,
+            pointer,
+            ctypes.c_uint,
+            ctypes.c_uint,
+        ]
+        self.x11.XCreateBitmapFromData.restype = window
+        self.x11.XFreePixmap.argtypes = [pointer, window]
+        self.x11.XMoveWindow.argtypes = [
+            pointer,
+            window,
+            ctypes.c_int,
+            ctypes.c_int,
+        ]
+        self.x11.XResizeWindow.argtypes = [
+            pointer,
+            window,
+            ctypes.c_uint,
+            ctypes.c_uint,
+        ]
+        self.x11.XMapRaised.argtypes = [pointer, window]
+        self.x11.XUnmapWindow.argtypes = [pointer, window]
+        self.x11.XDestroyWindow.argtypes = [pointer, window]
+
+        self.xfixes.XFixesGetCursorImage.argtypes = [pointer]
+        self.xfixes.XFixesGetCursorImage.restype = ctypes.POINTER(
+            _XFixesCursorImage
+        )
+        self.xfixes.XFixesCreateRegion.argtypes = [
+            pointer,
+            pointer,
+            ctypes.c_int,
+        ]
+        self.xfixes.XFixesCreateRegion.restype = ctypes.c_ulong
+        self.xfixes.XFixesSetWindowShapeRegion.argtypes = [
+            pointer,
+            window,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
+        self.xfixes.XFixesDestroyRegion.argtypes = [
+            pointer,
+            ctypes.c_ulong,
+        ]
+        self.xext.XShapeCombineMask.argtypes = [
+            pointer,
+            window,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            window,
+            ctypes.c_int,
+        ]
+
+    def _snapshot(self) -> CursorSnapshot:
+        image = self.xfixes.XFixesGetCursorImage(self.display)
+        if not image:
+            raise RuntimeError("Cannot read the Nested Desktop cursor")
+        try:
+            value = image.contents
+            count = value.width * value.height
+            return CursorSnapshot(
+                x=int(value.x),
+                y=int(value.y),
+                width=int(value.width),
+                height=int(value.height),
+                xhot=int(value.xhot),
+                yhot=int(value.yhot),
+                serial=int(value.cursor_serial),
+                pixels=tuple(
+                    int(value.pixels[index]) & 0xFFFFFFFF
+                    for index in range(count)
+                ),
+            )
+        finally:
+            self.x11.XFree(image)
+
+    def _ensure_window(self, snapshot: CursorSnapshot):
+        if self.window:
+            if (
+                snapshot.width != self.cursor_width
+                or snapshot.height != self.cursor_height
+            ):
+                self.x11.XResizeWindow(
+                    self.display,
+                    self.window,
+                    snapshot.width,
+                    snapshot.height,
+                )
+            return
+        self.window = self.x11.XCreateSimpleWindow(
+            self.display,
+            self.root,
+            0,
+            0,
+            snapshot.width,
+            snapshot.height,
+            0,
+            0,
+            0,
+        )
+        if not self.window:
+            raise RuntimeError("Cannot create the cursor overlay window")
+        attributes = _XSetWindowAttributes()
+        attributes.override_redirect = 1
+        attributes.save_under = 1
+        self.x11.XChangeWindowAttributes(
+            self.display,
+            self.window,
+            self.CW_OVERRIDE_REDIRECT | self.CW_SAVE_UNDER,
+            ctypes.byref(attributes),
+        )
+        self.gc = self.x11.XCreateGC(
+            self.display,
+            self.window,
+            0,
+            None,
+        )
+        if not self.gc:
+            raise RuntimeError("Cannot create the cursor overlay GC")
+        empty_region = self.xfixes.XFixesCreateRegion(
+            self.display,
+            None,
+            0,
+        )
+        self.xfixes.XFixesSetWindowShapeRegion(
+            self.display,
+            self.window,
+            self.SHAPE_INPUT,
+            0,
+            0,
+            empty_region,
+        )
+        self.xfixes.XFixesDestroyRegion(
+            self.display,
+            empty_region,
+        )
+
+    def _draw(self, snapshot: CursorSnapshot):
+        self._ensure_window(snapshot)
+        image = self.x11.XCreateImage(
+            self.display,
+            self.visual,
+            self.depth,
+            self.Z_PIXMAP,
+            0,
+            None,
+            snapshot.width,
+            snapshot.height,
+            32,
+            0,
+        )
+        if not image:
+            raise RuntimeError("Cannot create the cursor overlay image")
+        try:
+            if image.contents.bits_per_pixel != 32:
+                raise RuntimeError(
+                    "Unsupported Nested Desktop X image format"
+                )
+            image_bytes = ctypes.create_string_buffer(
+                image.contents.bytes_per_line * snapshot.height
+            )
+            image.contents.data = ctypes.addressof(image_bytes)
+            for y in range(snapshot.height):
+                row = y * image.contents.bytes_per_line
+                source_row = y * snapshot.width
+                for x in range(snapshot.width):
+                    pixel = snapshot.pixels[source_row + x] & 0xFFFFFF
+                    offset = row + (x * 4)
+                    image_bytes[offset : offset + 4] = pixel.to_bytes(
+                        4,
+                        "little",
+                    )
+            self.x11.XPutImage(
+                self.display,
+                self.window,
+                self.gc,
+                image,
+                0,
+                0,
+                0,
+                0,
+                snapshot.width,
+                snapshot.height,
+            )
+            self.x11.XFlush(self.display)
+        finally:
+            image.contents.data = None
+            self.x11.XFree(image)
+
+        mask_bytes = ctypes.create_string_buffer(
+            cursor_alpha_mask(
+                snapshot.pixels,
+                snapshot.width,
+                snapshot.height,
+            )
+        )
+        mask = self.x11.XCreateBitmapFromData(
+            self.display,
+            self.window,
+            ctypes.addressof(mask_bytes),
+            snapshot.width,
+            snapshot.height,
+        )
+        if not mask:
+            raise RuntimeError("Cannot create the cursor overlay mask")
+        try:
+            self.xext.XShapeCombineMask(
+                self.display,
+                self.window,
+                self.SHAPE_BOUNDING,
+                0,
+                0,
+                mask,
+                self.SHAPE_SET,
+            )
+        finally:
+            self.x11.XFreePixmap(self.display, mask)
+
+        self.cursor_serial = snapshot.serial
+        self.cursor_width = snapshot.width
+        self.cursor_height = snapshot.height
+        self.cursor_xhot = snapshot.xhot
+        self.cursor_yhot = snapshot.yhot
+        self.rendered_snapshot = snapshot
+
+    def _move(self):
+        if not self.window:
+            return
+        position = (
+            round(self.pointer_x) - self.cursor_xhot,
+            round(self.pointer_y) - self.cursor_yhot,
+        )
+        if position == self.window_position:
+            return
+        self.x11.XMoveWindow(
+            self.display,
+            self.window,
+            position[0],
+            position[1],
+        )
+        self.x11.XFlush(self.display)
+        self.window_position = position
+
+    def refresh(
+        self,
+        force_image: bool = False,
+        sync_position: bool = True,
+    ):
+        now = time.monotonic()
+        if not force_image and now < self.next_image_refresh:
+            return
+        snapshot = self._snapshot()
+        if sync_position or not self.position_primed:
+            self.pointer_x = snapshot.x
+            self.pointer_y = snapshot.y
+            self.position_primed = True
+        has_visible_pixels = any(
+            (pixel >> 24) & 0xFF for pixel in snapshot.pixels
+        )
+        if (
+            has_visible_pixels
+            and (
+                force_image
+                or snapshot.serial != self.cursor_serial
+                or (
+                    snapshot.width + (CURSOR_OUTLINE_RADIUS * 2)
+                    != self.cursor_width
+                )
+                or (
+                    snapshot.height + (CURSOR_OUTLINE_RADIUS * 2)
+                    != self.cursor_height
+                )
+            )
+        ):
+            self._draw(outlined_cursor_snapshot(snapshot))
+        elif has_visible_pixels:
+            self.cursor_xhot = snapshot.xhot + CURSOR_OUTLINE_RADIUS
+            self.cursor_yhot = snapshot.yhot + CURSOR_OUTLINE_RADIUS
+        elif self.cursor_serial is None:
+            raise RuntimeError(
+                "Nested Desktop returned an empty cursor image"
+            )
+        self._move()
+        self.next_image_refresh = (
+            now + CURSOR_IMAGE_REFRESH_INTERVAL
+        )
+
+    def prime(self):
+        if self.visible:
+            return
+        self.refresh(
+            force_image=self.cursor_serial is None,
+            sync_position=True,
+        )
+
+    def show(self):
+        if self.visible:
+            self.refresh(sync_position=False)
+            return
+        self.refresh(
+            force_image=self.cursor_serial is None,
+            sync_position=not self.position_primed,
+        )
+        self.x11.XMapRaised(self.display, self.window)
+        self.x11.XFlush(self.display)
+        self.visible = True
+        # Mapping an override-redirect window may clear its backing pixels.
+        # Repaint the cached image once after the map; ongoing pointer motion
+        # only moves the window and never pays this cost.
+        if self.rendered_snapshot is not None:
+            self._draw(self.rendered_snapshot)
+
+    def hide(self):
+        if not self.visible or not self.window:
+            return
+        self.x11.XUnmapWindow(self.display, self.window)
+        self.x11.XFlush(self.display)
+        self.visible = False
+
+    def apply(self, update: PointerUpdate):
+        if not self.visible:
+            return
+        moved = False
+        if update.absolute_x is not None:
+            self.pointer_x = update.absolute_x
+            moved = True
+        elif update.dx:
+            self.pointer_x += update.dx
+            moved = True
+        if update.absolute_y is not None:
+            self.pointer_y = update.absolute_y
+            moved = True
+        elif update.dy:
+            self.pointer_y += update.dy
+            moved = True
+        if not moved:
+            return
+        self.pointer_x = max(
+            0.0,
+            min(float(self.screen_width - 1), self.pointer_x),
+        )
+        self.pointer_y = max(
+            0.0,
+            min(float(self.screen_height - 1), self.pointer_y),
+        )
+        self._move()
+
+    def close(self):
+        display = getattr(self, "display", None)
+        if display:
+            if self.gc:
+                self.x11.XFreeGC(display, self.gc)
+                self.gc = None
+            if self.window:
+                self.x11.XDestroyWindow(display, self.window)
+                self.window = 0
+            self.x11.XFlush(display)
+        self.visible = False
+        self.rendered_snapshot = None
+        self.connection.close()
+        self.display = None
+
+
 class EisConnection:
     def __init__(self, dbus_address: str):
         import dbus
@@ -1650,6 +2579,11 @@ class EisConnection:
             pointer,
             ctypes.c_double,
             ctypes.c_double,
+        ]
+        self.lib.ei_device_scroll_discrete.argtypes = [
+            pointer,
+            ctypes.c_int32,
+            ctypes.c_int32,
         ]
         self.lib.ei_device_scroll_stop.argtypes = [
             pointer,
@@ -1918,6 +2852,12 @@ class EisConnection:
                 update.scroll_x,
                 update.scroll_y,
             )
+        if update.scroll_discrete_x or update.scroll_discrete_y:
+            self.lib.ei_device_scroll_discrete(
+                self.pointer_device,
+                update.scroll_discrete_x,
+                update.scroll_discrete_y,
+            )
         if update.scroll_stop_x or update.scroll_stop_y:
             self.lib.ei_device_scroll_stop(
                 self.pointer_device,
@@ -2083,13 +3023,23 @@ class NestedDesktopMouseRuntime:
         dev_root: Path = Path("/dev"),
         sys_class_input: Path = Path("/sys/class/input"),
         input_dev_root: Path = Path("/dev/input"),
+        mouse_enabled: bool = True,
         inertia_enabled: bool = True,
         bindings_enabled: bool = True,
         bindings: Mapping[str, object] | None = None,
+        rustdesk_pointer_fix_enabled: bool = True,
+        rustdesk_scroll_inertia_enabled: bool = False,
         action_callback: Callable[[str], None] | None = None,
         suspended: bool = False,
         control_fd: int | None = None,
         rustdesk_relay_path: Path | None = None,
+        rustdesk_ipc_path: Path | None = None,
+        rustdesk_connection_query: (
+            Callable[[Path], int | None] | None
+        ) = None,
+        cursor_overlay_factory: (
+            Callable[[NestedDesktopSession], object] | None
+        ) = None,
     ):
         self.stop_event = stop_event
         self.proc_root = proc_root
@@ -2106,24 +3056,53 @@ class NestedDesktopMouseRuntime:
         self.rustdesk_fd: int | None = None
         self.rustdesk_buffer = b""
         self.rustdesk_translator = RustDeskMouseTranslator()
+        self.rustdesk_pointer_fix_enabled = (
+            rustdesk_pointer_fix_enabled
+        )
         self.rustdesk_relay_path = rustdesk_relay_path
         self.rustdesk_relay_socket: socket.socket | None = None
         self.rustdesk_relay_translator = RustDeskRelayTranslator()
+        self.rustdesk_scroll_inertia = RustDeskScrollInertia(
+            enabled=rustdesk_scroll_inertia_enabled,
+        )
+        self.rustdesk_ipc_path = rustdesk_ipc_path or Path(
+            f"/tmp/RustDesk-{os.geteuid()}/ipc"
+        )
+        self.rustdesk_connection_query = (
+            rustdesk_connection_query
+            or query_rustdesk_video_connection_count
+        )
+        self.rustdesk_video_connection_count = 0
+        self.rustdesk_connection_valid_until = 0.0
+        self.next_rustdesk_connection_check = 0.0
         self.wayland_alias: Path | None = None
+        self.cursor_overlay_factory = (
+            cursor_overlay_factory or NestedDesktopCursorOverlay
+        )
+        self.cursor_overlay = None
+        self.cursor_overlay_active = False
+        self.cursor_overlay_failed_session_pid: int | None = None
         self.translator = TrackpadTranslator(
             inertia_enabled=inertia_enabled,
         )
+        self.mouse_enabled = mouse_enabled
         self.bindings_enabled = bindings_enabled
-        self.binding_translator = InputBindingTranslator(bindings)
+        self.binding_translator = InputBindingTranslator(
+            bindings,
+            pointer_actions_enabled=False,
+        )
         self.action_callback = action_callback
         self.suspended = suspended
+        self.remote_keyboard_dismiss_requested = False
         self.control_fd = control_fd
         self.control_buffer = b""
         self.forwarding = False
         self.remote_forwarding = False
+        self.remote_scroll_forwarding = False
         self.remote_button_forwarding = False
         self.remote_relaying: bool | None = None
         self.binding_forwarding = False
+        self.binding_pointer_forwarding = False
         self.next_input_frame = 0.0
 
     def run(self):
@@ -2155,6 +3134,8 @@ class NestedDesktopMouseRuntime:
                 )
                 self._read_reports(timeout)
         finally:
+            self._set_cursor_overlay(False)
+            self._close_cursor_overlay()
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             self._set_remote_forwarding(False)
@@ -2172,6 +3153,7 @@ class NestedDesktopMouseRuntime:
         if suspended == self.suspended:
             return
         self.suspended = suspended
+        self.remote_keyboard_dismiss_requested = False
         if suspended:
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
@@ -2180,6 +3162,24 @@ class NestedDesktopMouseRuntime:
             "Nested Desktop input bridge %s for the Steam keyboard",
             "paused" if suspended else "resumed",
         )
+
+    def _request_keyboard_dismiss_for_remote_input(self):
+        if (
+            not self.suspended
+            or self.remote_keyboard_dismiss_requested
+            or self.action_callback is None
+            or not self._has_active_rustdesk_connection(time.monotonic())
+        ):
+            return
+        self.remote_keyboard_dismiss_requested = True
+        try:
+            self.action_callback(ACTION_HIDE_KEYBOARD)
+        except Exception:
+            self.remote_keyboard_dismiss_requested = False
+            LOGGER.exception(
+                "Failed to request Steam keyboard dismissal "
+                "for RustDesk input"
+            )
 
     def _read_control_commands(self):
         control_fd = self.control_fd
@@ -2219,6 +3219,9 @@ class NestedDesktopMouseRuntime:
         *,
         include_remote: bool = True,
     ):
+        now = time.monotonic()
+        if include_remote and self.remote_scroll_forwarding:
+            timeout = self.rustdesk_scroll_inertia.timeout(now, timeout)
         control_fd = self.control_fd
         rustdesk_fd = self.rustdesk_fd if include_remote else None
         relay = (
@@ -2233,6 +3236,8 @@ class NestedDesktopMouseRuntime:
         ]
         if not descriptors:
             self.stop_event.wait(max(0.0, timeout))
+            if include_remote:
+                self._tick_rustdesk_scroll_inertia()
             return
         try:
             readable, _, _ = select.select(
@@ -2270,6 +3275,24 @@ class NestedDesktopMouseRuntime:
             and relay in readable
         ):
             self._read_rustdesk_relay_events()
+        if include_remote:
+            self._tick_rustdesk_scroll_inertia()
+
+    def _tick_rustdesk_scroll_inertia(self):
+        inner_eis = self.inner_eis
+        if (
+            not self.remote_scroll_forwarding
+            or inner_eis is None
+        ):
+            self.rustdesk_scroll_inertia.reset()
+            return
+        update = self.rustdesk_scroll_inertia.tick(time.monotonic())
+        if update.empty:
+            return
+        try:
+            inner_eis.inject(update)
+        except Exception as error:
+            self._handle_eis_loss(error)
 
     def _discover(self):
         if self.outer_x11 is None:
@@ -2289,6 +3312,9 @@ class NestedDesktopMouseRuntime:
             else find_nested_desktop_session(self.proc_root)
         )
         if discovered_session != self.session:
+            self._set_cursor_overlay(False)
+            self._close_cursor_overlay()
+            self.cursor_overlay_failed_session_pid = None
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             self._set_remote_forwarding(False)
@@ -2323,14 +3349,16 @@ class NestedDesktopMouseRuntime:
             except Exception as error:
                 LOGGER.debug("Nested Desktop input is unavailable: %s", error)
 
-        discovered_rustdesk = (
-            self.rustdesk_path
-            if self.rustdesk_fd is not None
-            else find_rustdesk_joystick(
-                self.sys_class_input,
-                self.input_dev_root,
+        discovered_rustdesk = None
+        if self.rustdesk_pointer_fix_enabled:
+            discovered_rustdesk = (
+                self.rustdesk_path
+                if self.rustdesk_fd is not None
+                else find_rustdesk_joystick(
+                    self.sys_class_input,
+                    self.input_dev_root,
+                )
             )
-        )
         if discovered_rustdesk != self.rustdesk_path:
             self._close_rustdesk_joystick()
             self.rustdesk_path = discovered_rustdesk
@@ -2391,6 +3419,7 @@ class NestedDesktopMouseRuntime:
             or inner_eis is None
             or self.session is None
         ):
+            self._set_cursor_overlay(False)
             self._set_remote_forwarding(False)
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
@@ -2423,50 +3452,198 @@ class NestedDesktopMouseRuntime:
                 mouse_focus_display,
             )
             self._set_remote_forwarding(
-                self.rustdesk_fd is not None
+                self.rustdesk_pointer_fix_enabled
+                and self.rustdesk_fd is not None
                 and remote_pointer_targeted
+                and self._has_active_rustdesk_connection(
+                    time.monotonic()
+                )
             )
             relay_active = self._set_remote_relaying(
                 self.remote_forwarding
-                and not pointer_needs_bridge
             )
             self._set_remote_button_forwarding(
                 self.remote_forwarding
                 and (pointer_needs_bridge or relay_active)
             )
             if self.inner_eis is None:
+                self._set_cursor_overlay(False)
                 return
             if self.suspended or self.hidraw_fd is None:
                 self._set_forwarding(False)
                 self._set_binding_forwarding(False)
-                return
-            binding_capabilities_ready = (
-                (
-                    not self.binding_translator.has_key_actions
-                    or inner_eis.keyboard_ready
+            else:
+                binding_capabilities_ready = (
+                    (
+                        not self.binding_translator.has_key_actions
+                        or inner_eis.keyboard_ready
+                    )
+                    and (
+                        not (
+                            self.mouse_enabled
+                            and pointer_needs_bridge
+                            and self.binding_translator.has_pointer_actions
+                        )
+                        or inner_eis.ready
+                    )
                 )
-                and (
-                    not self.binding_translator.has_pointer_actions
-                    or inner_eis.ready
+                self._set_binding_forwarding(
+                    self.bindings_enabled
+                    and self.binding_translator.has_actions
+                    and binding_capabilities_ready
+                    and should_forward_back_button(
+                        app_id,
+                        focused_app,
+                        focused_gfx_app,
+                        mouse_focus_display,
+                    )
                 )
-            )
-            self._set_binding_forwarding(
-                self.bindings_enabled
-                and self.binding_translator.has_actions
-                and binding_capabilities_ready
-                and should_forward_back_button(
-                    app_id,
-                    focused_app,
-                    focused_gfx_app,
-                    mouse_focus_display,
+                self._set_binding_pointer_forwarding(
+                    self.binding_forwarding
+                    and self.mouse_enabled
+                    and pointer_needs_bridge
+                    and self.binding_translator.has_pointer_actions
+                    and inner_eis.ready
                 )
-            )
-            self._set_forwarding(
-                inner_eis.ready
+                self._set_forwarding(
+                    self.mouse_enabled
+                    and inner_eis.ready
+                    and pointer_needs_bridge
+                )
+            self._set_cursor_overlay(
+                not self.suspended
                 and pointer_needs_bridge
+                and (
+                    self.forwarding
+                    or self.binding_pointer_forwarding
+                    or self.remote_forwarding
+                )
             )
+            if (
+                not pointer_needs_bridge
+                and remote_pointer_targeted
+                and not self.suspended
+                and (
+                    self.mouse_enabled
+                    or self.rustdesk_pointer_fix_enabled
+                )
+            ):
+                self._prime_cursor_overlay()
         except Exception as error:
             self._handle_eis_loss(error)
+
+    def _prime_cursor_overlay(self):
+        session = self.session
+        if (
+            session is None
+            or session.software_cursor_forced
+            or self.cursor_overlay_failed_session_pid == session.pid
+        ):
+            return
+        overlay = self.cursor_overlay
+        try:
+            if overlay is None:
+                overlay = self.cursor_overlay_factory(session)
+                self.cursor_overlay = overlay
+            overlay.prime()
+        except Exception as error:
+            LOGGER.warning(
+                "Nested Desktop cursor overlay is unavailable: %s",
+                error,
+            )
+            self.cursor_overlay_failed_session_pid = session.pid
+            self._close_cursor_overlay()
+
+    def _set_cursor_overlay(self, active: bool):
+        session = self.session
+        active = bool(
+            active
+            and session is not None
+            and not session.software_cursor_forced
+        )
+        overlay = self.cursor_overlay
+        if (
+            active
+            and session is not None
+            and self.cursor_overlay_failed_session_pid == session.pid
+        ):
+            active = False
+        try:
+            if active and overlay is None and session is not None:
+                overlay = self.cursor_overlay_factory(session)
+                self.cursor_overlay = overlay
+            if active:
+                overlay.show()
+            elif overlay is not None:
+                overlay.hide()
+        except Exception as error:
+            LOGGER.warning(
+                "Nested Desktop cursor overlay is unavailable: %s",
+                error,
+            )
+            if session is not None:
+                self.cursor_overlay_failed_session_pid = session.pid
+            self._close_cursor_overlay()
+            active = False
+        if active == self.cursor_overlay_active:
+            return
+        self.cursor_overlay_active = active
+        LOGGER.info(
+            "Nested Desktop cursor overlay %s",
+            "enabled" if active else "disabled",
+        )
+
+    def _apply_cursor_overlay(self, update: PointerUpdate):
+        overlay = self.cursor_overlay
+        if not self.cursor_overlay_active or overlay is None:
+            return
+        try:
+            overlay.apply(update)
+        except Exception as error:
+            LOGGER.warning(
+                "Lost the Nested Desktop cursor overlay: %s",
+                error,
+            )
+            if self.session is not None:
+                self.cursor_overlay_failed_session_pid = self.session.pid
+            self._close_cursor_overlay()
+
+    def _close_cursor_overlay(self):
+        overlay = self.cursor_overlay
+        self.cursor_overlay = None
+        self.cursor_overlay_active = False
+        if overlay is None:
+            return
+        try:
+            overlay.close()
+        except Exception:
+            LOGGER.debug(
+                "Failed to close the Nested Desktop cursor overlay",
+                exc_info=True,
+            )
+
+    def _has_active_rustdesk_connection(self, now: float) -> bool:
+        if now >= self.next_rustdesk_connection_check:
+            self.next_rustdesk_connection_check = (
+                now + RUSTDESK_CONNECTION_CHECK_INTERVAL
+            )
+            count = self.rustdesk_connection_query(
+                self.rustdesk_ipc_path
+            )
+            if count is not None:
+                previous = self.rustdesk_video_connection_count
+                self.rustdesk_video_connection_count = count
+                self.rustdesk_connection_valid_until = (
+                    now + RUSTDESK_CONNECTION_STALE_GRACE
+                )
+                if count != previous:
+                    LOGGER.info(
+                        "RustDesk active video connections: %s",
+                        count,
+                    )
+            elif now >= self.rustdesk_connection_valid_until:
+                self.rustdesk_video_connection_count = 0
+        return self.rustdesk_video_connection_count > 0
 
     def _set_forwarding(self, active: bool):
         if active == self.forwarding:
@@ -2482,8 +3659,8 @@ class NestedDesktopMouseRuntime:
             if inner_eis is not None:
                 inner_eis.inject(update)
                 if not active and not (
-                    self.binding_forwarding
-                    and self.binding_translator.has_pointer_actions
+                    self.binding_pointer_forwarding
+                    or self.remote_scroll_forwarding
                 ):
                     inner_eis.set_emulating(False)
         except Exception as error:
@@ -2504,13 +3681,10 @@ class NestedDesktopMouseRuntime:
             return
         inner_eis = self.inner_eis
         try:
+            if not active:
+                self._set_binding_pointer_forwarding(False)
             if active:
                 active = bool(inner_eis is not None)
-                if (
-                    active
-                    and self.binding_translator.has_pointer_actions
-                ):
-                    active = bool(inner_eis.set_emulating(True))
                 if (
                     active
                     and self.binding_translator.has_key_actions
@@ -2522,11 +3696,6 @@ class NestedDesktopMouseRuntime:
                 if not active:
                     if self.binding_translator.has_key_actions:
                         inner_eis.set_keyboard_emulating(False)
-                    if (
-                        self.binding_translator.has_pointer_actions
-                        and not self.forwarding
-                    ):
-                        inner_eis.set_emulating(False)
         except Exception as error:
             self._handle_eis_loss(error)
             active = False
@@ -2540,8 +3709,49 @@ class NestedDesktopMouseRuntime:
         else:
             LOGGER.info("Nested Desktop configurable bindings disabled")
 
+    def _set_binding_pointer_forwarding(self, active: bool):
+        active = bool(
+            active
+            and self.binding_forwarding
+            and self.binding_translator.has_pointer_actions
+        )
+        if active == self.binding_pointer_forwarding:
+            return
+        inner_eis = self.inner_eis
+        try:
+            if active:
+                active = bool(
+                    inner_eis is not None
+                    and inner_eis.set_emulating(True)
+                )
+            update = (
+                self.binding_translator
+                .set_pointer_actions_enabled(active)
+            )
+            if inner_eis is not None:
+                inner_eis.inject(update)
+                if (
+                    not active
+                    and not self.forwarding
+                    and not self.remote_scroll_forwarding
+                ):
+                    inner_eis.set_emulating(False)
+        except Exception as error:
+            self._handle_eis_loss(error)
+            active = False
+        if active != self.binding_pointer_forwarding:
+            self.next_input_frame = 0.0
+        if active == self.binding_pointer_forwarding:
+            return
+        self.binding_pointer_forwarding = active
+        LOGGER.info(
+            "Nested Desktop mouse bindings %s",
+            "enabled" if active else "disabled",
+        )
+
     def _set_remote_forwarding(self, active: bool):
         if not active:
+            self.rustdesk_scroll_inertia.reset()
             self._set_remote_button_forwarding(False)
             self._set_remote_relaying(False)
         if active == self.remote_forwarding:
@@ -2551,11 +3761,17 @@ class NestedDesktopMouseRuntime:
                 and inner_eis is not None
                 and inner_eis.absolute_ready
                 and inner_eis.absolute_emulating
+                and inner_eis.ready
+                and inner_eis.emulating
+                and self.remote_scroll_forwarding
             ):
                 return
             if not active and (
                 inner_eis is None
-                or not inner_eis.absolute_emulating
+                or (
+                    not inner_eis.absolute_emulating
+                    and not self.remote_scroll_forwarding
+                )
             ):
                 return
         inner_eis = self.inner_eis
@@ -2571,15 +3787,27 @@ class NestedDesktopMouseRuntime:
                     and bounds is not None
                     and inner_eis.set_absolute_emulating(True)
                 )
+                self.remote_scroll_forwarding = bool(
+                    active
+                    and inner_eis is not None
+                    and inner_eis.set_emulating(True)
+                )
                 if active and bounds is not None:
                     inner_eis.inject_absolute(
                         self.rustdesk_translator.position(bounds)
                     )
             elif inner_eis is not None:
                 inner_eis.set_absolute_emulating(False)
+                self.remote_scroll_forwarding = False
+                if (
+                    not self.forwarding
+                    and not self.binding_pointer_forwarding
+                ):
+                    inner_eis.set_emulating(False)
         except Exception as error:
             self._handle_eis_loss(error)
             active = False
+            self.remote_scroll_forwarding = False
         self.remote_forwarding = active
         if not active:
             self._set_remote_relaying(False)
@@ -2667,6 +3895,7 @@ class NestedDesktopMouseRuntime:
         inner_eis = self.inner_eis
         if inner_eis is not None:
             inner_eis.inject(update.pointer)
+            self._apply_cursor_overlay(update.pointer)
             for key_code, pressed in update.key_events:
                 inner_eis.inject_key(key_code, pressed)
         callback = self.action_callback
@@ -2690,9 +3919,13 @@ class NestedDesktopMouseRuntime:
         self.binding_translator.set_active(False)
         self.forwarding = False
         self.remote_forwarding = False
+        self.remote_scroll_forwarding = False
         self.remote_button_forwarding = False
+        self.rustdesk_scroll_inertia.reset()
         self._set_remote_relaying(False)
         self.binding_forwarding = False
+        self.binding_pointer_forwarding = False
+        self._set_cursor_overlay(False)
         self.next_input_frame = 0.0
 
     def _read_rustdesk_events(self):
@@ -2721,6 +3954,15 @@ class NestedDesktopMouseRuntime:
                 return
             events = parse_joystick_events(self.rustdesk_buffer[:usable])
             self.rustdesk_buffer = self.rustdesk_buffer[usable:]
+            if any(
+                not event.initial
+                and event.event_type in (
+                    JOYSTICK_EVENT_AXIS,
+                    JOYSTICK_EVENT_BUTTON,
+                )
+                for event in events
+            ):
+                self._request_keyboard_dismiss_for_remote_input()
             forwarding = self.remote_forwarding and inner_eis is not None
             bounds = inner_eis.absolute_bounds() if forwarding else None
             if forwarding and bounds is None:
@@ -2739,6 +3981,7 @@ class NestedDesktopMouseRuntime:
                     )
                 if not update.empty:
                     inner_eis.inject_absolute(update)
+                    self._apply_cursor_overlay(update)
         except (OSError, ValueError) as error:
             LOGGER.warning("Lost the RustDesk pointer device: %s", error)
             self._close_rustdesk_joystick()
@@ -2769,15 +4012,46 @@ class NestedDesktopMouseRuntime:
                     break
                 if not data:
                     continue
+                events = parse_linux_input_events(data)
+                if any(
+                    event.event_type != LINUX_EV_SYN
+                    for event in events
+                ):
+                    self._request_keyboard_dismiss_for_remote_input()
                 updates = self.rustdesk_relay_translator.translate(
-                    parse_linux_input_events(data),
+                    events,
                     bounds,
                 )
                 if not forwarding or inner_eis is None:
                     continue
                 for update in updates:
-                    if not update.empty:
-                        inner_eis.inject_absolute(update)
+                    absolute_update = PointerUpdate(
+                        absolute_x=update.absolute_x,
+                        absolute_y=update.absolute_y,
+                        left_button=update.left_button,
+                        right_button=update.right_button,
+                        middle_button=update.middle_button,
+                    )
+                    if not absolute_update.empty:
+                        inner_eis.inject_absolute(absolute_update)
+                        self._apply_cursor_overlay(absolute_update)
+                    scroll_update = PointerUpdate(
+                        scroll_x=update.scroll_x,
+                        scroll_y=update.scroll_y,
+                        scroll_discrete_x=update.scroll_discrete_x,
+                        scroll_discrete_y=update.scroll_discrete_y,
+                        scroll_stop_x=update.scroll_stop_x,
+                        scroll_stop_y=update.scroll_stop_y,
+                    )
+                    if (
+                        self.remote_scroll_forwarding
+                        and not scroll_update.empty
+                    ):
+                        inner_eis.inject(scroll_update)
+                        self.rustdesk_scroll_inertia.observe(
+                            scroll_update,
+                            time.monotonic(),
+                        )
         except OSError as error:
             LOGGER.warning("Lost the RustDesk pointer relay: %s", error)
             self._set_remote_relaying(False)
@@ -2843,6 +4117,7 @@ class NestedDesktopMouseRuntime:
             if self.inner_eis is not None:
                 try:
                     self.inner_eis.inject(update)
+                    self._apply_cursor_overlay(update)
                     self._inject_binding_update(binding_update)
                 except Exception as error:
                     self._handle_eis_loss(error)
@@ -2871,6 +4146,9 @@ class NestedDesktopMouseRuntime:
         self.rustdesk_path = None
         self.rustdesk_buffer = b""
         self.rustdesk_translator = RustDeskMouseTranslator()
+        self.rustdesk_video_connection_count = 0
+        self.rustdesk_connection_valid_until = 0.0
+        self.next_rustdesk_connection_check = 0.0
 
 
 class NestedDesktopMouseSupervisor:
@@ -2878,19 +4156,25 @@ class NestedDesktopMouseSupervisor:
         self,
         plugin_root: str | Path,
         logger: logging.Logger,
+        mouse_enabled: bool = True,
         inertia_enabled: bool = True,
         bindings_enabled: bool = True,
         bindings: Mapping[str, object] | None = None,
         rustdesk_pointer_fix_enabled: bool = True,
+        rustdesk_scroll_inertia_enabled: bool = False,
         run_as_user: str | None = None,
         action_callback: Callable[[str], None] | None = None,
     ):
         self.plugin_root = Path(plugin_root)
         self.logger = logger
+        self.mouse_enabled = mouse_enabled
         self.inertia_enabled = inertia_enabled
         self.bindings_enabled = bindings_enabled
         self.bindings = normalize_nested_desktop_bindings(bindings)
         self.rustdesk_pointer_fix_enabled = rustdesk_pointer_fix_enabled
+        self.rustdesk_scroll_inertia_enabled = (
+            rustdesk_scroll_inertia_enabled
+        )
         self.run_as_user = run_as_user
         self.action_callback = action_callback
         self.suspended = False
@@ -2940,6 +4224,11 @@ class NestedDesktopMouseSupervisor:
             return
         self._restart_with(lambda: setattr(self, "inertia_enabled", enabled))
 
+    def set_mouse_enabled(self, enabled: bool):
+        if enabled == self.mouse_enabled:
+            return
+        self._restart_with(lambda: setattr(self, "mouse_enabled", enabled))
+
     def set_rustdesk_pointer_fix_enabled(self, enabled: bool):
         if enabled == self.rustdesk_pointer_fix_enabled:
             return
@@ -2947,6 +4236,17 @@ class NestedDesktopMouseSupervisor:
             lambda: setattr(
                 self,
                 "rustdesk_pointer_fix_enabled",
+                enabled,
+            )
+        )
+
+    def set_rustdesk_scroll_inertia_enabled(self, enabled: bool):
+        if enabled == self.rustdesk_scroll_inertia_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(
+                self,
+                "rustdesk_scroll_inertia_enabled",
                 enabled,
             )
         )
@@ -3004,11 +4304,18 @@ class NestedDesktopMouseSupervisor:
         if was_started:
             self.stop()
         apply()
-        if was_started:
+        if (
+            self.mouse_enabled
+            or self.bindings_enabled
+            or self.rustdesk_pointer_fix_enabled
+        ):
             self.start()
 
     def _dispatch_action(self, action: str):
-        if action != ACTION_SHOW_KEYBOARD:
+        if action not in {
+            ACTION_HIDE_KEYBOARD,
+            ACTION_SHOW_KEYBOARD,
+        }:
             self.logger.warning(
                 "Ignoring unknown Nested Desktop worker action %s",
                 action,
@@ -3064,10 +4371,14 @@ class NestedDesktopMouseSupervisor:
                     )
                 if not self.inertia_enabled:
                     command.append("--no-inertia")
+                if not self.mouse_enabled:
+                    command.append("--no-mouse-bridge")
                 if not self.bindings_enabled:
                     command.append("--no-bindings")
                 if not self.rustdesk_pointer_fix_enabled:
                     command.append("--no-rustdesk-pointer-fix")
+                if self.rustdesk_scroll_inertia_enabled:
+                    command.append("--rustdesk-scroll-inertia")
                 if launch_suspended:
                     command.append("--suspended")
                 command.extend(
@@ -3169,10 +4480,12 @@ def _configure_parent_death_signal():
 
 
 def run_worker(
+    mouse_enabled: bool = True,
     inertia_enabled: bool = True,
     bindings_enabled: bool = True,
     bindings: Mapping[str, object] | None = None,
     rustdesk_pointer_fix_enabled: bool = True,
+    rustdesk_scroll_inertia_enabled: bool = False,
     suspended: bool = False,
     control_fd: int | None = None,
 ) -> int:
@@ -3190,9 +4503,14 @@ def run_worker(
     signal.signal(signal.SIGTERM, stop_worker)
     runtime = NestedDesktopMouseRuntime(
         stop_event,
+        mouse_enabled=mouse_enabled,
         inertia_enabled=inertia_enabled,
         bindings_enabled=bindings_enabled,
         bindings=bindings,
+        rustdesk_pointer_fix_enabled=rustdesk_pointer_fix_enabled,
+        rustdesk_scroll_inertia_enabled=(
+            rustdesk_scroll_inertia_enabled
+        ),
         action_callback=lambda action: print(action, flush=True),
         suspended=suspended,
         control_fd=control_fd,
@@ -3209,9 +4527,11 @@ def run_worker(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--no-mouse-bridge", action="store_true")
     parser.add_argument("--no-inertia", action="store_true")
     parser.add_argument("--no-bindings", action="store_true")
     parser.add_argument("--no-rustdesk-pointer-fix", action="store_true")
+    parser.add_argument("--rustdesk-scroll-inertia", action="store_true")
     parser.add_argument("--suspended", action="store_true")
     parser.add_argument("--bindings-json", default="{}")
     arguments = parser.parse_args()
@@ -3224,11 +4544,15 @@ def main() -> int:
     if not isinstance(bindings, dict):
         parser.error("--bindings-json must contain an object")
     return run_worker(
+        mouse_enabled=not arguments.no_mouse_bridge,
         inertia_enabled=not arguments.no_inertia,
         bindings_enabled=not arguments.no_bindings,
         bindings=bindings,
         rustdesk_pointer_fix_enabled=(
             not arguments.no_rustdesk_pointer_fix
+        ),
+        rustdesk_scroll_inertia_enabled=(
+            arguments.rustdesk_scroll_inertia
         ),
         suspended=arguments.suspended,
         control_fd=sys.stdin.fileno(),

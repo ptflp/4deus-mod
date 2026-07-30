@@ -6,19 +6,29 @@ export const SYNTHETIC_FUNCTION_KEY = "4deus_Fn";
 export const NATIVE_ALT_KEY = "AltGr";
 export const SYNTHETIC_ALT_KEY = "4deus_Alt";
 export const KEY_SELECTOR = "[data-key-row][data-key-col]";
+export const VISUAL_SWAP_ACTION = "swap";
+export type LanguageSwitchMenuValue =
+  | LanguageSwitchShortcut
+  | typeof VISUAL_SWAP_ACTION;
 
 export interface LanguageSwitchOption {
   column: number;
   label: string;
   row: number;
-  value: LanguageSwitchShortcut;
+  value: LanguageSwitchMenuValue;
 }
+
+type SystemLanguageSwitchShortcut = Exclude<
+  LanguageSwitchShortcut,
+  "native"
+>;
 
 export const LANGUAGE_SWITCH_OPTIONS: ReadonlyArray<LanguageSwitchOption> = [
   { row: 2, column: 3, label: "Alt\nShift", value: "alt-shift" },
   { row: 3, column: 3, label: "Ctrl\nShift", value: "ctrl-shift" },
   { row: 2, column: 8, label: "Cmd\nSpace", value: "meta-space" },
   { row: 3, column: 8, label: "Steam", value: "native" },
+  { row: 4, column: 2, label: "1 ⇄ 2", value: "swap" },
 ];
 
 const LANGUAGE_SWITCH_OPTIONS_BY_POSITION = new Map(
@@ -122,7 +132,7 @@ export const isKeyNameVisibleInLayer = (
 };
 
 export const languageSwitchModifiers = (
-  shortcut: LanguageSwitchShortcut,
+  shortcut: SystemLanguageSwitchShortcut,
 ): { keyName: string; withAlt: boolean; withControl: boolean; withMeta: boolean } => ({
   keyName: shortcut === "meta-space" ? "KEY_SPACE" : "KEY_LEFTSHIFT",
   withAlt: shortcut === "alt-shift",
@@ -130,8 +140,16 @@ export const languageSwitchModifiers = (
   withMeta: shortcut === "meta-space",
 });
 
+export const shouldAutoSwapVisualLayer = (
+  enabled: boolean,
+  shortcut: LanguageSwitchShortcut,
+): boolean => enabled && shortcut !== "native";
+
 export const keyPosition = (key: HTMLElement): string =>
   `${key.dataset.keyRow}:${key.dataset.keyCol}`;
+
+export const isKeyboardHelpKey = (key: HTMLElement): boolean =>
+  keyPosition(key) === "3:10";
 
 export const resolveLanguageSwitchOption = (
   key: HTMLElement,

@@ -112,6 +112,10 @@ export default definePlugin(() => {
       [boolean],
       NestedDesktopMouseStatus
     >("set_rustdesk_pointer_fix_enabled"),
+    setRustDeskScrollInertiaEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_rustdesk_scroll_inertia_enabled"),
     setNestedDesktopBindingsEnabled: callable<
       [boolean],
       NestedDesktopMouseStatus
@@ -138,6 +142,8 @@ export default definePlugin(() => {
     (action) => {
       if (action === "SHOW_KEYBOARD")
         keyboardFeature.showKeyboard();
+      else if (action === "HIDE_KEYBOARD")
+        keyboardFeature.hideKeyboard();
     },
   );
   const KeyboardRoute = () => <KeyboardSettingsRoute settings={settings} />;

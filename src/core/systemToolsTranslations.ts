@@ -23,7 +23,14 @@ export interface SystemToolsTranslation {
   nestedDesktopTrackpadInertiaDescription: string;
   rustDeskPointerFix: string;
   rustDeskPointerFixDescription: string;
+  rustDeskScrollInertia: string;
+  rustDeskScrollInertiaDescription: string;
 }
+
+type BaseSystemToolsTranslation = Omit<
+  SystemToolsTranslation,
+  "rustDeskScrollInertia" | "rustDeskScrollInertiaDescription"
+>;
 
 type Values = [
   systemTools: string,
@@ -77,7 +84,7 @@ const define = ([
   nestedDesktopTrackpadInertiaDescription,
   rustDeskPointerFix,
   rustDeskPointerFixDescription,
-]: Values): SystemToolsTranslation => ({
+]: Values): BaseSystemToolsTranslation => ({
   systemTools,
   systemToolsDescription,
   systemToolsStatus,
@@ -104,8 +111,8 @@ const define = ([
   rustDeskPointerFixDescription,
 });
 
-export const systemToolsTranslations:
-Record<string, SystemToolsTranslation> = {
+const baseSystemToolsTranslations:
+Record<string, BaseSystemToolsTranslation> = {
   arabic: define([
     "أدوات النظام", "تثبيت وإدارة إصلاحات نظام محددة", "الحالة", "جارٍ التحميل…",
     "إصلاح MangoHud لسطح المكتب المتداخل", "يمنع عمليات سطح المكتب المتداخل المحمية من تعطيل MangoApp وإخفاء تراكب الأداء",
@@ -437,3 +444,145 @@ Record<string, SystemToolsTranslation> = {
     "Bản sửa con trỏ RustDesk", "Ngăn con trỏ trùng lặp và nhảy vị trí trong Nested Desktop; Thêm / Sửa RustDesk tự động cài đặt tích hợp hệ thống cần thiết",
   ]),
 };
+
+type RustDeskScrollTranslation = Pick<
+  SystemToolsTranslation,
+  "rustDeskScrollInertia" | "rustDeskScrollInertiaDescription"
+>;
+
+const rustDeskScrollTranslations:
+Record<string, RustDeskScrollTranslation> = {
+  arabic: {
+    rustDeskScrollInertia: "قصور عجلة RustDesk",
+    rustDeskScrollInertiaDescription: "يضيف انزلاقًا طبيعيًا قصيرًا بعد تدوير العجلة بسرعة؛ يكون معطّلًا افتراضيًا ولا يؤثر في قصور لوحة التتبع",
+  },
+  brazilian: {
+    rustDeskScrollInertia: "Inércia da roda do RustDesk",
+    rustDeskScrollInertiaDescription: "Adiciona um deslizamento natural curto após rolar rapidamente; vem desativada e não afeta a inércia dos trackpads",
+  },
+  bulgarian: {
+    rustDeskScrollInertia: "Инерция на колелцето в RustDesk",
+    rustDeskScrollInertiaDescription: "Добавя кратко естествено довършване след бързо превъртане; изключено е по подразбиране и не влияе на инерцията на тракпадите",
+  },
+  czech: {
+    rustDeskScrollInertia: "Setrvačnost kolečka RustDesk",
+    rustDeskScrollInertiaDescription: "Po rychlém rolování přidá krátký přirozený dojezd; ve výchozím stavu je vypnutá a neovlivňuje setrvačnost trackpadů",
+  },
+  danish: {
+    rustDeskScrollInertia: "RustDesk-musehjulsinerti",
+    rustDeskScrollInertiaDescription: "Tilføjer et kort naturligt efterløb efter hurtig rulning; er slået fra som standard og påvirker ikke trackpad-inerti",
+  },
+  dutch: {
+    rustDeskScrollInertia: "RustDesk-wieltraagheid",
+    rustDeskScrollInertiaDescription: "Voegt een korte natuurlijke uitloop toe na snel scrollen; staat standaard uit en beïnvloedt de trackpadtraagheid niet",
+  },
+  finnish: {
+    rustDeskScrollInertia: "RustDesk-rullan vieritysinertia",
+    rustDeskScrollInertiaDescription: "Lisää lyhyen luonnollisen jälkiliikkeen nopean vierityksen jälkeen; oletuksena pois käytöstä eikä vaikuta ohjauslevyjen inertiaan",
+  },
+  french: {
+    rustDeskScrollInertia: "Inertie de la molette RustDesk",
+    rustDeskScrollInertiaDescription: "Ajoute une courte glisse naturelle après un défilement rapide ; désactivée par défaut et sans effet sur l’inertie des trackpads",
+  },
+  german: {
+    rustDeskScrollInertia: "RustDesk-Mausradträgheit",
+    rustDeskScrollInertiaDescription: "Fügt nach schnellem Scrollen einen kurzen natürlichen Nachlauf hinzu; standardmäßig deaktiviert und unabhängig von der Trackpad-Trägheit",
+  },
+  greek: {
+    rustDeskScrollInertia: "Αδράνεια τροχού RustDesk",
+    rustDeskScrollInertiaDescription: "Προσθέτει μια σύντομη φυσική κύλιση μετά από γρήγορη χρήση του τροχού· είναι απενεργοποιημένη από προεπιλογή και δεν επηρεάζει την αδράνεια των trackpad",
+  },
+  hungarian: {
+    rustDeskScrollInertia: "RustDesk-görgő tehetetlensége",
+    rustDeskScrollInertiaDescription: "Rövid természetes továbbgördülést ad a gyors görgetéshez; alapértelmezetten ki van kapcsolva, és nem befolyásolja az érintőpad tehetetlenségét",
+  },
+  indonesian: {
+    rustDeskScrollInertia: "Inersia roda RustDesk",
+    rustDeskScrollInertiaDescription: "Menambahkan luncuran alami singkat setelah menggulir cepat; nonaktif secara bawaan dan tidak memengaruhi inersia trackpad",
+  },
+  italian: {
+    rustDeskScrollInertia: "Inerzia della rotellina RustDesk",
+    rustDeskScrollInertiaDescription: "Aggiunge un breve scorrimento naturale dopo una rotazione rapida; disattivata per impostazione predefinita e indipendente dall’inerzia dei trackpad",
+  },
+  japanese: {
+    rustDeskScrollInertia: "RustDesk ホイールの慣性",
+    rustDeskScrollInertiaDescription: "ホイールを素早く回した後に短く自然な余韻を加えます。既定では無効で、トラックパッドの慣性には影響しません",
+  },
+  koreana: {
+    rustDeskScrollInertia: "RustDesk 휠 관성",
+    rustDeskScrollInertiaDescription: "휠을 빠르게 스크롤한 뒤 짧고 자연스럽게 이어집니다. 기본값은 꺼짐이며 트랙패드 관성에는 영향을 주지 않습니다",
+  },
+  latam: {
+    rustDeskScrollInertia: "Inercia de la rueda de RustDesk",
+    rustDeskScrollInertiaDescription: "Añade un breve deslizamiento natural después de desplazar rápidamente; está desactivada de forma predeterminada y no afecta la inercia de los trackpads",
+  },
+  malay: {
+    rustDeskScrollInertia: "Inersia roda RustDesk",
+    rustDeskScrollInertiaDescription: "Menambah luncuran semula jadi yang singkat selepas tatal pantas; dimatikan secara lalai dan tidak menjejaskan inersia pad jejak",
+  },
+  norwegian: {
+    rustDeskScrollInertia: "RustDesk-rullehjulsinerti",
+    rustDeskScrollInertiaDescription: "Legger til en kort naturlig etterrulling etter rask rulling; er av som standard og påvirker ikke styreplateinerti",
+  },
+  polish: {
+    rustDeskScrollInertia: "Bezwładność kółka RustDesk",
+    rustDeskScrollInertiaDescription: "Dodaje krótki naturalny wybieg po szybkim przewijaniu; domyślnie wyłączona i niezależna od bezwładności gładzików",
+  },
+  portuguese: {
+    rustDeskScrollInertia: "Inércia da roda do RustDesk",
+    rustDeskScrollInertiaDescription: "Adiciona um curto deslizamento natural após deslocamento rápido; está desativada por predefinição e não afeta a inércia dos trackpads",
+  },
+  romanian: {
+    rustDeskScrollInertia: "Inerția rotiței RustDesk",
+    rustDeskScrollInertiaDescription: "Adaugă o scurtă alunecare naturală după derularea rapidă; este dezactivată implicit și nu afectează inerția trackpadurilor",
+  },
+  russian: {
+    rustDeskScrollInertia: "Инерция колеса RustDesk",
+    rustDeskScrollInertiaDescription: "Добавляет короткое естественное докатывание после быстрой прокрутки; по умолчанию выключено и не влияет на инерцию трекпадов",
+  },
+  schinese: {
+    rustDeskScrollInertia: "RustDesk 滚轮惯性",
+    rustDeskScrollInertiaDescription: "快速滚动后增加短暂自然的惯性滑动；默认关闭，且不会影响触控板惯性",
+  },
+  spanish: {
+    rustDeskScrollInertia: "Inercia de la rueda de RustDesk",
+    rustDeskScrollInertiaDescription: "Añade un breve deslizamiento natural tras desplazar rápidamente; está desactivada de forma predeterminada y no afecta a la inercia de los trackpads",
+  },
+  swedish: {
+    rustDeskScrollInertia: "RustDesk-rullhjulströghet",
+    rustDeskScrollInertiaDescription: "Lägger till en kort naturlig efterrullning efter snabb rullning; är avstängd som standard och påverkar inte styrplattornas tröghet",
+  },
+  tchinese: {
+    rustDeskScrollInertia: "RustDesk 滾輪慣性",
+    rustDeskScrollInertiaDescription: "快速捲動後加入短暫自然的慣性滑動；預設關閉，且不會影響觸控板慣性",
+  },
+  thai: {
+    rustDeskScrollInertia: "แรงเฉื่อยล้อเลื่อน RustDesk",
+    rustDeskScrollInertiaDescription: "เพิ่มการไหลต่ออย่างเป็นธรรมชาติช่วงสั้นหลังเลื่อนเร็ว ปิดไว้ตามค่าเริ่มต้นและไม่กระทบแรงเฉื่อยของแทร็กแพด",
+  },
+  turkish: {
+    rustDeskScrollInertia: "RustDesk tekerlek ataleti",
+    rustDeskScrollInertiaDescription: "Hızlı kaydırmadan sonra kısa ve doğal bir devam hareketi ekler; varsayılan olarak kapalıdır ve izleme dörtgeni ataletini etkilemez",
+  },
+  ukrainian: {
+    rustDeskScrollInertia: "Інерція колеса RustDesk",
+    rustDeskScrollInertiaDescription: "Додає коротке природне докручування після швидкого прокручування; типово вимкнено й не впливає на інерцію трекпадів",
+  },
+  vietnamese: {
+    rustDeskScrollInertia: "Quán tính bánh xe RustDesk",
+    rustDeskScrollInertiaDescription: "Thêm một đoạn trượt tự nhiên ngắn sau khi cuộn nhanh; mặc định tắt và không ảnh hưởng đến quán tính bàn di chuột",
+  },
+};
+
+export const systemToolsTranslations:
+Record<string, SystemToolsTranslation> = Object.fromEntries(
+  Object.entries(baseSystemToolsTranslations).map(
+    ([language, strings]) => [
+      language,
+      {
+        ...strings,
+        ...rustDeskScrollTranslations[language],
+      },
+    ],
+  ),
+) as Record<string, SystemToolsTranslation>;

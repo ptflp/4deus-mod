@@ -9,6 +9,7 @@ import {
   SYNTHETIC_FUNCTION_KEY,
 } from "./systemKeys";
 import { DECK_BINDING_LABEL_CLASS } from "./DeckButtonBindingView";
+import { HOLD_HINT_LABEL_CLASS } from "./HoldHintView";
 
 const SYSTEM_KEY_CLASS = "fourdeus-system-key";
 const ACTIVE_KEY_CLASS = "fourdeus-system-key-active";
@@ -36,7 +37,7 @@ const STYLES = `
     position: relative !important;
   }
 
-  .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}):not(.${DECK_BINDING_LABEL_CLASS}) span:not(.${LABEL_CLASS}),
+  .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}):not(.${DECK_BINDING_LABEL_CLASS}):not(.${HOLD_HINT_LABEL_CLASS}) span:not(.${LABEL_CLASS}),
   .${SYSTEM_KEY_CLASS} > :not(.${LABEL_CLASS}) svg,
   .${SYSTEM_KEY_CLASS} .fourdeus-secondary-label {
     visibility: hidden !important;

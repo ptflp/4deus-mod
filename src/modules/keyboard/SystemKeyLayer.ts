@@ -3,6 +3,7 @@ import {
   findKeyBySystemName,
   findNamedKey,
   isAltKey,
+  isKeyboardHelpKey,
   isKeyNameVisibleInLayer,
   isShiftKey,
   KEY_SELECTOR,
@@ -12,6 +13,7 @@ import {
   resolveSystemKey,
   SYNTHETIC_ALT_KEY,
   SYNTHETIC_FUNCTION_KEY,
+  VISUAL_SWAP_ACTION,
 } from "./systemKeys";
 import type {
   DeckButtonBindings,
@@ -23,12 +25,14 @@ import {
   resolveDeckButtonCommand,
 } from "./deckButtonBindings";
 import { DeckButtonBindingView } from "./DeckButtonBindingView";
+import { HoldHintView } from "./HoldHintView";
 import { LanguageSwitchMenu } from "./LanguageSwitchMenu";
 import { PRESSED_KEY_CLASS, SystemKeyView } from "./SystemKeyView";
-import { isQwertyKeyboardLayout } from "./steamLayouts";
+import { activateQwertyKeyboardLayout } from "./steamLayouts";
 
 const LONG_PRESS_MS = 550;
 const GAMEPAD_OK_BUTTON = 1;
+const GAMEPAD_CANCEL_BUTTON = 2;
 const SECOND_LAYER_BUTTON = 25;
 const HOLDABLE_BOUND_KEYS = new Set([
   "KEY_LEFTCTRL",
@@ -72,6 +76,12 @@ export interface SystemKeyDiagnostics {
   systemMode: boolean;
 }
 
+export interface KeyboardHelpController {
+  close(): void;
+  isVisible(): boolean;
+  show(): void;
+}
+
 interface GamepadButtonDetail {
   button: number;
   is_repeat?: boolean;
@@ -79,11 +89,13 @@ interface GamepadButtonDetail {
 }
 
 type HoldSource = "gamepad" | "touch";
+type LongPressAction = "help" | "language-menu" | "toggle-system-mode";
 
 interface HoldState {
   gamepadDetail?: GamepadButtonDetail;
   key: HTMLElement;
   longPress: boolean;
+  longPressAction?: LongPressAction;
   source: HoldSource;
   startedInSystemMode: boolean;
   timer?: number;
@@ -114,10 +126,12 @@ const consume = (event: Event): void => {
 export class SystemKeyLayer {
   private readonly view = new SystemKeyView();
   private readonly deckButtonBindingView = new DeckButtonBindingView();
+  private readonly holdHintView = new HoldHintView();
   private readonly languageSwitchMenu = new LanguageSwitchMenu();
   private keyboard?: HTMLElement;
   private enabled = false;
   private defaultSystemMode = false;
+  private holdHints = true;
   private languageSwitchShortcutEnabled = false;
   private languageSwitchShortcut: LanguageSwitchShortcut = "native";
   private deckButtonBindingsEnabled = false;
@@ -175,6 +189,7 @@ export class SystemKeyLayer {
   private suppressNextClick?: HTMLElement;
   private languageMenuTouch?: LanguageMenuTouch;
   private languageMenuGamepadKey?: HTMLElement;
+  private keyboardHelpCancelActive = false;
   private inputQueue = Promise.resolve();
   private readonly heldBoundKeys = new Map<number, string>();
   private readonly activeBoundButtons = new Set<number>();
@@ -189,6 +204,9 @@ export class SystemKeyLayer {
     private readonly setSystemKeyState: SystemKeyStateSender,
     private readonly onLanguageSwitchShortcutChange:
       (shortcut: LanguageSwitchShortcut) => void,
+    private readonly onLayoutSwap: () => boolean,
+    private readonly onLanguageSwitchActivated: () => void,
+    private readonly keyboardHelp: KeyboardHelpController,
   ) {}
 
   bind(keyboard: HTMLElement): void {
@@ -200,6 +218,7 @@ export class SystemKeyLayer {
     }
     this.view.bind(keyboard);
     this.deckButtonBindingView.bind(keyboard);
+    this.holdHintView.bind(keyboard);
     const document = keyboard.ownerDocument;
     this.languageSwitchMenu.bind(keyboard);
     const AbortController =
@@ -229,6 +248,8 @@ export class SystemKeyLayer {
   }
 
   unbind(): void {
+    this.keyboardHelp.close();
+    this.keyboardHelpCancelActive = false;
     this.clearHold();
     this.releaseHeldBoundKeys();
     this.controlActive = false;
@@ -238,6 +259,7 @@ export class SystemKeyLayer {
     this.listenerAbort = undefined;
     this.view.unbind();
     this.deckButtonBindingView.unbind();
+    this.holdHintView.unbind();
     this.languageSwitchMenu.unbind();
     this.keyboard = undefined;
     this.systemMode = false;
@@ -255,6 +277,7 @@ export class SystemKeyLayer {
   configure(
     enabled: boolean,
     defaultSystemMode: boolean,
+    holdHints: boolean,
     languageSwitchShortcutEnabled: boolean,
     languageSwitchShortcut: LanguageSwitchShortcut,
     deckButtonBindingsEnabled: boolean,
@@ -269,6 +292,7 @@ export class SystemKeyLayer {
       || this.defaultSystemMode !== defaultSystemMode;
     this.enabled = enabled;
     this.defaultSystemMode = defaultSystemMode;
+    this.holdHints = holdHints;
     this.languageSwitchShortcutEnabled = languageSwitchShortcutEnabled;
     this.languageSwitchShortcut = languageSwitchShortcut;
     this.deckButtonBindingsEnabled = deckButtonBindingsEnabled;
@@ -335,14 +359,13 @@ export class SystemKeyLayer {
       );
       return;
     }
-    const isEmoji = key.dataset.key === EMOJI_KEY;
-    const isLanguageSwitch = this.isLanguageSwitchKey(key);
-    if (!isEmoji && !this.isSystemKey(key))
+    const longPressAction = this.getLongPressAction(key);
+    if (!longPressAction && !this.isSystemKey(key))
       return;
 
     consume(event);
-    this.beginHold(key, "touch", isEmoji || isLanguageSwitch);
-    if (!isEmoji && !isLanguageSwitch)
+    this.beginHold(key, "touch", longPressAction);
+    if (!longPressAction)
       this.activateSystemKey(key);
   }
 
@@ -387,6 +410,8 @@ export class SystemKeyLayer {
 
   private readonly onGamepadButtonDown = (event: Event): void => {
     const gamepadEvent = event as CustomEvent<GamepadButtonDetail>;
+    if (this.handleKeyboardHelpCancel(event, gamepadEvent.detail, true))
+      return;
     if (!this.enabled)
       return;
 
@@ -420,19 +445,20 @@ export class SystemKeyLayer {
     consume(event);
     if (this.isRepeatedGamepadHold(key, detail))
       return;
-    const isEmoji = key.dataset.key === EMOJI_KEY;
-    const isLanguageSwitch = this.isLanguageSwitchKey(key);
-    this.beginHold(key, "gamepad", isEmoji || isLanguageSwitch);
+    const longPressAction = this.getLongPressAction(key);
+    this.beginHold(key, "gamepad", longPressAction);
     this.hold!.gamepadDetail = {
       ...detail,
       is_repeat: false,
     };
-    if (!isEmoji && !isLanguageSwitch)
+    if (!longPressAction)
       this.activateSystemKey(key);
   }
 
   private readonly onGamepadButtonUp = (event: Event): void => {
     const gamepadEvent = event as CustomEvent<GamepadButtonDetail>;
+    if (this.handleKeyboardHelpCancel(event, gamepadEvent.detail, false))
+      return;
     if (this.handleLanguageMenuGamepadUp(event, gamepadEvent.detail))
       return;
     if (this.handleSecondLayerButton(event, gamepadEvent.detail, false))
@@ -505,6 +531,33 @@ export class SystemKeyLayer {
       return false;
     consume(event);
     this.finishModifierHold(hold);
+    return true;
+  }
+
+  private handleKeyboardHelpCancel(
+    event: Event,
+    detail: GamepadButtonDetail | undefined,
+    pressed: boolean,
+  ): boolean {
+    if (detail?.button !== GAMEPAD_CANCEL_BUTTON)
+      return false;
+    if (!pressed) {
+      if (!this.keyboardHelpCancelActive)
+        return false;
+      consume(event);
+      this.keyboardHelpCancelActive = false;
+      return true;
+    }
+    if (
+      !this.keyboardHelpCancelActive
+      && !this.keyboardHelp.isVisible()
+    ) {
+      return false;
+    }
+    consume(event);
+    this.keyboardHelpCancelActive = true;
+    if (!detail.is_repeat)
+      this.keyboardHelp.close();
     return true;
   }
 
@@ -664,7 +717,8 @@ export class SystemKeyLayer {
   }
 
   private isInteractiveKey(key: HTMLElement): boolean {
-    return key.dataset.key === EMOJI_KEY || this.isSystemKey(key);
+    return this.getLongPressAction(key) !== undefined
+      || this.isSystemKey(key);
   }
 
   private shouldPassNativeLanguageClick(key: HTMLElement): boolean {
@@ -676,15 +730,19 @@ export class SystemKeyLayer {
     hold: HoldState,
     event: TouchEvent,
   ): void {
-    if (hold.key.dataset.key === EMOJI_KEY) {
+    if (hold.longPressAction === "toggle-system-mode") {
       if (hold.startedInSystemMode)
         this.toggleControl();
       else
         this.replayShortTouch(hold.key, event);
       return;
     }
-    if (this.isLanguageSwitchKey(hold.key))
+    if (hold.longPressAction === "language-menu") {
       this.activateLanguageSwitch(() => this.replayShortTouch(hold.key, event));
+      return;
+    }
+    if (hold.longPressAction === "help")
+      this.replayShortTouch(hold.key, event);
   }
 
   private finishShortGamepadHold(
@@ -695,15 +753,19 @@ export class SystemKeyLayer {
       hold.key,
       hold.gamepadDetail ?? detail,
     );
-    if (hold.key.dataset.key === EMOJI_KEY) {
+    if (hold.longPressAction === "toggle-system-mode") {
       if (hold.startedInSystemMode)
         this.toggleControl();
       else
         replay();
       return;
     }
-    if (this.isLanguageSwitchKey(hold.key))
+    if (hold.longPressAction === "language-menu") {
       this.activateLanguageSwitch(replay);
+      return;
+    }
+    if (hold.longPressAction === "help")
+      replay();
   }
 
   private suppressClickForTick(key: HTMLElement): void {
@@ -864,31 +926,65 @@ export class SystemKeyLayer {
   private beginHold(
     key: HTMLElement,
     source: HoldSource,
-    allowLongPress: boolean,
+    longPressAction: LongPressAction | undefined,
   ): void {
     this.clearHold();
     key.classList.add(PRESSED_KEY_CLASS);
     const hold: HoldState = {
       key,
       longPress: false,
+      longPressAction,
       source,
       startedInSystemMode: this.systemMode,
     };
     this.hold = hold;
-    if (!allowLongPress)
+    if (!longPressAction)
       return;
     hold.timer = window.setTimeout(() => {
       hold.timer = undefined;
       hold.longPress = true;
-      if (this.isLanguageSwitchKey(key)) {
-        this.languageSwitchMenu.show(
-          this.languageSwitchShortcut,
-          this.onLanguageSwitchShortcutChange,
-        );
-      } else {
-        this.setSystemMode(!this.systemMode);
-      }
+      this.activateLongPressAction(longPressAction);
     }, LONG_PRESS_MS);
+  }
+
+  private activateLongPressAction(action: LongPressAction): void {
+    if (action === "language-menu") {
+      this.languageSwitchMenu.show(
+        this.languageSwitchShortcut,
+        (value) => {
+          if (value === VISUAL_SWAP_ACTION)
+            this.onLayoutSwap();
+          else
+            this.onLanguageSwitchShortcutChange(value);
+        },
+      );
+      return;
+    }
+    if (action === "help") {
+      this.keyboardHelp.show();
+      return;
+    }
+    this.setSystemMode(!this.systemMode);
+  }
+
+  private getLongPressAction(
+    key: HTMLElement,
+  ): LongPressAction | undefined {
+    if (key.dataset.key === EMOJI_KEY)
+      return "toggle-system-mode";
+    if (this.isLanguageSwitchKey(key))
+      return "language-menu";
+    if (
+      this.holdHints
+      && this.systemMode
+      && !this.controlActive
+      && !this.altActive
+      && !this.shiftActive
+      && isKeyboardHelpKey(key)
+    ) {
+      return "help";
+    }
+    return undefined;
   }
 
   private setSystemMode(active: boolean): void {
@@ -994,10 +1090,12 @@ export class SystemKeyLayer {
   private activateLanguageSwitch(replayNative: () => void): void {
     if (this.languageSwitchShortcut === "native") {
       replayNative();
+      this.onLanguageSwitchActivated();
       return;
     }
-    if (!isQwertyKeyboardLayout())
-      replayNative();
+    // A single native cycle only returns to QWERTY when exactly two layouts
+    // are enabled. Select QWERTY directly and never infer the layout count.
+    activateQwertyKeyboardLayout();
     const shortcut = languageSwitchModifiers(this.languageSwitchShortcut);
     this.queueSystemKey(
       shortcut.keyName,
@@ -1006,6 +1104,7 @@ export class SystemKeyLayer {
       false,
       shortcut.withMeta,
     );
+    this.onLanguageSwitchActivated();
   }
 
   private activateSystemKey(
@@ -1324,6 +1423,12 @@ export class SystemKeyLayer {
       this.deckButtonQuickActionsEnabled
         && this.deckButtonSecondLayerEnabled,
       this.deckButtonSecondLayerActive,
+    );
+    this.holdHintView.render(
+      this.enabled && this.holdHints,
+      this.systemMode,
+      this.functionLayer,
+      this.languageSwitchShortcutEnabled,
     );
   }
 

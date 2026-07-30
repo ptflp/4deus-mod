@@ -234,12 +234,14 @@ class Plugin:
             self.nested_desktop_bindings_enabled,
             self.nested_desktop_bindings,
             self.rustdesk_pointer_fix_enabled,
+            self.rustdesk_scroll_inertia_enabled,
         ) = self._load_nested_desktop_mouse_settings()
         self.event_loop = None
         self.nested_desktop_mouse = (
             NestedDesktopMouseSupervisor(
                 plugin_root=PLUGIN_ROOT,
                 logger=logger,
+                mouse_enabled=self.nested_desktop_mouse_enabled,
                 inertia_enabled=(
                     self.nested_desktop_mouse_inertia_enabled
                 ),
@@ -247,6 +249,9 @@ class Plugin:
                 bindings=self.nested_desktop_bindings,
                 rustdesk_pointer_fix_enabled=(
                     self.rustdesk_pointer_fix_enabled
+                ),
+                rustdesk_scroll_inertia_enabled=(
+                    self.rustdesk_scroll_inertia_enabled
                 ),
                 run_as_user=self._worker_user(user_home),
                 action_callback=self._on_nested_desktop_action,
@@ -311,9 +316,14 @@ class Plugin:
             logger.exception("Failed to create 4deus Mod uinput keyboard")
         if self.rustdesk_pointer_fix_enabled:
             await self._stage_rustdesk_pointer_fix()
+        await self._refresh_installed_steamos_wrapper()
         if (
             self.nested_desktop_mouse is not None
-            and self.nested_desktop_mouse_enabled
+            and (
+                self.nested_desktop_mouse_enabled
+                or self.nested_desktop_bindings_enabled
+                or self.rustdesk_pointer_fix_enabled
+            )
         ):
             self.nested_desktop_mouse.start()
 
@@ -416,7 +426,7 @@ class Plugin:
         return True
 
     def _on_nested_desktop_action(self, action: str):
-        if action != "SHOW_KEYBOARD":
+        if action not in {"HIDE_KEYBOARD", "SHOW_KEYBOARD"}:
             return
         loop = self.event_loop
         emitter = getattr(decky_plugin, "emit", None)
@@ -440,6 +450,9 @@ class Plugin:
             ),
             "rustDeskPointerFixEnabled": (
                 self.rustdesk_pointer_fix_enabled
+            ),
+            "rustDeskScrollInertiaEnabled": (
+                self.rustdesk_scroll_inertia_enabled
             ),
             "running": bridge.running() if bridge is not None else False,
             "suspended": self.nested_desktop_keyboard_visible,
@@ -479,10 +492,10 @@ class Plugin:
             self.nested_desktop_mouse_enabled = enabled
             bridge = self.nested_desktop_mouse
             if bridge is not None:
-                if enabled:
-                    bridge.start()
-                else:
-                    await asyncio.to_thread(bridge.stop)
+                await asyncio.to_thread(
+                    bridge.set_mouse_enabled,
+                    enabled,
+                )
             logger.info(
                 "Nested Desktop mouse bridge %s",
                 "enabled" if enabled else "disabled",
@@ -574,11 +587,69 @@ class Plugin:
                 "error": str(error),
             }
 
+    async def set_rustdesk_scroll_inertia_enabled(
+        self,
+        enabled: bool,
+    ):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": (
+                    "RustDesk scroll inertia enabled must be a boolean"
+                ),
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                self.nested_desktop_mouse_enabled,
+                self.nested_desktop_mouse_inertia_enabled,
+                self.nested_desktop_bindings_enabled,
+                self.nested_desktop_bindings,
+                self.rustdesk_pointer_fix_enabled,
+                enabled,
+            )
+            self.rustdesk_scroll_inertia_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_rustdesk_scroll_inertia_enabled,
+                    enabled,
+                )
+            logger.info(
+                "RustDesk wheel inertia %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception("Failed to change RustDesk wheel inertia")
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
     async def _stage_rustdesk_pointer_fix(self):
         try:
             await self._install_rustdesk_pointer_fix(restart=False)
         except Exception:
             logger.exception("Failed to stage the RustDesk pointer fix")
+
+    async def _refresh_installed_steamos_wrapper(self):
+        manager = self.steamos_application
+        if manager is None:
+            return
+        try:
+            refreshed = await asyncio.to_thread(
+                manager.refresh_installed_wrapper
+            )
+            if refreshed:
+                logger.info(
+                    "Updated the installed SteamOS Nested Desktop wrapper"
+                )
+        except Exception:
+            logger.exception(
+                "Failed to update the installed SteamOS wrapper"
+            )
 
     async def _install_rustdesk_pointer_fix(self, *, restart: bool):
         manager = self.rustdesk_pointer_fix
@@ -705,7 +776,7 @@ class Plugin:
 
     def _load_nested_desktop_mouse_settings(
         self,
-    ) -> tuple[bool, bool, bool, dict[str, str], bool]:
+    ) -> tuple[bool, bool, bool, dict[str, str], bool, bool]:
         try:
             payload = json.loads(
                 self.nested_desktop_mouse_settings_path.read_text(
@@ -718,6 +789,7 @@ class Plugin:
                 payload.get("bindingsEnabled", True) is not False,
                 normalize_nested_desktop_bindings(payload.get("bindings")),
                 payload.get("rustDeskPointerFixEnabled", True) is not False,
+                payload.get("rustDeskScrollInertiaEnabled", False) is True,
             )
         except FileNotFoundError:
             return (
@@ -726,6 +798,7 @@ class Plugin:
                 True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
                 True,
+                False,
             )
         except Exception:
             logger.exception(
@@ -737,6 +810,7 @@ class Plugin:
                 True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
                 True,
+                False,
             )
 
     def _save_nested_desktop_mouse_settings(
@@ -746,7 +820,12 @@ class Plugin:
         bindings_enabled: bool,
         bindings: dict[str, str],
         rustdesk_pointer_fix_enabled: bool,
+        rustdesk_scroll_inertia_enabled: bool | None = None,
     ):
+        if rustdesk_scroll_inertia_enabled is None:
+            rustdesk_scroll_inertia_enabled = (
+                self.rustdesk_scroll_inertia_enabled
+            )
         path = self.nested_desktop_mouse_settings_path
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
@@ -759,6 +838,9 @@ class Plugin:
                     "bindings": normalize_nested_desktop_bindings(bindings),
                     "rustDeskPointerFixEnabled": (
                         rustdesk_pointer_fix_enabled
+                    ),
+                    "rustDeskScrollInertiaEnabled": (
+                        rustdesk_scroll_inertia_enabled
                     ),
                 },
                 indent=2,

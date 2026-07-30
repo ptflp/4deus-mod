@@ -107,6 +107,8 @@ const SYSTEM_TOOLS_KEYS = [
   "nestedDesktopTrackpadInertiaDescription",
   "rustDeskPointerFix",
   "rustDeskPointerFixDescription",
+  "rustDeskScrollInertia",
+  "rustDeskScrollInertiaDescription",
 ] as const;
 
 test("System Tools has complete translations for every Steam locale", () => {

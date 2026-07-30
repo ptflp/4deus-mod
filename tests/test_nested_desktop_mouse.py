@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import os
 import socket
 import struct
@@ -8,12 +9,14 @@ import unittest
 
 from nested_desktop_mouse import (
     BACK_BUTTON,
+    ACTION_HIDE_KEYBOARD,
     ACTION_MOUSE_LEFT,
     ACTION_MOUSE_MIDDLE,
     ACTION_MOUSE_RIGHT,
     ACTION_SHOW_KEYBOARD,
     BindingUpdate,
     BUTTON_SOURCE_MASKS,
+    CursorSnapshot,
     DEFAULT_NESTED_DESKTOP_BINDINGS,
     EIS_KEY_CODES,
     InputBindingTranslator,
@@ -21,6 +24,7 @@ from nested_desktop_mouse import (
     LEFT_TRIGGER,
     JoystickEvent,
     LinuxInputEvent,
+    NestedDesktopCursorOverlay,
     NestedDesktopSession,
     PointerUpdate,
     RIGHT_PAD_TOUCHED,
@@ -31,13 +35,19 @@ from nested_desktop_mouse import (
     NestedDesktopMouseRuntime,
     RustDeskMouseTranslator,
     RustDeskRelayTranslator,
+    RustDeskScrollInertia,
+    cursor_alpha_mask,
     decode_gamescope_display,
+    encode_rustdesk_ipc_frame,
     ensure_nested_wayland_alias,
     find_nested_desktop_session,
     find_rustdesk_joystick,
     find_steam_deck_hidraw,
+    outlined_cursor_snapshot,
     parse_joystick_events,
     parse_trackpad_report,
+    query_rustdesk_video_connection_count,
+    receive_rustdesk_ipc_frame,
     remove_nested_wayland_alias,
     should_forward_back_button,
     should_forward_pointer,
@@ -237,6 +247,80 @@ class RustDeskMouseTranslatorTests(unittest.TestCase):
             (PointerUpdate(right_button=True),),
         )
 
+    def test_relay_forwards_wheel_and_middle_button_frames(self):
+        translator = RustDeskRelayTranslator()
+
+        updates = translator.translate(
+            (
+                LinuxInputEvent(2, 8, 1),
+                LinuxInputEvent(2, 6, -1),
+                LinuxInputEvent(0, 0, 0),
+                LinuxInputEvent(1, 0x112, 1),
+                LinuxInputEvent(0, 0, 0),
+                LinuxInputEvent(1, 0x112, 0),
+                LinuxInputEvent(0, 0, 0),
+            ),
+            (0, 0, 1280, 800),
+        )
+
+        self.assertEqual(
+            updates,
+            (
+                PointerUpdate(
+                    scroll_discrete_x=-90,
+                    scroll_discrete_y=-90,
+                ),
+                PointerUpdate(middle_button=True),
+                PointerUpdate(middle_button=False),
+            ),
+        )
+
+
+class RustDeskScrollInertiaTests(unittest.TestCase):
+    def test_disabled_inertia_has_no_pending_work(self):
+        inertia = RustDeskScrollInertia()
+
+        inertia.observe(PointerUpdate(scroll_discrete_y=90), 1.0)
+
+        self.assertFalse(inertia.active)
+        self.assertEqual(inertia.timeout(1.0, 0.25), 0.25)
+        self.assertEqual(inertia.tick(2.0), PointerUpdate())
+
+    def test_single_wheel_click_does_not_start_inertia(self):
+        inertia = RustDeskScrollInertia(enabled=True)
+
+        inertia.observe(PointerUpdate(scroll_discrete_y=90), 1.0)
+
+        self.assertFalse(inertia.active)
+        self.assertEqual(inertia.tick(2.0), PointerUpdate())
+
+    def test_fast_wheel_burst_decays_after_a_short_delay(self):
+        inertia = RustDeskScrollInertia(enabled=True)
+        for now in (1.0, 1.02, 1.04):
+            inertia.observe(PointerUpdate(scroll_discrete_y=90), now)
+
+        self.assertTrue(inertia.active)
+        self.assertAlmostEqual(inertia.timeout(1.04, 0.25), 0.05)
+        self.assertEqual(inertia.tick(1.089), PointerUpdate())
+        self.assertEqual(
+            inertia.tick(1.09),
+            PointerUpdate(scroll_discrete_y=60),
+        )
+        self.assertEqual(
+            inertia.tick(1.107),
+            PointerUpdate(scroll_discrete_y=49),
+        )
+
+    def test_direction_change_starts_a_new_burst(self):
+        inertia = RustDeskScrollInertia(enabled=True)
+        for now in (1.0, 1.02, 1.04):
+            inertia.observe(PointerUpdate(scroll_discrete_y=90), now)
+
+        inertia.observe(PointerUpdate(scroll_discrete_y=-90), 1.05)
+
+        self.assertFalse(inertia.active)
+        self.assertEqual(inertia.tick(2.0), PointerUpdate())
+
 
 class InputBindingTranslatorTests(unittest.TestCase):
     def test_maps_a_fresh_b_press_to_escape_state(self):
@@ -349,6 +433,42 @@ class InputBindingTranslatorTests(unittest.TestCase):
             released,
             BindingUpdate(pointer=PointerUpdate(left_button=False)),
         )
+
+    def test_pointer_bindings_can_follow_focus_without_stopping_hotkeys(self):
+        translator = InputBindingTranslator(
+            pointer_actions_enabled=False,
+        )
+        translator.set_active(True)
+        translator.translate(trackpad_state())
+        r2_pressed = trackpad_state(
+            buttons=BUTTON_SOURCE_MASKS["r2"]
+        )
+
+        self.assertEqual(
+            translator.translate(r2_pressed),
+            BindingUpdate(),
+        )
+        self.assertEqual(
+            translator.set_pointer_actions_enabled(True),
+            PointerUpdate(),
+        )
+        self.assertEqual(
+            translator.translate(r2_pressed),
+            BindingUpdate(),
+        )
+        self.assertEqual(
+            translator.translate(trackpad_state()),
+            BindingUpdate(),
+        )
+        self.assertEqual(
+            translator.translate(r2_pressed),
+            BindingUpdate(pointer=PointerUpdate(left_button=True)),
+        )
+        self.assertEqual(
+            translator.set_pointer_actions_enabled(False),
+            PointerUpdate(left_button=False),
+        )
+        self.assertTrue(translator.active)
 
     def test_pointer_defaults_cover_both_triggers_and_left_pad_click(self):
         translator = InputBindingTranslator()
@@ -774,6 +894,98 @@ class TrackpadTranslatorTests(unittest.TestCase):
 
 
 class GamescopeFocusTests(unittest.TestCase):
+    def test_cursor_alpha_mask_uses_x11_lsb_bit_order(self):
+        pixels = [
+            0x00000000,
+            0xFF000000,
+            0x01000000,
+            0x00000000,
+            0xFF000000,
+            0x00000000,
+            0xFF000000,
+            0xFF000000,
+            0xFF000000,
+        ]
+
+        self.assertEqual(cursor_alpha_mask(pixels, 9, 1), b"\xd6\x01")
+
+    def test_cursor_outline_preserves_shape_and_hotspot(self):
+        snapshot = CursorSnapshot(
+            x=123,
+            y=456,
+            width=2,
+            height=1,
+            xhot=0,
+            yhot=0,
+            serial=7,
+            pixels=(0xFF000000, 0x00000000),
+        )
+
+        outlined = outlined_cursor_snapshot(snapshot)
+
+        self.assertEqual(
+            (
+                outlined.x,
+                outlined.y,
+                outlined.width,
+                outlined.height,
+                outlined.xhot,
+                outlined.yhot,
+                outlined.serial,
+            ),
+            (123, 456, 4, 3, 1, 1, 7),
+        )
+        self.assertEqual(outlined.pixels[5], 0xFF000000)
+        self.assertEqual(outlined.pixels[0], 0xFFFFFFFF)
+        self.assertEqual(outlined.pixels[10], 0xFFFFFFFF)
+        self.assertEqual(outlined.pixels[3], 0)
+
+    def test_cursor_overlay_repaints_after_first_map(self):
+        calls = []
+
+        class X11:
+            def XMapRaised(self, display, window):
+                calls.append(("map", display, window))
+
+            def XFlush(self, display):
+                calls.append(("flush", display))
+
+        overlay = NestedDesktopCursorOverlay.__new__(
+            NestedDesktopCursorOverlay
+        )
+        overlay.visible = False
+        overlay.position_primed = True
+        overlay.cursor_serial = 1
+        overlay.display = 2
+        overlay.window = 3
+        overlay.x11 = X11()
+        overlay.rendered_snapshot = object()
+        overlay.refresh = lambda **options: calls.append(
+            ("refresh", options)
+        )
+        overlay._draw = lambda snapshot: calls.append(
+            ("draw", snapshot)
+        )
+
+        overlay.show()
+
+        self.assertTrue(overlay.visible)
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "refresh",
+                    {
+                        "force_image": False,
+                        "sync_position": False,
+                    },
+                ),
+                ("map", 2, 3),
+                ("flush", 2),
+                ("draw", overlay.rendered_snapshot),
+            ],
+        )
+
     def test_decodes_gamescope_packed_display(self):
         self.assertEqual(decode_gamescope_display(packed_display(":1")), ":1")
 
@@ -863,12 +1075,49 @@ class RuntimeSuspensionTests(unittest.TestCase):
             os.close(write_fd)
             os.close(read_fd)
 
+    def test_remote_activity_requests_one_keyboard_dismiss_per_open(self):
+        actions = []
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            action_callback=actions.append,
+            rustdesk_connection_query=lambda _path: 1,
+            suspended=True,
+        )
+
+        runtime._request_keyboard_dismiss_for_remote_input()
+        runtime._request_keyboard_dismiss_for_remote_input()
+        runtime.set_suspended(False)
+        runtime.set_suspended(True)
+        runtime._request_keyboard_dismiss_for_remote_input()
+
+        self.assertEqual(
+            actions,
+            [ACTION_HIDE_KEYBOARD, ACTION_HIDE_KEYBOARD],
+        )
+
     def test_remote_pointer_rearms_without_a_trackpad_device(self):
+        class CursorOverlay:
+            def __init__(self, _session):
+                pass
+
+            def show(self):
+                pass
+
+            def hide(self):
+                pass
+
+            def apply(self, _update):
+                pass
+
+            def close(self):
+                pass
+
         class AbsoluteEis:
             ready = True
             keyboard_ready = True
             absolute_ready = True
             absolute_emulating = False
+            emulating = False
 
             def __init__(self):
                 self.dispatches = 0
@@ -885,6 +1134,13 @@ class RuntimeSuspensionTests(unittest.TestCase):
                 self.transitions.append(active)
                 return self.absolute_ready
 
+            def set_emulating(self, active):
+                self.emulating = active
+                return self.ready
+
+            def inject(self, _update):
+                pass
+
             def inject_absolute(self, _update):
                 pass
 
@@ -898,7 +1154,11 @@ class RuntimeSuspensionTests(unittest.TestCase):
                     "GAMESCOPE_FOCUSABLE_APPS": [769, 2, 3],
                 }[name]
 
-        runtime = NestedDesktopMouseRuntime(threading.Event())
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            rustdesk_connection_query=lambda _path: 1,
+            cursor_overlay_factory=CursorOverlay,
+        )
         inner_eis = AbsoluteEis()
         runtime.inner_eis = inner_eis
         runtime.outer_x11 = OuterX11()
@@ -917,7 +1177,227 @@ class RuntimeSuspensionTests(unittest.TestCase):
 
         self.assertEqual(inner_eis.transitions, [True, True])
         self.assertTrue(runtime.remote_forwarding)
+        self.assertTrue(runtime.remote_scroll_forwarding)
         self.assertTrue(runtime.remote_button_forwarding)
+
+    def test_disabled_mouse_bridge_keeps_keyboard_hotkeys_active(self):
+        class InnerEis:
+            ready = True
+            keyboard_ready = True
+            absolute_ready = True
+            absolute_emulating = False
+            emulating = False
+
+            def __init__(self):
+                self.injected_keys = []
+                self.keyboard_emulating = False
+
+            def dispatch(self):
+                pass
+
+            def set_emulating(self, _active):
+                raise AssertionError(
+                    "The disabled mouse bridge must not emulate a pointer"
+                )
+
+            def set_keyboard_emulating(self, active):
+                self.keyboard_emulating = active
+                return True
+
+            def inject(self, _update):
+                pass
+
+            def inject_key(self, key_code, pressed):
+                self.injected_keys.append((key_code, pressed))
+
+        class OuterX11:
+            @staticmethod
+            def cardinals(name):
+                return {
+                    "GAMESCOPE_FOCUSED_APP": [2],
+                    "GAMESCOPE_FOCUSED_APP_GFX": [2],
+                    "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
+                    "GAMESCOPE_FOCUSABLE_APPS": [769, 2, 3],
+                }[name]
+
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            mouse_enabled=False,
+            rustdesk_pointer_fix_enabled=False,
+        )
+        inner_eis = InnerEis()
+        runtime.inner_eis = inner_eis
+        runtime.outer_x11 = OuterX11()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+        runtime.hidraw_fd = 42
+
+        runtime._refresh_forwarding()
+        self.assertTrue(runtime.binding_translator.has_pointer_actions)
+        self.assertFalse(
+            runtime.binding_translator.pointer_actions_active
+        )
+        runtime._inject_binding_update(
+            runtime.binding_translator.translate(trackpad_state())
+        )
+        runtime._inject_binding_update(
+            runtime.binding_translator.translate(
+                trackpad_state(buttons=BUTTON_SOURCE_MASKS["b"])
+            )
+        )
+
+        self.assertFalse(runtime.forwarding)
+        self.assertTrue(runtime.binding_forwarding)
+        self.assertTrue(inner_eis.keyboard_emulating)
+        self.assertEqual(
+            inner_eis.injected_keys,
+            [(EIS_KEY_CODES["KEY_ESC"], True)],
+        )
+
+    def test_mouse_bindings_follow_parallel_pointer_detector(self):
+        class InnerEis:
+            ready = True
+            keyboard_ready = True
+            absolute_ready = True
+            absolute_emulating = False
+
+            def __init__(self):
+                self.emulating = False
+                self.keyboard_emulating = False
+
+            def dispatch(self):
+                pass
+
+            def set_emulating(self, active):
+                self.emulating = active
+                return True
+
+            def set_keyboard_emulating(self, active):
+                self.keyboard_emulating = active
+                return True
+
+            def inject(self, _update):
+                pass
+
+            def inject_key(self, _key_code, _pressed):
+                pass
+
+        class OuterX11:
+            focusable_apps = [769, 2]
+
+            @classmethod
+            def cardinals(cls, name):
+                return {
+                    "GAMESCOPE_FOCUSED_APP": [2],
+                    "GAMESCOPE_FOCUSED_APP_GFX": [2],
+                    "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
+                    "GAMESCOPE_FOCUSABLE_APPS": cls.focusable_apps,
+                }[name]
+
+        overlays = []
+
+        class CursorOverlay:
+            def __init__(self, _session):
+                self.primed = 0
+                self.shown = 0
+                self.hidden = 0
+                self.closed = 0
+                self.updates = []
+                overlays.append(self)
+
+            def prime(self):
+                self.primed += 1
+
+            def show(self):
+                self.shown += 1
+
+            def hide(self):
+                self.hidden += 1
+
+            def apply(self, update):
+                self.updates.append(update)
+
+            def close(self):
+                self.closed += 1
+
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            rustdesk_pointer_fix_enabled=False,
+            cursor_overlay_factory=CursorOverlay,
+        )
+        inner_eis = InnerEis()
+        runtime.inner_eis = inner_eis
+        runtime.outer_x11 = OuterX11()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+        runtime.hidraw_fd = 42
+
+        runtime._refresh_forwarding()
+
+        self.assertTrue(runtime.binding_forwarding)
+        self.assertFalse(runtime.binding_pointer_forwarding)
+        self.assertFalse(runtime.forwarding)
+        self.assertTrue(inner_eis.keyboard_emulating)
+        self.assertFalse(inner_eis.emulating)
+        self.assertEqual(len(overlays), 1)
+        self.assertEqual(overlays[0].primed, 1)
+        self.assertEqual(overlays[0].shown, 0)
+
+        OuterX11.focusable_apps = [769, 2, 3]
+        runtime._refresh_forwarding()
+
+        self.assertTrue(runtime.binding_forwarding)
+        self.assertTrue(runtime.binding_pointer_forwarding)
+        self.assertTrue(runtime.forwarding)
+        self.assertTrue(inner_eis.emulating)
+        self.assertTrue(runtime.cursor_overlay_active)
+        self.assertEqual(len(overlays), 1)
+        self.assertEqual(overlays[0].shown, 1)
+        update = PointerUpdate(dx=5, dy=-3)
+        runtime._apply_cursor_overlay(update)
+        self.assertEqual(overlays[0].updates, [update])
+
+        OuterX11.focusable_apps = [769, 2]
+        runtime._refresh_forwarding()
+
+        self.assertTrue(runtime.binding_forwarding)
+        self.assertFalse(runtime.binding_pointer_forwarding)
+        self.assertFalse(runtime.forwarding)
+        self.assertTrue(inner_eis.keyboard_emulating)
+        self.assertFalse(inner_eis.emulating)
+        self.assertFalse(runtime.cursor_overlay_active)
+        self.assertEqual(overlays[0].hidden, 1)
+        self.assertEqual(overlays[0].primed, 2)
+
+    def test_legacy_forced_software_cursor_skips_dynamic_overlay(self):
+        created = []
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            cursor_overlay_factory=lambda session: created.append(session),
+        )
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+            software_cursor_forced=True,
+        )
+
+        runtime._set_cursor_overlay(True)
+
+        self.assertEqual(created, [])
+        self.assertFalse(runtime.cursor_overlay_active)
 
     def test_remote_pointer_uses_relay_without_a_parallel_app(self):
         class AbsoluteEis:
@@ -932,6 +1412,13 @@ class RuntimeSuspensionTests(unittest.TestCase):
             def set_absolute_emulating(self, active):
                 self.absolute_emulating = active
                 return self.absolute_ready
+
+            def set_emulating(self, active):
+                self.emulating = active
+                return self.ready
+
+            def inject(self, _update):
+                pass
 
             def absolute_bounds(self):
                 return (0, 0, 1280, 800)
@@ -954,6 +1441,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
             runtime = NestedDesktopMouseRuntime(
                 threading.Event(),
                 rustdesk_relay_path=relay_path,
+                rustdesk_connection_query=lambda _path: 1,
             )
             runtime.inner_eis = AbsoluteEis()
             runtime.outer_x11 = OuterX11()
@@ -971,7 +1459,9 @@ class RuntimeSuspensionTests(unittest.TestCase):
             self.assertTrue(runtime.remote_forwarding)
             self.assertTrue(runtime.remote_button_forwarding)
             self.assertTrue(runtime.remote_relaying)
+            self.assertTrue(runtime.remote_scroll_forwarding)
             self.assertTrue(runtime.inner_eis.absolute_emulating)
+            self.assertTrue(runtime.inner_eis.emulating)
             self.assertTrue(relay_path.is_socket())
 
             runtime._set_remote_forwarding(False)
@@ -982,12 +1472,16 @@ class RuntimeSuspensionTests(unittest.TestCase):
         class AbsoluteEis:
             def __init__(self):
                 self.updates = []
+                self.scroll_updates = []
 
             def absolute_bounds(self):
                 return (0, 0, 1280, 800)
 
             def inject_absolute(self, update):
                 self.updates.append(update)
+
+            def inject(self, update):
+                self.scroll_updates.append(update)
 
         with tempfile.TemporaryDirectory() as directory:
             relay_path = Path(directory) / "pointer-relay.sock"
@@ -997,6 +1491,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
             )
             runtime.inner_eis = AbsoluteEis()
             runtime.remote_forwarding = True
+            runtime.remote_scroll_forwarding = True
             runtime.remote_button_forwarding = True
             self.assertTrue(runtime._set_remote_relaying(True))
             sender = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
@@ -1006,6 +1501,8 @@ class RuntimeSuspensionTests(unittest.TestCase):
                     (3, 1, 400),
                     (0, 0, 0),
                     (1, 0x110, 1),
+                    (0, 0, 0),
+                    (2, 8, -1),
                     (0, 0, 0),
                 ):
                     sender.sendto(
@@ -1023,6 +1520,14 @@ class RuntimeSuspensionTests(unittest.TestCase):
                             absolute_y=399.5,
                         ),
                         PointerUpdate(left_button=True),
+                    ],
+                )
+                self.assertEqual(
+                    runtime.inner_eis.scroll_updates,
+                    [
+                        PointerUpdate(
+                            scroll_discrete_y=90,
+                        ),
                     ],
                 )
             finally:
@@ -1073,6 +1578,106 @@ class RuntimeSuspensionTests(unittest.TestCase):
             os.close(read_fd)
 
 
+class RustDeskIpcTests(unittest.TestCase):
+    def test_round_trips_supported_frame_header_sizes(self):
+        first, second = socket.socketpair()
+        try:
+            for payload in (
+                b"small",
+                b"x" * 64,
+                b"x" * (0x3FFF + 1),
+            ):
+                first.sendall(encode_rustdesk_ipc_frame(payload))
+                self.assertEqual(
+                    receive_rustdesk_ipc_frame(
+                        second,
+                        maximum_length=len(payload),
+                    ),
+                    payload,
+                )
+        finally:
+            first.close()
+            second.close()
+
+    def test_queries_authorized_video_connection_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ipc"
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            listener.bind(str(path))
+            listener.listen(1)
+            requests = []
+
+            def serve():
+                connection, _ = listener.accept()
+                with connection:
+                    requests.append(
+                        json.loads(
+                            receive_rustdesk_ipc_frame(
+                                connection
+                            ).decode()
+                        )
+                    )
+                    response = json.dumps(
+                        {"t": "VideoConnCount", "c": 2},
+                        separators=(",", ":"),
+                    ).encode()
+                    connection.sendall(
+                        encode_rustdesk_ipc_frame(response)
+                    )
+
+            server = threading.Thread(target=serve, daemon=True)
+            server.start()
+            try:
+                self.assertEqual(
+                    query_rustdesk_video_connection_count(
+                        path,
+                        timeout=0.5,
+                    ),
+                    2,
+                )
+            finally:
+                server.join(timeout=1)
+                listener.close()
+
+            self.assertFalse(server.is_alive())
+            self.assertEqual(
+                requests,
+                [{"t": "VideoConnCount", "c": None}],
+            )
+
+    def test_connection_state_is_cached_and_expires_after_ipc_loss(self):
+        responses = iter((1, None, None, 0))
+        queries = []
+
+        def query(path):
+            queries.append(path)
+            return next(responses)
+
+        path = Path("/tmp/rustdesk-test-ipc")
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            rustdesk_ipc_path=path,
+            rustdesk_connection_query=query,
+        )
+
+        self.assertTrue(runtime._has_active_rustdesk_connection(0.0))
+        self.assertTrue(runtime._has_active_rustdesk_connection(0.25))
+        self.assertTrue(runtime._has_active_rustdesk_connection(0.5))
+        self.assertFalse(runtime._has_active_rustdesk_connection(2.1))
+        self.assertFalse(runtime._has_active_rustdesk_connection(2.6))
+        self.assertEqual(queries, [path, path, path, path])
+
+    def test_disconnect_count_disables_bridge_without_grace(self):
+        responses = iter((1, 0))
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            rustdesk_connection_query=lambda _path: next(responses),
+        )
+
+        self.assertTrue(runtime._has_active_rustdesk_connection(0.0))
+        self.assertFalse(runtime._has_active_rustdesk_connection(0.5))
+
+
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -1115,7 +1720,12 @@ class DiscoveryTests(unittest.TestCase):
             1,
             ["/steam/reaper", "SteamLaunch", "AppId=123456", "--"],
         )
-        self._process(101, 100, ["/bin/sh", "steamos-nested-desktop"])
+        self._process(
+            101,
+            100,
+            ["/bin/sh", "steamos-nested-desktop"],
+            {"KWIN_FORCE_SW_CURSOR": "1"},
+        )
         self._process(
             102,
             101,
@@ -1148,6 +1758,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(session.xauthority, authority)
         self.assertEqual(session.dbus_address, dbus_address)
         self.assertEqual(session.wayland_display, "wayland-7")
+        self.assertTrue(session.software_cursor_forced)
 
     def test_discovers_vendor_hid_interface_instead_of_mouse_interface(self):
         sys_class = self.root / "sys/class/hidraw"

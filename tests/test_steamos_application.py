@@ -53,9 +53,36 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
             f'exec {self.launcher} "$@"',
             Path(profile["wrapperPath"]).read_text(encoding="utf-8"),
         )
-        self.assertIn(
-            "export KWIN_FORCE_SW_CURSOR=1",
+        self.assertNotIn(
+            "KWIN_FORCE_SW_CURSOR",
             Path(profile["wrapperPath"]).read_text(encoding="utf-8"),
+        )
+
+    def test_refresh_migrates_only_the_previous_managed_wrapper(self):
+        self.manager.wrapper_path.parent.mkdir(parents=True)
+        self.manager.wrapper_path.write_text(
+            "#!/bin/sh\n"
+            "export KWIN_FORCE_SW_CURSOR=1\n"
+            f'exec {self.launcher} "$@"\n',
+            encoding="utf-8",
+        )
+
+        self.assertTrue(self.manager.refresh_installed_wrapper())
+        self.assertNotIn(
+            "KWIN_FORCE_SW_CURSOR",
+            self.manager.wrapper_path.read_text(encoding="utf-8"),
+        )
+        self.assertFalse(self.manager.refresh_installed_wrapper())
+
+    def test_refresh_preserves_an_unrecognized_wrapper(self):
+        contents = "#!/bin/sh\nexec custom-desktop\n"
+        self.manager.wrapper_path.parent.mkdir(parents=True)
+        self.manager.wrapper_path.write_text(contents, encoding="utf-8")
+
+        self.assertFalse(self.manager.refresh_installed_wrapper())
+        self.assertEqual(
+            self.manager.wrapper_path.read_text(encoding="utf-8"),
+            contents,
         )
 
     def test_prepare_reports_missing_nested_desktop(self):

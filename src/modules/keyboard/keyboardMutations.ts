@@ -10,8 +10,12 @@ export const KEYBOARD_IDENTITY_ATTRIBUTES = [
 export const SHIFT_STATE_ATTRIBUTES = ["class"];
 const MOD_NODE_SELECTOR = [
   ".fourdeus-secondary-label",
+  ".fourdeus-hold-hint-label",
+  ".fourdeus-swapped-native-label",
+  ".fourdeus-swapped-primary-label",
   ".fourdeus-system-key-label",
   ".fourdeus-deck-binding-label",
+  ".fourdeus-language-switch-option-label",
   '[data-key="4deus_Alt"]',
   '[data-key="4deus_Fn"]',
 ].join(",");

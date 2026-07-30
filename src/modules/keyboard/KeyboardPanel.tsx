@@ -72,7 +72,6 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
   )
     ? keyboard.secondaryLayout
     : AUTO_LAYOUT;
-
   return (
     <PanelSection title={strings.keyboard}>
       <PanelSectionRow>
@@ -101,6 +100,14 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
           onChange={(systemKeyLayer) => settings.updateKeyboard({
             systemKeyLayer,
           })}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label={strings.holdHints}
+          description={strings.holdHintsDescription}
+          checked={keyboard.holdHints}
+          onChange={(holdHints) => settings.updateKeyboard({ holdHints })}
         />
       </PanelSectionRow>
       <PanelSectionRow>
@@ -140,22 +147,45 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
           checked={keyboard.secondaryLabels}
           onChange={(secondaryLabels) => settings.updateKeyboard({
             secondaryLabels,
+            secondaryLayerSwapped: secondaryLabels
+              && keyboard.secondaryLayerSwapped,
           })}
         />
       </PanelSectionRow>
       {keyboard.secondaryLabels && (
-        <PanelSectionRow>
-          <DropdownItem
-            label={strings.secondaryLayout}
-            description={strings.secondaryLayoutDescription}
-            menuLabel={strings.secondaryLayout}
-            rgOptions={layoutOptions}
-            selectedOption={selectedLayout}
-            onChange={({ data }) => settings.updateKeyboard({
-              secondaryLayout: data.toString(),
-            })}
-          />
-        </PanelSectionRow>
+        <>
+          <PanelSectionRow>
+            <DropdownItem
+              label={strings.secondaryLayout}
+              description={strings.secondaryLayoutDescription}
+              menuLabel={strings.secondaryLayout}
+              rgOptions={layoutOptions}
+              selectedOption={selectedLayout}
+              onChange={({ data }) => settings.updateKeyboard({
+                secondaryLayout: data.toString(),
+              })}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ToggleField
+              label={strings.secondaryLabelsQwertyOnly}
+              description={strings.secondaryLabelsQwertyOnlyDescription}
+              checked={keyboard.secondaryLabelsQwertyOnly}
+              onChange={(secondaryLabelsQwertyOnly) =>
+                settings.updateKeyboard({ secondaryLabelsQwertyOnly })}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ToggleField
+              label={strings.autoSwapVisualLayer}
+              description={strings.autoSwapVisualLayerDescription}
+              checked={keyboard.autoSwapVisualLayer}
+              onChange={(autoSwapVisualLayer) => settings.updateKeyboard({
+                autoSwapVisualLayer,
+              })}
+            />
+          </PanelSectionRow>
+        </>
       )}
       <PanelSectionRow>
         <ToggleField

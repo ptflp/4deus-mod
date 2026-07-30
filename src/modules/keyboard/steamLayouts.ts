@@ -1,23 +1,17 @@
 import { findModuleExport } from "@decky/ui";
 
-import { AUTO_LAYOUT } from "../../core/settings";
 import {
   getVariantLabel,
+  isSecondaryLabelRow,
   isSingleCharacter,
   type LayoutKey,
 } from "./layoutLabels";
-
-interface KeyboardLayoutSettings {
-  currentLayout: number;
-  selectedLayouts: number[];
-}
-
-interface KeyboardLayoutStore {
-  GetKeyboardLayoutSettings(): KeyboardLayoutSettings;
-  SetKeyboardLayout(layout: number): void;
-}
-
-const QWERTY_LAYOUT = 0;
+import {
+  activateQwertyLayout,
+  type KeyboardLayoutController,
+  selectSecondaryLayout,
+  shouldShowSecondaryLayer,
+} from "./layoutSelection";
 
 export interface SteamKeyboardLayout {
   name: string;
@@ -33,7 +27,7 @@ export interface SecondaryKeyLabels {
 
 export type SecondaryLabelMap = Map<string, SecondaryKeyLabels>;
 
-let layoutStore: KeyboardLayoutStore | undefined;
+let layoutStore: KeyboardLayoutController | undefined;
 let activeLayoutsProvider: (() => SteamKeyboardLayout[]) | undefined;
 let secondaryLabelCache:
   | { key: string; labels: SecondaryLabelMap }
@@ -43,9 +37,8 @@ const resolveSteamModules = (): void => {
   layoutStore ??= findModuleExport(
     (value) =>
       value
-      && typeof value.GetKeyboardLayoutSettings === "function"
-      && typeof value.SetKeyboardLayout === "function",
-  ) as KeyboardLayoutStore | undefined;
+      && typeof value.GetKeyboardLayoutSettings === "function",
+  ) as KeyboardLayoutController | undefined;
 
   activeLayoutsProvider ??= findModuleExport(
     (value) => {
@@ -69,18 +62,16 @@ export const getEnabledLayouts = (): SteamKeyboardLayout[] => {
   }
 };
 
-export const isQwertyKeyboardLayout = (): boolean => {
+export const activateQwertyKeyboardLayout = (): boolean => {
   resolveSteamModules();
   try {
-    const currentLayout = layoutStore?.GetKeyboardLayoutSettings()
-      .currentLayout;
-    return currentLayout === QWERTY_LAYOUT;
+    return activateQwertyLayout(layoutStore);
   } catch (error) {
     console.warn(
-      "[4deus Mod/Keyboard] Failed to read Steam's keyboard layout",
+      "[4deus Mod/Keyboard] Failed to activate Steam's QWERTY layout",
       error,
     );
-    return true;
+    return false;
   }
 };
 
@@ -95,30 +86,14 @@ export const getLayoutDisplayName = (layout: SteamKeyboardLayout): string => {
     .join(" ");
 };
 
-const selectSecondaryLayout = (
-  layouts: SteamKeyboardLayout[],
-  preferredLayout: string,
-  settings: KeyboardLayoutSettings | undefined,
-): SteamKeyboardLayout | undefined => {
-  const currentLayout = settings?.currentLayout;
-  const preferred = preferredLayout === AUTO_LAYOUT
-    ? undefined
-    : layouts.find((layout) => layout.layout === Number(preferredLayout));
-  const selected = (settings?.selectedLayouts ?? [])
-    .map((layoutID) =>
-      layouts.find((layout) => layout.layout === layoutID),
-    );
-  return [preferred, ...selected, ...layouts].find(
-    (layout): layout is SteamKeyboardLayout =>
-      Boolean(layout && layout.layout !== currentLayout),
-  );
-};
-
 export const buildSecondaryLabelMap = (
   preferredLayout: string,
+  qwertyOnly = true,
 ): SecondaryLabelMap => {
   resolveSteamModules();
   const settings = layoutStore?.GetKeyboardLayoutSettings();
+  if (!shouldShowSecondaryLayer(settings?.currentLayout, qwertyOnly))
+    return new Map();
   const layout = selectSecondaryLayout(
     getEnabledLayouts(),
     preferredLayout,
@@ -128,6 +103,7 @@ export const buildSecondaryLabelMap = (
     return new Map();
   const cacheKey = [
     preferredLayout,
+    qwertyOnly,
     settings?.currentLayout,
     layout.layout,
   ].join(":");
@@ -143,6 +119,8 @@ export const buildSecondaryLabelMap = (
   });
 
   rows.forEach((row, rowIndex) => {
+    if (!isSecondaryLabelRow(rowIndex))
+      return;
     row.forEach((key, columnIndex) => {
       const normal = getVariantLabel(key, 0);
       const shifted = getVariantLabel(key, 1);

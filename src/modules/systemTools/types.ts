@@ -46,6 +46,7 @@ export interface NestedDesktopMouseStatus {
   error?: string;
   inertiaEnabled: boolean;
   rustDeskPointerFixEnabled: boolean;
+  rustDeskScrollInertiaEnabled: boolean;
   running: boolean;
   suspended: boolean;
 }
@@ -67,6 +68,9 @@ export interface SystemToolsApi {
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
   setRustDeskPointerFixEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setRustDeskScrollInertiaEnabled(
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
   setNestedDesktopBindingsEnabled(

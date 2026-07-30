@@ -3,13 +3,19 @@ import test from "node:test";
 
 import {
   isKeyNameVisibleInLayer,
+  isKeyboardHelpKey,
   isShiftKey,
   LANGUAGE_SWITCH_OPTIONS,
   languageSwitchModifiers,
   resolveLanguageSwitchOption,
   resolveSystemKey,
+  shouldAutoSwapVisualLayer,
+  VISUAL_SWAP_ACTION,
 } from "../src/modules/keyboard/systemKeys.ts";
-import { getVariantLabel } from "../src/modules/keyboard/layoutLabels.ts";
+import {
+  getVariantLabel,
+  isSecondaryLabelRow,
+} from "../src/modules/keyboard/layoutLabels.ts";
 import {
   DECK_QUICK_KEY_GROUPS,
   formatDeckQuickChord,
@@ -85,7 +91,15 @@ test("language switching supports all configured system chords", () => {
   });
 });
 
-test("language switch choices occupy two keys for each trackpad", () => {
+test("visual auto-swap follows system shortcuts but not native Steam layouts", () => {
+  assert.equal(shouldAutoSwapVisualLayer(false, "alt-shift"), false);
+  assert.equal(shouldAutoSwapVisualLayer(true, "alt-shift"), true);
+  assert.equal(shouldAutoSwapVisualLayer(true, "ctrl-shift"), true);
+  assert.equal(shouldAutoSwapVisualLayer(true, "meta-space"), true);
+  assert.equal(shouldAutoSwapVisualLayer(true, "native"), false);
+});
+
+test("language menu keeps four shortcuts plus an independent visual action", () => {
   assert.deepEqual(
     LANGUAGE_SWITCH_OPTIONS.map(({ row, column, value }) => ({
       row,
@@ -97,11 +111,21 @@ test("language switch choices occupy two keys for each trackpad", () => {
       { row: 3, column: 3, value: "ctrl-shift" },
       { row: 2, column: 8, value: "meta-space" },
       { row: 3, column: 8, value: "native" },
+      { row: 4, column: 2, value: "swap" },
     ],
   );
   assert.equal(resolveLanguageSwitchOption(keyAt(2, 3))?.value, "alt-shift");
   assert.equal(resolveLanguageSwitchOption(keyAt(3, 8))?.value, "native");
+  assert.equal(
+    resolveLanguageSwitchOption(keyAt(4, 2))?.value,
+    VISUAL_SWAP_ACTION,
+  );
   assert.equal(resolveLanguageSwitchOption(keyAt(2, 4)), undefined);
+});
+
+test("the lower-right slash key owns the keyboard help action", () => {
+  assert.equal(isKeyboardHelpKey(keyAt(3, 10, "/")), true);
+  assert.equal(isKeyboardHelpKey(keyAt(3, 9, ".")), false);
 });
 
 test("bound-key visuals follow the keyboard's visible layer", () => {
@@ -276,14 +300,22 @@ test("quick-action selector exposes grouped keys and formats chords", () => {
 });
 
 test("keyboard layouts expose normal and Shift symbols", () => {
-  const russianNumber = ["3", "№"];
-  assert.equal(getVariantLabel(russianNumber, 0), "3");
-  assert.equal(getVariantLabel(russianNumber, 1), "№");
+  const shiftedNumber = ["3", "#"];
+  assert.equal(getVariantLabel(shiftedNumber, 0), "3");
+  assert.equal(getVariantLabel(shiftedNumber, 1), "#");
 });
 
 test("keyboard layouts keep AltGr separate from Shift", () => {
-  const spanishNumber = ["2", "\"", "@"];
-  assert.equal(getVariantLabel(spanishNumber, 0), "2");
-  assert.equal(getVariantLabel(spanishNumber, 1), "\"");
-  assert.equal(getVariantLabel(spanishNumber, 2), "@");
+  const altGrNumber = ["2", "\"", "@"];
+  assert.equal(getVariantLabel(altGrNumber, 0), "2");
+  assert.equal(getVariantLabel(altGrNumber, 1), "\"");
+  assert.equal(getVariantLabel(altGrNumber, 2), "@");
+});
+
+test("secondary language labels exclude the number and symbol row", () => {
+  assert.equal(isSecondaryLabelRow(0), false);
+  assert.equal(isSecondaryLabelRow(1), true);
+  assert.equal(isSecondaryLabelRow(2), true);
+  assert.equal(isSecondaryLabelRow(3), true);
+  assert.equal(isSecondaryLabelRow(4), false);
 });

@@ -12,6 +12,15 @@ export interface Strings {
   keepOpenAfterEnterDescription: string;
   systemKeyLayer: string;
   systemKeyLayerDescription: string;
+  holdHints: string;
+  holdHintsDescription: string;
+  keyboardHelpTitle: string;
+  keyboardHelpSystemLayerDescription: string;
+  keyboardHelpLanguageMenuDescription: string;
+  keyboardHelpSwapDescription: string;
+  keyboardHelpAutoSwapDescription: string;
+  keyboardHelpPosition: string;
+  keyboardHelpPositionDescription: string;
   languageSwitchShortcut: string;
   languageSwitchShortcutDescription: string;
   languageSwitchShortcutChoice: string;
@@ -70,6 +79,8 @@ export interface Strings {
   nestedDesktopTrackpadInertiaDescription: string;
   rustDeskPointerFix: string;
   rustDeskPointerFixDescription: string;
+  rustDeskScrollInertia: string;
+  rustDeskScrollInertiaDescription: string;
   nestedDesktopHotkeys: string;
   nestedDesktopHotkeysDescription: string;
   nestedDesktopHotkeysEnabled: string;
@@ -80,6 +91,11 @@ export interface Strings {
   labelsDescription: string;
   secondaryLayout: string;
   secondaryLayoutDescription: string;
+  swapKeys: string;
+  autoSwapVisualLayer: string;
+  autoSwapVisualLayerDescription: string;
+  secondaryLabelsQwertyOnly: string;
+  secondaryLabelsQwertyOnlyDescription: string;
   automatic: string;
   diagnostics: string;
   diagnosticsDescription: string;
@@ -136,6 +152,20 @@ type Values = [
   addOrFixRustDesk?: string,
   hotkeys?: string,
   quickActions?: string,
+  holdHints?: string,
+  holdHintsDescription?: string,
+  keyboardHelpTitle?: string,
+  keyboardHelpSystemLayerDescription?: string,
+  keyboardHelpLanguageMenuDescription?: string,
+  keyboardHelpSwapDescription?: string,
+  keyboardHelpAutoSwapDescription?: string,
+  keyboardHelpPosition?: string,
+  keyboardHelpPositionDescription?: string,
+  swapKeys?: string,
+  autoSwapVisualLayer?: string,
+  autoSwapVisualLayerDescription?: string,
+  secondaryLabelsQwertyOnly?: string,
+  secondaryLabelsQwertyOnlyDescription?: string,
 ];
 
 const define = ([
@@ -156,7 +186,7 @@ const define = ([
   diagnostics = "Keyboard diagnostics",
   diagnosticsDescription = "Write keyboard state and performance counters to the Decky log every five seconds; turns off when the plugin restarts",
   languageSwitchShortcut = "System language shortcut",
-  languageSwitchShortcutDescription = "Tap the layout key to switch language; hold it to choose one of four modes",
+  languageSwitchShortcutDescription = "Tap the layout key to switch language; hold it to choose a shortcut or swap the visual key layers",
   languageSwitchShortcutChoice = "Language shortcut",
   deckButtonBindings = "Steam Deck button bindings",
   deckButtonBindingsDescription = "Use shoulder, trigger, stick-click, or rear buttons as keys while the virtual keyboard is open",
@@ -189,6 +219,20 @@ const define = ([
   addOrFixRustDesk = "Add / Fix RustDesk",
   hotkeys = "Hotkeys",
   quickActions = "Quick actions",
+  holdHints = "Hold hints",
+  holdHintsDescription = "Show a small Hold badge on keys with a long-press action",
+  keyboardHelpTitle = "Keyboard guide",
+  keyboardHelpSystemLayerDescription = "Hold Ctrl to switch between the regular keyboard and system keys",
+  keyboardHelpLanguageMenuDescription = "Hold the language key to choose Steam, Alt + Shift, Ctrl + Shift, or Cmd + Space",
+  keyboardHelpSwapDescription = "Use 1 ⇄ 2 to manually align the visible letters with the active system language",
+  keyboardHelpAutoSwapDescription = "After the first manual alignment, automatic swap follows each system language switch",
+  keyboardHelpPosition = "Keyboard position",
+  keyboardHelpPositionDescription = "Press Menu, the right-side button opposite View, to move the keyboard between the top and bottom of the screen",
+  swapKeys = "Swap primary and secondary keys",
+  autoSwapVisualLayer = "Auto-swap after language switch",
+  autoSwapVisualLayerDescription = "After a system language shortcut, swap the primary and secondary key labels to stay synchronized",
+  secondaryLabelsQwertyOnly = "Second layer only on QWERTY",
+  secondaryLabelsQwertyOnlyDescription = "Hide secondary symbols on every other Steam keyboard layout, including layouts added later",
 ]: Values): Strings => ({
   keyboard,
   enabled,
@@ -199,6 +243,15 @@ const define = ([
   keepOpenAfterEnterDescription,
   systemKeyLayer,
   systemKeyLayerDescription,
+  holdHints,
+  holdHintsDescription,
+  keyboardHelpTitle,
+  keyboardHelpSystemLayerDescription,
+  keyboardHelpLanguageMenuDescription,
+  keyboardHelpSwapDescription,
+  keyboardHelpAutoSwapDescription,
+  keyboardHelpPosition,
+  keyboardHelpPositionDescription,
   languageSwitchShortcut,
   languageSwitchShortcutDescription,
   languageSwitchShortcutChoice,
@@ -257,6 +310,8 @@ const define = ([
   nestedDesktopTrackpadInertiaDescription: "Continues cursor and scroll movement after a fast swipe; disable to stop immediately when a trackpad is released",
   rustDeskPointerFix: "RustDesk pointer fix",
   rustDeskPointerFixDescription: "Prevents duplicate cursors and pointer teleportation in Nested Desktop; Add / Fix RustDesk installs the required system hook automatically",
+  rustDeskScrollInertia: "RustDesk wheel inertia",
+  rustDeskScrollInertiaDescription: "Adds a short natural glide after fast wheel scrolling; disabled by default and does not affect trackpad inertia",
   nestedDesktopHotkeys: "Nested Desktop bindings",
   nestedDesktopHotkeysDescription: "Configure controls sent directly to Nested Desktop, including while a game is running in parallel",
   nestedDesktopHotkeysEnabled: "Controller bindings",
@@ -267,6 +322,11 @@ const define = ([
   labelsDescription,
   secondaryLayout,
   secondaryLayoutDescription,
+  swapKeys,
+  autoSwapVisualLayer,
+  autoSwapVisualLayerDescription,
+  secondaryLabelsQwertyOnly,
+  secondaryLabelsQwertyOnlyDescription,
   automatic,
   diagnostics,
   diagnosticsDescription,
@@ -290,7 +350,7 @@ export const english = define([
   "Keyboard diagnostics",
   "Write keyboard state and performance counters to the Decky log every five seconds; turns off when the plugin restarts",
   "System language shortcut",
-  "Tap the layout key to switch language; hold it to choose one of four modes",
+  "Tap the layout key to switch language; hold it to choose a shortcut or swap the visual key layers",
   "Language shortcut",
   "Steam Deck button bindings",
   "Use shoulder, trigger, stick-click, or rear buttons as keys while the virtual keyboard is open",
@@ -323,6 +383,20 @@ export const english = define([
   "Add / Fix RustDesk",
   "Hotkeys",
   "Quick actions",
+  "Hold hints",
+  "Show a small Hold badge on keys with a long-press action",
+  "Keyboard guide",
+  "Hold Ctrl to switch between the regular keyboard and system keys",
+  "Hold the language key to choose Steam, Alt + Shift, Ctrl + Shift, or Cmd + Space",
+  "Use 1 ⇄ 2 to manually align the visible letters with the active system language",
+  "After the first manual alignment, automatic swap follows each system language switch",
+  "Keyboard position",
+  "Press Menu, the right-side button opposite View, to move the keyboard between the top and bottom of the screen",
+  "Swap primary and secondary keys",
+  "Auto-swap after language switch",
+  "After a system language shortcut, swap the primary and secondary key labels to stay synchronized",
+  "Second layer only on QWERTY",
+  "Hide secondary symbols on every other Steam keyboard layout, including layouts added later",
 ]);
 
 const russian = define([
@@ -343,7 +417,7 @@ const russian = define([
   "Диагностика клавиатуры",
   "Записывать состояние клавиатуры и счётчики производительности в журнал Decky каждые пять секунд; отключается после перезапуска плагина",
   "Системное переключение языка",
-  "Нажмите кнопку раскладки для смены языка; удерживайте её для выбора одного из четырёх режимов",
+  "Нажмите кнопку раскладки для смены языка; удерживайте её, чтобы выбрать сочетание или визуально поменять слои местами",
   "Сочетание для смены языка",
   "Бинды кнопок Steam Deck",
   "Использовать бамперы, триггеры, нажатия стиков или задние кнопки как клавиши, пока открыта виртуальная клавиатура",
@@ -376,6 +450,20 @@ const russian = define([
   "Добавить / исправить RustDesk",
   "Хоткеи",
   "Быстрые действия",
+  "Подсказки удержания",
+  "Показывать маленькую подпись Hold на клавишах с действием по удержанию",
+  "Как пользоваться клавиатурой",
+  "Удерживайте Ctrl, чтобы переключаться между обычной клавиатурой и системными клавишами",
+  "Удерживайте кнопку языка, чтобы выбрать Steam, Alt + Shift, Ctrl + Shift или Cmd + Space",
+  "Используйте 1 ⇄ 2, чтобы вручную совместить видимые буквы с активным системным языком",
+  "После первой ручной синхронизации автосвап будет следовать за каждым системным переключением языка",
+  "Положение клавиатуры",
+  "Нажмите Menu — правую кнопку напротив View, чтобы перемещать клавиатуру между верхней и нижней частью экрана",
+  "Поменять основные и вторые клавиши",
+  "Автосвап после смены языка",
+  "После системного переключения языка менять основные и вторые подписи местами для синхронизации",
+  "Второй слой только на QWERTY",
+  "Скрывать вторые символы на всех остальных раскладках клавиатуры Steam, включая добавленные позже",
 ]);
 
 const german = define([

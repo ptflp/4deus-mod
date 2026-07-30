@@ -1,5 +1,8 @@
 import type { ModModule } from "../../core/module";
-import type { SettingsStore } from "../../core/settings";
+import type {
+  LanguageSwitchShortcut,
+  SettingsStore,
+} from "../../core/settings";
 import {
   isRelevantKeyboardMutation,
   KEYBOARD_IDENTITY_ATTRIBUTES,
@@ -18,6 +21,8 @@ import type {
   WindowInstance,
 } from "./types";
 import { isVirtualKeyboardVisible } from "./keyboardVisibility";
+import { shouldAutoSwapVisualLayer } from "./systemKeys";
+import { showKeyboardHelp } from "./KeyboardHelpModal";
 
 const ACTIVE_WINDOW_POLL_MS = 500;
 const CHORD_NAVIGATION_DELAY_MS = 75;
@@ -58,6 +63,7 @@ export class KeyboardFeature implements ModModule {
   private keyboardElement?: HTMLElement;
   private shiftElement?: HTMLElement;
   private keyboardRegistration?: { unregister(): void };
+  private keyboardHelpCloser?: () => void;
   private readonly systemKeyLayer: SystemKeyLayer;
   private dismissOnEnterManager?: WindowInstance["VirtualKeyboardManager"];
   private originalDismissOnEnter?: boolean;
@@ -82,9 +88,16 @@ export class KeyboardFeature implements ModModule {
     this.systemKeyLayer = new SystemKeyLayer(
       sendSystemKey,
       setSystemKeyState,
-      (languageSwitchShortcut) => this.settings.updateKeyboard({
+      (languageSwitchShortcut) => this.setLanguageSwitchShortcut(
         languageSwitchShortcut,
-      }),
+      ),
+      () => this.toggleVisualSwap(),
+      () => this.autoSwapVisualLayer(),
+      {
+        close: () => this.closeKeyboardHelp(),
+        isVisible: () => this.keyboardHelpCloser !== undefined,
+        show: () => this.openKeyboardHelp(),
+      },
     );
   }
 
@@ -132,6 +145,12 @@ export class KeyboardFeature implements ModModule {
   showKeyboard(): void {
     this.updateKeyboardVisibility(true);
     this.runSafely("show keyboard", () => this.promoteKeyboard());
+  }
+
+  hideKeyboard(): void {
+    this.closeKeyboardHelp();
+    this.activeWindow?.VirtualKeyboardManager?.SetVirtualKeyboardHidden?.();
+    this.updateKeyboardVisibility(false);
   }
 
   private bindActiveWindow(): void {
@@ -313,6 +332,7 @@ export class KeyboardFeature implements ModModule {
     this.systemKeyLayer.configure(
       settings.enabled,
       settings.systemKeyLayer,
+      settings.holdHints,
       settings.languageSwitchShortcutEnabled,
       settings.languageSwitchShortcut,
       settings.deckButtonBindingsEnabled,
@@ -330,7 +350,11 @@ export class KeyboardFeature implements ModModule {
 
     renderSecondaryLabels(
       keyboard,
-      buildSecondaryLabelMap(settings.secondaryLayout),
+      buildSecondaryLabelMap(
+        settings.secondaryLayout,
+        settings.secondaryLabelsQwertyOnly,
+      ),
+      settings.secondaryLayerSwapped,
     );
     this.systemKeyLayer.refresh();
   }
@@ -339,6 +363,64 @@ export class KeyboardFeature implements ModModule {
     this.syncDiagnosticTimer();
     this.applyEnterBehavior();
     this.refresh();
+  }
+
+  private setLanguageSwitchShortcut(
+    languageSwitchShortcut: LanguageSwitchShortcut,
+  ): void {
+    this.settings.updateKeyboard({
+      languageSwitchShortcut,
+    });
+  }
+
+  private toggleVisualSwap(): boolean {
+    const keyboard = this.settings.getSnapshot().keyboard;
+    if (
+      !keyboard.enabled
+      || !keyboard.secondaryLabels
+      || !this.keyboardElement
+    ) {
+      return false;
+    }
+    const labels = buildSecondaryLabelMap(
+      keyboard.secondaryLayout,
+      keyboard.secondaryLabelsQwertyOnly,
+    );
+    if (labels.size === 0)
+      return false;
+    this.settings.updateKeyboard({
+      secondaryLayerSwapped: !keyboard.secondaryLayerSwapped,
+    });
+    return true;
+  }
+
+  private autoSwapVisualLayer(): void {
+    const keyboard = this.settings.getSnapshot().keyboard;
+    if (shouldAutoSwapVisualLayer(
+      keyboard.autoSwapVisualLayer,
+      keyboard.languageSwitchShortcut,
+    )) {
+      this.toggleVisualSwap();
+    }
+  }
+
+  private openKeyboardHelp(): void {
+    this.closeKeyboardHelp();
+    let close: (() => void) | undefined;
+    close = showKeyboardHelp(
+      this.keyboardElement?.ownerDocument.defaultView ?? undefined,
+      () => {
+        if (this.keyboardHelpCloser === close)
+          this.keyboardHelpCloser = undefined;
+      },
+    );
+    this.keyboardHelpCloser = close;
+  }
+
+  private closeKeyboardHelp(): void {
+    const close = this.keyboardHelpCloser;
+    this.keyboardHelpCloser = undefined;
+    close?.();
   }
 
   private syncDiagnosticTimer(): void {

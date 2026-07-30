@@ -11,7 +11,10 @@ use std::sync::OnceLock;
 #[cfg(test)]
 const EV_SYN: u16 = 0;
 const EV_KEY: u16 = 1;
+const EV_REL: u16 = 2;
 const EV_ABS: u16 = 3;
+const REL_HWHEEL: u16 = 6;
+const REL_WHEEL: u16 = 8;
 const BTN_LEFT: u16 = 0x110;
 const BTN_RIGHT: u16 = 0x111;
 const BTN_MIDDLE: u16 = 0x112;
@@ -94,9 +97,16 @@ fn is_mouse_button(event: &InputEvent) -> bool {
         && matches!(event.code, BTN_LEFT | BTN_RIGHT | BTN_MIDDLE)
 }
 
+fn is_mouse_scroll(event: &InputEvent) -> bool {
+    event.event_type == EV_REL
+        && matches!(event.code, REL_HWHEEL | REL_WHEEL)
+}
+
 fn identifies_pointer(events: &[InputEvent]) -> bool {
     events.iter().any(|event| {
-        event.event_type == EV_ABS || is_mouse_button(event)
+        event.event_type == EV_ABS
+            || is_mouse_button(event)
+            || is_mouse_scroll(event)
     })
 }
 
@@ -218,6 +228,8 @@ mod tests {
         assert!(identifies_pointer(&[event(EV_KEY, BTN_LEFT, 1)]));
         assert!(identifies_pointer(&[event(EV_KEY, BTN_RIGHT, 0)]));
         assert!(identifies_pointer(&[event(EV_KEY, BTN_MIDDLE, 1)]));
+        assert!(identifies_pointer(&[event(EV_REL, REL_WHEEL, -1)]));
+        assert!(identifies_pointer(&[event(EV_REL, REL_HWHEEL, 1)]));
     }
 
     #[test]

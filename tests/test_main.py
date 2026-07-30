@@ -29,9 +29,13 @@ spec.loader.exec_module(plugin_backend)
 class RecordingKeyboard:
     def __init__(self):
         self.events = []
+        self.closed = False
 
     def write_key(self, key_code, value):
         self.events.append((key_code, value))
+
+    def close(self):
+        self.closed = True
 
 
 class RecordingMouseBridge:
@@ -40,8 +44,10 @@ class RecordingMouseBridge:
         self.stopped = 0
         self.is_running = True
         self.inertia_values = []
+        self.mouse_enabled_values = []
         self.binding_values = []
         self.rustdesk_pointer_fix_values = []
+        self.rustdesk_scroll_inertia_values = []
         self.suspended_values = []
 
     def start(self):
@@ -58,11 +64,17 @@ class RecordingMouseBridge:
     def set_inertia_enabled(self, enabled):
         self.inertia_values.append(enabled)
 
+    def set_mouse_enabled(self, enabled):
+        self.mouse_enabled_values.append(enabled)
+
     def set_bindings(self, enabled, bindings):
         self.binding_values.append((enabled, dict(bindings)))
 
     def set_rustdesk_pointer_fix_enabled(self, enabled):
         self.rustdesk_pointer_fix_values.append(enabled)
+
+    def set_rustdesk_scroll_inertia_enabled(self, enabled):
+        self.rustdesk_scroll_inertia_values.append(enabled)
 
     def set_suspended(self, suspended):
         self.suspended_values.append(suspended)
@@ -204,6 +216,28 @@ class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bindings_start_worker_when_mouse_bridge_is_disabled(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        bridge.is_running = False
+        keyboard = RecordingKeyboard()
+        plugin.nested_desktop_mouse = bridge
+        plugin.nested_desktop_mouse_enabled = False
+        plugin.nested_desktop_bindings_enabled = True
+        plugin.rustdesk_pointer_fix_enabled = False
+
+        with patch.object(
+            plugin_backend,
+            "VirtualKeyboard",
+            return_value=keyboard,
+        ):
+            await plugin._main()
+            await plugin._unload()
+
+        self.assertEqual(bridge.started, 1)
+        self.assertEqual(bridge.stopped, 1)
+        self.assertTrue(keyboard.closed)
+
     async def test_keyboard_visibility_suspends_without_stopping_bridge(self):
         plugin = plugin_backend.Plugin()
         bridge = RecordingMouseBridge()
@@ -234,8 +268,9 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             disabled = await plugin.set_nested_desktop_mouse_enabled(False)
 
             self.assertFalse(disabled["enabled"])
-            self.assertFalse(disabled["running"])
-            self.assertEqual(bridge.stopped, 1)
+            self.assertTrue(disabled["running"])
+            self.assertEqual(bridge.mouse_enabled_values, [False])
+            self.assertEqual(bridge.stopped, 0)
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
                 {
@@ -244,6 +279,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     "rustDeskPointerFixEnabled": True,
+                    "rustDeskScrollInertiaEnabled": False,
                 },
             )
             self.assertEqual(
@@ -254,6 +290,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     True,
+                    False,
                 ),
             )
 
@@ -261,7 +298,11 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(enabled["enabled"])
             self.assertTrue(enabled["running"])
-            self.assertEqual(bridge.started, 1)
+            self.assertEqual(
+                bridge.mouse_enabled_values,
+                [False, True],
+            )
+            self.assertEqual(bridge.started, 0)
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
                 {
@@ -270,6 +311,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     "rustDeskPointerFixEnabled": True,
+                    "rustDeskScrollInertiaEnabled": False,
                 },
             )
             self.assertEqual(
@@ -280,6 +322,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     True,
+                    False,
                 ),
             )
 
@@ -327,6 +370,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     "rustDeskPointerFixEnabled": True,
+                    "rustDeskScrollInertiaEnabled": False,
                 },
             )
 
@@ -368,6 +412,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     True,
+                    False,
                 ),
             )
 
@@ -408,6 +453,43 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result["rustDeskPointerFixEnabled"])
         manager.install.assert_called_once_with(restart=True)
+
+    async def test_rustdesk_scroll_inertia_defaults_off_and_can_be_enabled(
+        self,
+    ):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_rustdesk_scroll_inertia_enabled(True)
+
+            self.assertTrue(result["rustDeskScrollInertiaEnabled"])
+            self.assertEqual(
+                bridge.rustdesk_scroll_inertia_values,
+                [True],
+            )
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["rustDeskScrollInertiaEnabled"])
+
+    async def test_invalid_rustdesk_scroll_inertia_is_rejected(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_rustdesk_scroll_inertia_enabled("true")
+
+            self.assertIn("error", result)
+            self.assertFalse(result["rustDeskScrollInertiaEnabled"])
+            self.assertFalse(settings_path.exists())
+            self.assertEqual(bridge.rustdesk_scroll_inertia_values, [])
 
     async def test_bindings_can_be_disabled_and_persisted(self):
         plugin = plugin_backend.Plugin()

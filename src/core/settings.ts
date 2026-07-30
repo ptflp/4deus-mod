@@ -66,6 +66,16 @@ const normalizeQuickActions = (
   return normalized;
 };
 
+const normalizeLanguageSwitchShortcut = (
+  shortcut: unknown,
+): LanguageSwitchShortcut =>
+  shortcut === "alt-shift"
+    || shortcut === "ctrl-shift"
+    || shortcut === "meta-space"
+    || shortcut === "native"
+    ? shortcut
+    : "native";
+
 export interface ModSettings {
   version: 1;
   appBridge: {
@@ -76,6 +86,7 @@ export interface ModSettings {
     keepOnTop: boolean;
     keepOpenAfterEnter: boolean;
     systemKeyLayer: boolean;
+    holdHints: boolean;
     languageSwitchShortcutEnabled: boolean;
     languageSwitchShortcut: LanguageSwitchShortcut;
     deckButtonBindingsEnabled: boolean;
@@ -86,6 +97,9 @@ export interface ModSettings {
     deckButtonSecondLayerActions: DeckQuickActions;
     secondaryLabels: boolean;
     secondaryLayout: string;
+    secondaryLabelsQwertyOnly: boolean;
+    secondaryLayerSwapped: boolean;
+    autoSwapVisualLayer: boolean;
     diagnostics: boolean;
   };
 }
@@ -104,6 +118,7 @@ const defaults: ModSettings = {
     keepOnTop: true,
     keepOpenAfterEnter: false,
     systemKeyLayer: true,
+    holdHints: true,
     languageSwitchShortcutEnabled: true,
     languageSwitchShortcut: "native",
     deckButtonBindingsEnabled: true,
@@ -126,6 +141,9 @@ const defaults: ModSettings = {
     deckButtonSecondLayerActions: emptyQuickActions(),
     secondaryLabels: true,
     secondaryLayout: AUTO_LAYOUT,
+    secondaryLabelsQwertyOnly: true,
+    secondaryLayerSwapped: false,
+    autoSwapVisualLayer: true,
     diagnostics: false,
   },
 };
@@ -159,6 +177,16 @@ const readSettings = (): ModSettings => {
         deckButtonSecondLayerActions: normalizeQuickActions(
           parsed.keyboard?.deckButtonSecondLayerActions,
         ),
+        languageSwitchShortcut: normalizeLanguageSwitchShortcut(
+          parsed.keyboard?.languageSwitchShortcut,
+        ),
+        holdHints: parsed.keyboard?.holdHints !== false,
+        secondaryLabelsQwertyOnly:
+          parsed.keyboard?.secondaryLabelsQwertyOnly !== false,
+        secondaryLayerSwapped:
+          parsed.keyboard?.secondaryLayerSwapped === true,
+        autoSwapVisualLayer:
+          parsed.keyboard?.autoSwapVisualLayer !== false,
         diagnostics: false,
       },
       version: 1,

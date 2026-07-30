@@ -33,3 +33,6 @@ export const isSingleCharacter = (
   label: string | undefined,
 ): label is string =>
   Boolean(label && !/\s/u.test(label) && Array.from(label).length === 1);
+
+export const isSecondaryLabelRow = (row: number): boolean =>
+  row >= 1 && row <= 3;

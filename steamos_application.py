@@ -50,11 +50,7 @@ class SteamOsApplicationManager:
         if not self.nested_desktop.is_file():
             raise FileNotFoundError("SteamOS Nested Desktop is not available")
 
-        self.wrapper_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.wrapper_path.with_suffix(".tmp")
-        temporary.write_text(self._wrapper_contents(), encoding="utf-8")
-        temporary.chmod(0o755)
-        os.replace(temporary, self.wrapper_path)
+        self._write_wrapper()
 
         return {
             **self.status(),
@@ -64,6 +60,30 @@ class SteamOsApplicationManager:
             "name": STEAMOS_APP_NAME,
             "startDirectory": str(self.wrapper_path.parent),
         }
+
+    def refresh_installed_wrapper(self) -> bool:
+        if not self.wrapper_path.is_file():
+            return False
+        try:
+            current = self.wrapper_path.read_text(encoding="utf-8")
+        except OSError:
+            return False
+        if current == self._wrapper_contents():
+            return False
+        if (
+            "KWIN_FORCE_SW_CURSOR=1" not in current
+            or str(self.nested_desktop) not in current
+        ):
+            return False
+        self._write_wrapper()
+        return True
+
+    def _write_wrapper(self):
+        self.wrapper_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.wrapper_path.with_suffix(".tmp")
+        temporary.write_text(self._wrapper_contents(), encoding="utf-8")
+        temporary.chmod(0o755)
+        os.replace(temporary, self.wrapper_path)
 
     def install_artwork(self, app_id: int) -> dict[str, Any]:
         sources = {
@@ -95,7 +115,6 @@ class SteamOsApplicationManager:
             "export GTK_IM_MODULE=ibus\n"
             "export QT_IM_MODULE=ibus\n"
             "export XMODIFIERS=@im=ibus\n"
-            "export KWIN_FORCE_SW_CURSOR=1\n"
             "\n"
             f'exec {launcher} "$@"\n'
         )
