@@ -68,6 +68,8 @@ export interface Strings {
   nestedDesktopMouseBridgeDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
+  rustDeskPointerFix: string;
+  rustDeskPointerFixDescription: string;
   nestedDesktopHotkeys: string;
   nestedDesktopHotkeysDescription: string;
   nestedDesktopHotkeysEnabled: string;
@@ -253,6 +255,8 @@ const define = ([
   nestedDesktopMouseBridgeDescription: "Restores the right-trackpad cursor and click in Nested Desktop while another Game Mode app is running",
   nestedDesktopTrackpadInertia: "Trackpad inertia",
   nestedDesktopTrackpadInertiaDescription: "Continues cursor and scroll movement after a fast swipe; disable to stop immediately when a trackpad is released",
+  rustDeskPointerFix: "RustDesk pointer fix",
+  rustDeskPointerFixDescription: "Prevents duplicate cursors and pointer teleportation in Nested Desktop; Add / Fix RustDesk installs the required system hook automatically",
   nestedDesktopHotkeys: "Nested Desktop bindings",
   nestedDesktopHotkeysDescription: "Configure controls sent directly to Nested Desktop, including while a game is running in parallel",
   nestedDesktopHotkeysEnabled: "Controller bindings",

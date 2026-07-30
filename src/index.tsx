@@ -108,6 +108,10 @@ export default definePlugin(() => {
       [boolean],
       NestedDesktopMouseStatus
     >("set_nested_desktop_mouse_inertia_enabled"),
+    setRustDeskPointerFixEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_rustdesk_pointer_fix_enabled"),
     setNestedDesktopBindingsEnabled: callable<
       [boolean],
       NestedDesktopMouseStatus

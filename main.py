@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import pwd
 import struct
 import sys
 
@@ -31,6 +32,14 @@ except Exception:
     MangoHudFixManager = None
     logger.exception(
         "MangoHud System Tool is unavailable; other features will remain active"
+    )
+
+try:
+    from rustdesk_pointer_fix import RustDeskPointerFixManager
+except Exception:
+    RustDeskPointerFixManager = None
+    logger.exception(
+        "RustDesk pointer fix is unavailable; other features will remain active"
     )
 
 try:
@@ -208,11 +217,12 @@ class VirtualKeyboard:
 class Plugin:
     def __init__(self):
         self.keyboard = None
+        user_home = Path(decky_plugin.DECKY_USER_HOME)
         settings_directory = Path(
             getattr(
                 decky_plugin,
                 "DECKY_PLUGIN_SETTINGS_DIR",
-                Path(decky_plugin.DECKY_USER_HOME) / ".config/4deus-mod",
+                user_home / ".config/4deus-mod",
             )
         )
         self.nested_desktop_mouse_settings_path = (
@@ -223,6 +233,7 @@ class Plugin:
             self.nested_desktop_mouse_inertia_enabled,
             self.nested_desktop_bindings_enabled,
             self.nested_desktop_bindings,
+            self.rustdesk_pointer_fix_enabled,
         ) = self._load_nested_desktop_mouse_settings()
         self.event_loop = None
         self.nested_desktop_mouse = (
@@ -234,6 +245,10 @@ class Plugin:
                 ),
                 bindings_enabled=self.nested_desktop_bindings_enabled,
                 bindings=self.nested_desktop_bindings,
+                rustdesk_pointer_fix_enabled=(
+                    self.rustdesk_pointer_fix_enabled
+                ),
+                run_as_user=self._worker_user(user_home),
                 action_callback=self._on_nested_desktop_action,
             )
             if NestedDesktopMouseSupervisor is not None
@@ -244,7 +259,7 @@ class Plugin:
         self.held_key_codes = set()
         self.app_bridge = (
             AppBridgeManager(
-                home=decky_plugin.DECKY_USER_HOME,
+                home=user_home,
                 plugin_root=PLUGIN_ROOT,
             )
             if AppBridgeManager is not None
@@ -252,17 +267,40 @@ class Plugin:
         )
         self.mangohud_fix = (
             MangoHudFixManager(
-                home=decky_plugin.DECKY_USER_HOME,
+                home=user_home,
                 plugin_root=PLUGIN_ROOT,
             )
             if MangoHudFixManager is not None
             else None
         )
         self.steamos_application = (
-            SteamOsApplicationManager(home=decky_plugin.DECKY_USER_HOME)
+            SteamOsApplicationManager(home=user_home)
             if SteamOsApplicationManager is not None
             else None
         )
+        self.rustdesk_pointer_fix = (
+            RustDeskPointerFixManager(
+                home=user_home,
+                plugin_root=PLUGIN_ROOT,
+            )
+            if RustDeskPointerFixManager is not None
+            else None
+        )
+
+    @staticmethod
+    def _worker_user(user_home: Path) -> str | None:
+        if os.geteuid() != 0:
+            return None
+        try:
+            user_id = user_home.stat().st_uid
+            return (
+                pwd.getpwuid(user_id).pw_name
+                if user_id != 0
+                else None
+            )
+        except (KeyError, OSError):
+            logger.exception("Unable to resolve the Deck user")
+            return None
 
     async def _main(self):
         self.event_loop = asyncio.get_running_loop()
@@ -271,6 +309,8 @@ class Plugin:
             logger.info("Created 4deus Mod uinput keyboard")
         except Exception:
             logger.exception("Failed to create 4deus Mod uinput keyboard")
+        if self.rustdesk_pointer_fix_enabled:
+            await self._stage_rustdesk_pointer_fix()
         if (
             self.nested_desktop_mouse is not None
             and self.nested_desktop_mouse_enabled
@@ -287,12 +327,20 @@ class Plugin:
 
     async def _uninstall(self):
         await self._unload()
-        if self.mangohud_fix is None:
-            return
-        try:
-            await asyncio.to_thread(self.mangohud_fix.remove)
-        except Exception:
-            logger.exception("Failed to remove MangoHud fix during uninstall")
+        if self.mangohud_fix is not None:
+            try:
+                await asyncio.to_thread(self.mangohud_fix.remove)
+            except Exception:
+                logger.exception(
+                    "Failed to remove MangoHud fix during uninstall"
+                )
+        if self.rustdesk_pointer_fix is not None:
+            try:
+                await asyncio.to_thread(self.rustdesk_pointer_fix.remove)
+            except Exception:
+                logger.exception(
+                    "Failed to remove RustDesk pointer fix during uninstall"
+                )
 
     async def send_system_key(
         self,
@@ -390,6 +438,9 @@ class Plugin:
             "inertiaEnabled": (
                 self.nested_desktop_mouse_inertia_enabled
             ),
+            "rustDeskPointerFixEnabled": (
+                self.rustdesk_pointer_fix_enabled
+            ),
             "running": bridge.running() if bridge is not None else False,
             "suspended": self.nested_desktop_keyboard_visible,
         }
@@ -423,6 +474,7 @@ class Plugin:
                 self.nested_desktop_mouse_inertia_enabled,
                 self.nested_desktop_bindings_enabled,
                 self.nested_desktop_bindings,
+                self.rustdesk_pointer_fix_enabled,
             )
             self.nested_desktop_mouse_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -462,6 +514,7 @@ class Plugin:
                 enabled,
                 self.nested_desktop_bindings_enabled,
                 self.nested_desktop_bindings,
+                self.rustdesk_pointer_fix_enabled,
             )
             self.nested_desktop_mouse_inertia_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -484,6 +537,63 @@ class Plugin:
                 "error": str(error),
             }
 
+    async def set_rustdesk_pointer_fix_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "RustDesk pointer fix enabled must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                self.nested_desktop_mouse_enabled,
+                self.nested_desktop_mouse_inertia_enabled,
+                self.nested_desktop_bindings_enabled,
+                self.nested_desktop_bindings,
+                enabled,
+            )
+            self.rustdesk_pointer_fix_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_rustdesk_pointer_fix_enabled,
+                    enabled,
+                )
+            if enabled:
+                await self._install_rustdesk_pointer_fix(restart=True)
+            logger.info(
+                "RustDesk Nested Desktop pointer fix %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception("Failed to change the RustDesk pointer fix")
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    async def _stage_rustdesk_pointer_fix(self):
+        try:
+            await self._install_rustdesk_pointer_fix(restart=False)
+        except Exception:
+            logger.exception("Failed to stage the RustDesk pointer fix")
+
+    async def _install_rustdesk_pointer_fix(self, *, restart: bool):
+        manager = self.rustdesk_pointer_fix
+        if manager is None or not manager.executable.is_file():
+            return None
+        result = await asyncio.to_thread(
+            manager.install,
+            restart=restart,
+        )
+        logger.info(
+            "RustDesk pointer fix %s",
+            "installed" if restart else "staged",
+        )
+        return result
+
     async def set_nested_desktop_bindings_enabled(self, enabled: bool):
         if not isinstance(enabled, bool):
             return {
@@ -498,6 +608,7 @@ class Plugin:
                 self.nested_desktop_mouse_inertia_enabled,
                 enabled,
                 self.nested_desktop_bindings,
+                self.rustdesk_pointer_fix_enabled,
             )
             self.nested_desktop_bindings_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -546,6 +657,7 @@ class Plugin:
                 self.nested_desktop_mouse_inertia_enabled,
                 self.nested_desktop_bindings_enabled,
                 bindings,
+                self.rustdesk_pointer_fix_enabled,
             )
             self.nested_desktop_bindings = bindings
             bridge = self.nested_desktop_mouse
@@ -572,6 +684,7 @@ class Plugin:
                 self.nested_desktop_mouse_inertia_enabled,
                 self.nested_desktop_bindings_enabled,
                 bindings,
+                self.rustdesk_pointer_fix_enabled,
             )
             self.nested_desktop_bindings = bindings
             bridge = self.nested_desktop_mouse
@@ -592,7 +705,7 @@ class Plugin:
 
     def _load_nested_desktop_mouse_settings(
         self,
-    ) -> tuple[bool, bool, bool, dict[str, str]]:
+    ) -> tuple[bool, bool, bool, dict[str, str], bool]:
         try:
             payload = json.loads(
                 self.nested_desktop_mouse_settings_path.read_text(
@@ -604,6 +717,7 @@ class Plugin:
                 payload.get("inertiaEnabled", True) is not False,
                 payload.get("bindingsEnabled", True) is not False,
                 normalize_nested_desktop_bindings(payload.get("bindings")),
+                payload.get("rustDeskPointerFixEnabled", True) is not False,
             )
         except FileNotFoundError:
             return (
@@ -611,6 +725,7 @@ class Plugin:
                 True,
                 True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
+                True,
             )
         except Exception:
             logger.exception(
@@ -621,6 +736,7 @@ class Plugin:
                 True,
                 True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
+                True,
             )
 
     def _save_nested_desktop_mouse_settings(
@@ -629,6 +745,7 @@ class Plugin:
         inertia_enabled: bool,
         bindings_enabled: bool,
         bindings: dict[str, str],
+        rustdesk_pointer_fix_enabled: bool,
     ):
         path = self.nested_desktop_mouse_settings_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -640,6 +757,9 @@ class Plugin:
                     "inertiaEnabled": inertia_enabled,
                     "bindingsEnabled": bindings_enabled,
                     "bindings": normalize_nested_desktop_bindings(bindings),
+                    "rustDeskPointerFixEnabled": (
+                        rustdesk_pointer_fix_enabled
+                    ),
                 },
                 indent=2,
             )
@@ -680,7 +800,10 @@ class Plugin:
         if self.app_bridge is None:
             return {"error": "App Bridge backend is unavailable"}
         try:
-            return self.app_bridge.prepare_rustdesk()
+            prepared = self.app_bridge.prepare_rustdesk()
+            if self.rustdesk_pointer_fix_enabled:
+                await self._install_rustdesk_pointer_fix(restart=True)
+            return prepared
         except Exception as error:
             logger.exception("Failed to prepare RustDesk App Bridge profile")
             return {"error": str(error)}

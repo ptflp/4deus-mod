@@ -13,6 +13,7 @@ import re
 import select
 import shutil
 import signal
+import socket
 import struct
 import subprocess
 import sys
@@ -60,12 +61,27 @@ FOCUS_CHECK_INTERVAL = 0.25
 DISCOVERY_INTERVAL = 5.0
 KEYBOARD_DEVICE_GRACE = 0.5
 RUSTDESK_MOUSE_NAME = "mouce-library-fake-mouse"
+RUSTDESK_POINTER_RELAY_SOCKET = Path(
+    "/run/user/1000/4deus-mod-rustdesk-pointer-relay.sock"
+)
+LEGACY_RUSTDESK_POINTER_SYNC_MARKER = Path(
+    "/run/user/1000/4deus-mod-rustdesk-pointer-sync"
+)
 JOYSTICK_EVENT_SIZE = 8
 JOYSTICK_EVENT_BUTTON = 0x01
 JOYSTICK_EVENT_AXIS = 0x02
 JOYSTICK_EVENT_INIT = 0x80
 JOYSTICK_AXIS_MIN = -32_767
 JOYSTICK_AXIS_SPAN = 65_534
+LINUX_INPUT_EVENT = struct.Struct("@llHHi")
+LINUX_EV_SYN = 0
+LINUX_EV_KEY = 1
+LINUX_EV_ABS = 3
+LINUX_SYN_REPORT = 0
+LINUX_ABS_X = 0
+LINUX_ABS_Y = 1
+RUSTDESK_ABS_MAX_X = 1280
+RUSTDESK_ABS_MAX_Y = 800
 
 EI_DEVICE_CAP_POINTER = 1 << 0
 EI_DEVICE_CAP_POINTER_ABSOLUTE = 1 << 1
@@ -338,6 +354,13 @@ class JoystickEvent:
     initial: bool = False
 
 
+@dataclass(frozen=True)
+class LinuxInputEvent:
+    event_type: int
+    code: int
+    value: int
+
+
 def parse_joystick_events(data: bytes) -> tuple[JoystickEvent, ...]:
     events = []
     usable = len(data) - (len(data) % JOYSTICK_EVENT_SIZE)
@@ -359,10 +382,124 @@ def parse_joystick_events(data: bytes) -> tuple[JoystickEvent, ...]:
     return tuple(events)
 
 
+def parse_linux_input_events(data: bytes) -> tuple[LinuxInputEvent, ...]:
+    events = []
+    usable = len(data) - (len(data) % LINUX_INPUT_EVENT.size)
+    for offset in range(0, usable, LINUX_INPUT_EVENT.size):
+        _, _, event_type, code, value = LINUX_INPUT_EVENT.unpack_from(
+            data,
+            offset,
+        )
+        events.append(
+            LinuxInputEvent(
+                event_type=event_type,
+                code=code,
+                value=value,
+            )
+        )
+    return tuple(events)
+
+
+class RustDeskRelayTranslator:
+    def __init__(self):
+        self.axes = [0, 0]
+        self.axis_known = [False, False]
+        self.axis_changed = False
+        self.pending_buttons: dict[str, bool] = {}
+
+    @staticmethod
+    def _coordinate(
+        value: int,
+        source_maximum: int,
+        start: int,
+        size: int,
+    ) -> float:
+        normalized = max(0, min(source_maximum, value)) / source_maximum
+        return float(start) + normalized * max(0, size - 1)
+
+    def _position(
+        self,
+        bounds: tuple[int, int, int, int],
+    ) -> PointerUpdate:
+        if not all(self.axis_known):
+            return PointerUpdate()
+        x, y, width, height = bounds
+        return PointerUpdate(
+            absolute_x=self._coordinate(
+                self.axes[0],
+                RUSTDESK_ABS_MAX_X,
+                x,
+                width,
+            ),
+            absolute_y=self._coordinate(
+                self.axes[1],
+                RUSTDESK_ABS_MAX_Y,
+                y,
+                height,
+            ),
+        )
+
+    def translate(
+        self,
+        events: Sequence[LinuxInputEvent],
+        bounds: tuple[int, int, int, int],
+    ) -> tuple[PointerUpdate, ...]:
+        updates = []
+        button_names = {
+            BTN_LEFT: "left",
+            BTN_RIGHT: "right",
+            BTN_MIDDLE: "middle",
+        }
+        for event in events:
+            if (
+                event.event_type == LINUX_EV_ABS
+                and event.code in (LINUX_ABS_X, LINUX_ABS_Y)
+            ):
+                self.axes[event.code] = event.value
+                self.axis_known[event.code] = True
+                self.axis_changed = True
+                continue
+            if (
+                event.event_type == LINUX_EV_KEY
+                and event.code in button_names
+            ):
+                self.pending_buttons[button_names[event.code]] = bool(
+                    event.value
+                )
+                continue
+            if (
+                event.event_type != LINUX_EV_SYN
+                or event.code != LINUX_SYN_REPORT
+                or (
+                    not self.axis_changed
+                    and not self.pending_buttons
+                )
+            ):
+                continue
+            position = (
+                self._position(bounds)
+                if self.axis_changed
+                else PointerUpdate()
+            )
+            updates.append(
+                PointerUpdate(
+                    absolute_x=position.absolute_x,
+                    absolute_y=position.absolute_y,
+                    left_button=self.pending_buttons.get("left"),
+                    right_button=self.pending_buttons.get("right"),
+                    middle_button=self.pending_buttons.get("middle"),
+                )
+            )
+            self.axis_changed = False
+            self.pending_buttons = {}
+        return tuple(updates)
+
+
 class RustDeskMouseTranslator:
     def __init__(self):
         self.axes = [0, 0]
         self.axis_known = [False, False]
+        self.buttons = [False, False, False]
 
     @staticmethod
     def _coordinate(value: int, start: int, size: int) -> float:
@@ -371,6 +508,18 @@ class RustDeskMouseTranslator:
             - JOYSTICK_AXIS_MIN
         ) / JOYSTICK_AXIS_SPAN
         return float(start) + normalized * max(0, size - 1)
+
+    def position(
+        self,
+        bounds: tuple[int, int, int, int],
+    ) -> PointerUpdate:
+        if not all(self.axis_known):
+            return PointerUpdate()
+        x, y, width, height = bounds
+        return PointerUpdate(
+            absolute_x=self._coordinate(self.axes[0], x, width),
+            absolute_y=self._coordinate(self.axes[1], y, height),
+        )
 
     def translate(
         self,
@@ -386,24 +535,15 @@ class RustDeskMouseTranslator:
             nonlocal axis_changed, buttons
             if not axis_changed and not buttons:
                 return
-            x, y, width, height = bounds
-            absolute = (
-                axis_changed
-                and self.axis_known[0]
-                and self.axis_known[1]
+            position = (
+                self.position(bounds)
+                if axis_changed
+                else PointerUpdate()
             )
             updates.append(
                 PointerUpdate(
-                    absolute_x=(
-                        self._coordinate(self.axes[0], x, width)
-                        if absolute
-                        else None
-                    ),
-                    absolute_y=(
-                        self._coordinate(self.axes[1], y, height)
-                        if absolute
-                        else None
-                    ),
+                    absolute_x=position.absolute_x,
+                    absolute_y=position.absolute_y,
                     left_button=buttons.get("left"),
                     right_button=buttons.get("right"),
                     middle_button=buttons.get("middle"),
@@ -420,6 +560,11 @@ class RustDeskMouseTranslator:
                 ):
                     self.axes[event.number] = event.value
                     self.axis_known[event.number] = True
+                elif (
+                    event.event_type == JOYSTICK_EVENT_BUTTON
+                    and event.number < 3
+                ):
+                    self.buttons[event.number] = bool(event.value)
                 continue
             if frame_time is None:
                 frame_time = event.timestamp
@@ -437,9 +582,9 @@ class RustDeskMouseTranslator:
                 event.event_type == JOYSTICK_EVENT_BUTTON
                 and event.number < 3
             ):
-                buttons[("left", "right", "middle")[event.number]] = bool(
-                    event.value
-                )
+                pressed = bool(event.value)
+                self.buttons[event.number] = pressed
+                buttons[("left", "right", "middle")[event.number]] = pressed
         flush()
         return tuple(updates)
 
@@ -1943,6 +2088,7 @@ class NestedDesktopMouseRuntime:
         action_callback: Callable[[str], None] | None = None,
         suspended: bool = False,
         control_fd: int | None = None,
+        rustdesk_relay_path: Path | None = None,
     ):
         self.stop_event = stop_event
         self.proc_root = proc_root
@@ -1959,6 +2105,9 @@ class NestedDesktopMouseRuntime:
         self.rustdesk_fd: int | None = None
         self.rustdesk_buffer = b""
         self.rustdesk_translator = RustDeskMouseTranslator()
+        self.rustdesk_relay_path = rustdesk_relay_path
+        self.rustdesk_relay_socket: socket.socket | None = None
+        self.rustdesk_relay_translator = RustDeskRelayTranslator()
         self.wayland_alias: Path | None = None
         self.translator = TrackpadTranslator(
             inertia_enabled=inertia_enabled,
@@ -1971,6 +2120,8 @@ class NestedDesktopMouseRuntime:
         self.control_buffer = b""
         self.forwarding = False
         self.remote_forwarding = False
+        self.remote_button_forwarding = False
+        self.remote_relaying: bool | None = None
         self.binding_forwarding = False
         self.next_input_frame = 0.0
 
@@ -1978,6 +2129,13 @@ class NestedDesktopMouseRuntime:
         next_discovery = 0.0
         next_focus_check = 0.0
         try:
+            self._set_remote_relaying(False)
+            try:
+                LEGACY_RUSTDESK_POINTER_SYNC_MARKER.unlink(
+                    missing_ok=True
+                )
+            except OSError:
+                pass
             while not self.stop_event.is_set():
                 self._read_control_commands()
                 now = time.monotonic()
@@ -1992,6 +2150,7 @@ class NestedDesktopMouseRuntime:
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             self._set_remote_forwarding(False)
+            self._set_remote_relaying(False)
             self._close_hidraw()
             self._close_rustdesk_joystick()
             remove_nested_wayland_alias(self.session, self.wayland_alias)
@@ -2125,9 +2284,8 @@ class NestedDesktopMouseRuntime:
                 )
                 self.rustdesk_buffer = b""
                 self.rustdesk_translator = RustDeskMouseTranslator()
-                self._set_remote_forwarding(True)
                 LOGGER.info(
-                    "Bridging RustDesk pointer from %s into Nested Desktop",
+                    "Reading RustDesk pointer from %s",
                     self.rustdesk_path,
                 )
             except OSError as error:
@@ -2165,14 +2323,12 @@ class NestedDesktopMouseRuntime:
             except Exception as error:
                 self._handle_eis_loss(error)
                 return
-            self._set_remote_forwarding(self.rustdesk_fd is not None)
         if (
-            self.suspended
-            or self.outer_x11 is None
+            self.outer_x11 is None
             or inner_eis is None
             or self.session is None
-            or self.hidraw_fd is None
         ):
+            self._set_remote_forwarding(False)
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             return
@@ -2190,6 +2346,37 @@ class NestedDesktopMouseRuntime:
             focusable_apps = self.outer_x11.cardinals(
                 "GAMESCOPE_FOCUSABLE_APPS"
             )
+            pointer_needs_bridge = should_forward_pointer(
+                app_id,
+                focused_app,
+                focused_gfx_app,
+                focusable_apps,
+                mouse_focus_display,
+            )
+            remote_pointer_targeted = should_forward_back_button(
+                app_id,
+                focused_app,
+                focused_gfx_app,
+                mouse_focus_display,
+            )
+            self._set_remote_forwarding(
+                self.rustdesk_fd is not None
+                and remote_pointer_targeted
+            )
+            relay_active = self._set_remote_relaying(
+                self.remote_forwarding
+                and not pointer_needs_bridge
+            )
+            self._set_remote_button_forwarding(
+                self.remote_forwarding
+                and (pointer_needs_bridge or relay_active)
+            )
+            if self.inner_eis is None:
+                return
+            if self.suspended or self.hidraw_fd is None:
+                self._set_forwarding(False)
+                self._set_binding_forwarding(False)
+                return
             binding_capabilities_ready = (
                 (
                     not self.binding_translator.has_key_actions
@@ -2213,13 +2400,7 @@ class NestedDesktopMouseRuntime:
             )
             self._set_forwarding(
                 inner_eis.ready
-                and should_forward_pointer(
-                    app_id,
-                    focused_app,
-                    focused_gfx_app,
-                    focusable_apps,
-                    mouse_focus_display,
-                )
+                and pointer_needs_bridge
             )
         except Exception as error:
             self._handle_eis_loss(error)
@@ -2297,6 +2478,9 @@ class NestedDesktopMouseRuntime:
             LOGGER.info("Nested Desktop configurable bindings disabled")
 
     def _set_remote_forwarding(self, active: bool):
+        if not active:
+            self._set_remote_button_forwarding(False)
+            self._set_remote_relaying(False)
         if active == self.remote_forwarding:
             inner_eis = self.inner_eis
             if (
@@ -2314,21 +2498,107 @@ class NestedDesktopMouseRuntime:
         inner_eis = self.inner_eis
         try:
             if active:
+                bounds = (
+                    inner_eis.absolute_bounds()
+                    if inner_eis is not None
+                    else None
+                )
                 active = bool(
                     inner_eis is not None
-                    and inner_eis.absolute_bounds() is not None
+                    and bounds is not None
                     and inner_eis.set_absolute_emulating(True)
                 )
+                if active and bounds is not None:
+                    inner_eis.inject_absolute(
+                        self.rustdesk_translator.position(bounds)
+                    )
             elif inner_eis is not None:
                 inner_eis.set_absolute_emulating(False)
         except Exception as error:
             self._handle_eis_loss(error)
             active = False
         self.remote_forwarding = active
+        if not active:
+            self._set_remote_relaying(False)
         if active:
             LOGGER.info("RustDesk Nested Desktop pointer bridge enabled")
         else:
             LOGGER.info("RustDesk Nested Desktop pointer bridge disabled")
+
+    def _set_remote_button_forwarding(self, active: bool):
+        active = bool(active and self.remote_forwarding)
+        if active == self.remote_button_forwarding:
+            return
+        self.remote_button_forwarding = active
+        LOGGER.info(
+            "RustDesk Nested Desktop button bridge %s",
+            "enabled" if active else "disabled",
+        )
+
+    def _set_remote_relaying(self, active: bool) -> bool:
+        active = bool(active and self.remote_forwarding)
+        relay_path = self.rustdesk_relay_path
+        relay_socket = self.rustdesk_relay_socket
+        if (
+            active
+            and self.remote_relaying
+            and relay_socket is not None
+        ):
+            return True
+        if not active:
+            if (
+                self.remote_relaying is False
+                and relay_socket is None
+            ):
+                return False
+            if relay_socket is not None:
+                relay_socket.close()
+            self.rustdesk_relay_socket = None
+            self.rustdesk_relay_translator = RustDeskRelayTranslator()
+            if relay_path is not None:
+                try:
+                    relay_path.unlink(missing_ok=True)
+                except OSError as error:
+                    LOGGER.warning(
+                        "Unable to remove the RustDesk pointer relay %s: %s",
+                        relay_path,
+                        error,
+                    )
+            was_active = bool(self.remote_relaying)
+            self.remote_relaying = False
+            if was_active:
+                LOGGER.info("RustDesk pointer relay disabled")
+            return False
+        if relay_path is None:
+            self.remote_relaying = False
+            return False
+
+        relay: socket.socket | None = None
+        try:
+            relay_path.unlink(missing_ok=True)
+            relay = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            relay.setblocking(False)
+            relay.bind(str(relay_path))
+            os.chmod(relay_path, 0o600)
+        except OSError as error:
+            if relay is not None:
+                relay.close()
+            try:
+                relay_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            self.remote_relaying = False
+            LOGGER.warning(
+                "Unable to enable the RustDesk pointer relay %s: %s",
+                relay_path,
+                error,
+            )
+            return False
+        self.rustdesk_relay_socket = relay
+        self.rustdesk_relay_translator = RustDeskRelayTranslator()
+        self.remote_relaying = True
+        LOGGER.info("RustDesk pointer relay enabled")
+        return True
 
     def _inject_binding_update(self, update: BindingUpdate):
         inner_eis = self.inner_eis
@@ -2357,17 +2627,15 @@ class NestedDesktopMouseRuntime:
         self.binding_translator.set_active(False)
         self.forwarding = False
         self.remote_forwarding = False
+        self.remote_button_forwarding = False
+        self._set_remote_relaying(False)
         self.binding_forwarding = False
         self.next_input_frame = 0.0
 
     def _read_rustdesk_events(self):
         fd = self.rustdesk_fd
         inner_eis = self.inner_eis
-        if (
-            fd is None
-            or inner_eis is None
-            or not self.remote_forwarding
-        ):
+        if fd is None:
             return
         try:
             chunks = []
@@ -2390,20 +2658,72 @@ class NestedDesktopMouseRuntime:
                 return
             events = parse_joystick_events(self.rustdesk_buffer[:usable])
             self.rustdesk_buffer = self.rustdesk_buffer[usable:]
-            bounds = inner_eis.absolute_bounds()
-            if bounds is None:
+            forwarding = self.remote_forwarding and inner_eis is not None
+            bounds = inner_eis.absolute_bounds() if forwarding else None
+            if forwarding and bounds is None:
                 self._set_remote_forwarding(False)
+                forwarding = False
+            if bounds is None:
+                bounds = (0, 0, 1, 1)
+            updates = self.rustdesk_translator.translate(events, bounds)
+            if not forwarding or inner_eis is None:
                 return
-            for update in self.rustdesk_translator.translate(events, bounds):
-                inner_eis.inject_absolute(update)
+            for update in updates:
+                if not self.remote_button_forwarding:
+                    update = PointerUpdate(
+                        absolute_x=update.absolute_x,
+                        absolute_y=update.absolute_y,
+                    )
+                if not update.empty:
+                    inner_eis.inject_absolute(update)
         except (OSError, ValueError) as error:
             LOGGER.warning("Lost the RustDesk pointer device: %s", error)
             self._close_rustdesk_joystick()
         except Exception as error:
             self._handle_eis_loss(error)
 
+    def _read_rustdesk_relay_events(self):
+        relay = self.rustdesk_relay_socket
+        inner_eis = self.inner_eis
+        if relay is None:
+            return
+        try:
+            forwarding = (
+                bool(self.remote_relaying)
+                and self.remote_forwarding
+                and inner_eis is not None
+            )
+            bounds = inner_eis.absolute_bounds() if forwarding else None
+            if forwarding and bounds is None:
+                self._set_remote_forwarding(False)
+                return
+            if bounds is None:
+                bounds = (0, 0, 1, 1)
+            while True:
+                try:
+                    data = relay.recv(4096)
+                except BlockingIOError:
+                    break
+                if not data:
+                    continue
+                updates = self.rustdesk_relay_translator.translate(
+                    parse_linux_input_events(data),
+                    bounds,
+                )
+                if not forwarding or inner_eis is None:
+                    continue
+                for update in updates:
+                    if not update.empty:
+                        inner_eis.inject_absolute(update)
+        except OSError as error:
+            LOGGER.warning("Lost the RustDesk pointer relay: %s", error)
+            self._set_remote_relaying(False)
+        except Exception as error:
+            self._handle_eis_loss(error)
+
     def _read_reports(self, timeout: float):
-        if self.rustdesk_fd is not None and self.remote_forwarding:
+        self._read_rustdesk_relay_events()
+        if self.rustdesk_fd is not None:
             try:
                 readable, _, _ = select.select(
                     [self.rustdesk_fd],
@@ -2499,18 +2819,27 @@ class NestedDesktopMouseRuntime:
         self.hidraw_path = None
 
     def _wait_for_rustdesk(self, timeout: float):
-        if self.rustdesk_fd is None or not self.remote_forwarding:
+        rustdesk_fd = self.rustdesk_fd
+        relay = self.rustdesk_relay_socket
+        descriptors = [
+            descriptor
+            for descriptor in (rustdesk_fd, relay)
+            if descriptor is not None
+        ]
+        if not descriptors:
             self.stop_event.wait(timeout)
             return
         try:
             readable, _, _ = select.select(
-                [self.rustdesk_fd],
+                descriptors,
                 [],
                 [],
                 timeout,
             )
-            if readable:
+            if rustdesk_fd is not None and rustdesk_fd in readable:
                 self._read_rustdesk_events()
+            if relay is not None and relay in readable:
+                self._read_rustdesk_relay_events()
         except (OSError, ValueError) as error:
             LOGGER.warning("Lost the RustDesk pointer device: %s", error)
             self._close_rustdesk_joystick()
@@ -2536,6 +2865,8 @@ class NestedDesktopMouseSupervisor:
         inertia_enabled: bool = True,
         bindings_enabled: bool = True,
         bindings: Mapping[str, object] | None = None,
+        rustdesk_pointer_fix_enabled: bool = True,
+        run_as_user: str | None = None,
         action_callback: Callable[[str], None] | None = None,
     ):
         self.plugin_root = Path(plugin_root)
@@ -2543,6 +2874,8 @@ class NestedDesktopMouseSupervisor:
         self.inertia_enabled = inertia_enabled
         self.bindings_enabled = bindings_enabled
         self.bindings = normalize_nested_desktop_bindings(bindings)
+        self.rustdesk_pointer_fix_enabled = rustdesk_pointer_fix_enabled
+        self.run_as_user = run_as_user
         self.action_callback = action_callback
         self.suspended = False
         self.stop_event = threading.Event()
@@ -2590,6 +2923,17 @@ class NestedDesktopMouseSupervisor:
         if enabled == self.inertia_enabled:
             return
         self._restart_with(lambda: setattr(self, "inertia_enabled", enabled))
+
+    def set_rustdesk_pointer_fix_enabled(self, enabled: bool):
+        if enabled == self.rustdesk_pointer_fix_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(
+                self,
+                "rustdesk_pointer_fix_enabled",
+                enabled,
+            )
+        )
 
     def set_bindings(
         self,
@@ -2677,10 +3021,20 @@ class NestedDesktopMouseSupervisor:
                     str(worker_path),
                     "--worker",
                 ]
+                if self.run_as_user and os.geteuid() == 0:
+                    command = [
+                        "/usr/bin/runuser",
+                        "-u",
+                        self.run_as_user,
+                        "--",
+                        *command,
+                    ]
                 if not self.inertia_enabled:
                     command.append("--no-inertia")
                 if not self.bindings_enabled:
                     command.append("--no-bindings")
+                if not self.rustdesk_pointer_fix_enabled:
+                    command.append("--no-rustdesk-pointer-fix")
                 if launch_suspended:
                     command.append("--suspended")
                 command.extend(
@@ -2782,6 +3136,7 @@ def run_worker(
     inertia_enabled: bool = True,
     bindings_enabled: bool = True,
     bindings: Mapping[str, object] | None = None,
+    rustdesk_pointer_fix_enabled: bool = True,
     suspended: bool = False,
     control_fd: int | None = None,
 ) -> int:
@@ -2805,6 +3160,11 @@ def run_worker(
         action_callback=lambda action: print(action, flush=True),
         suspended=suspended,
         control_fd=control_fd,
+        rustdesk_relay_path=(
+            RUSTDESK_POINTER_RELAY_SOCKET
+            if rustdesk_pointer_fix_enabled
+            else None
+        ),
     )
     runtime.run()
     return 0
@@ -2815,6 +3175,7 @@ def main() -> int:
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--no-inertia", action="store_true")
     parser.add_argument("--no-bindings", action="store_true")
+    parser.add_argument("--no-rustdesk-pointer-fix", action="store_true")
     parser.add_argument("--suspended", action="store_true")
     parser.add_argument("--bindings-json", default="{}")
     arguments = parser.parse_args()
@@ -2830,6 +3191,9 @@ def main() -> int:
         inertia_enabled=not arguments.no_inertia,
         bindings_enabled=not arguments.no_bindings,
         bindings=bindings,
+        rustdesk_pointer_fix_enabled=(
+            not arguments.no_rustdesk_pointer_fix
+        ),
         suspended=arguments.suspended,
         control_fd=sys.stdin.fileno(),
     )

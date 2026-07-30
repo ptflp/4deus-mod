@@ -21,6 +21,8 @@ export interface SystemToolsTranslation {
   nestedDesktopMouseBridgeDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
+  rustDeskPointerFix: string;
+  rustDeskPointerFixDescription: string;
 }
 
 type Values = [
@@ -46,6 +48,8 @@ type Values = [
   nestedDesktopMouseBridgeDescription: string,
   nestedDesktopTrackpadInertia: string,
   nestedDesktopTrackpadInertiaDescription: string,
+  rustDeskPointerFix: string,
+  rustDeskPointerFixDescription: string,
 ];
 
 const define = ([
@@ -71,6 +75,8 @@ const define = ([
   nestedDesktopMouseBridgeDescription,
   nestedDesktopTrackpadInertia,
   nestedDesktopTrackpadInertiaDescription,
+  rustDeskPointerFix,
+  rustDeskPointerFixDescription,
 ]: Values): SystemToolsTranslation => ({
   systemTools,
   systemToolsDescription,
@@ -94,6 +100,8 @@ const define = ([
   nestedDesktopMouseBridgeDescription,
   nestedDesktopTrackpadInertia,
   nestedDesktopTrackpadInertiaDescription,
+  rustDeskPointerFix,
+  rustDeskPointerFixDescription,
 });
 
 export const systemToolsTranslations:
@@ -107,6 +115,7 @@ Record<string, SystemToolsTranslation> = {
     "إضافة / إصلاح SteamOS", "تطبيق SteamOS جاهز",
     "ماوس Nested Desktop فوق الألعاب", "يعيد مؤشر لوحة التتبع اليمنى والنقر في Nested Desktop عند تشغيل تطبيق آخر في وضع الألعاب",
     "قصور لوحة التتبع", "يستمر تحريك المؤشر والتمرير بعد سحب سريع؛ عطّله للتوقف فور رفع الإصبع عن لوحة التتبع",
+    "إصلاح مؤشر RustDesk", "يمنع تكرار المؤشر وانتقاله المفاجئ في Nested Desktop؛ يقوم «إضافة / إصلاح RustDesk» بتثبيت خطاف النظام المطلوب تلقائيًا",
   ]),
   brazilian: define([
     "Ferramentas do sistema", "Instale e gerencie correções específicas do sistema", "Status", "Carregando…",
@@ -117,6 +126,7 @@ Record<string, SystemToolsTranslation> = {
     "Adicionar / Reparar SteamOS", "O aplicativo SteamOS está pronto",
     "Mouse do Nested Desktop sobre jogos", "Restaura o cursor e o clique do trackpad direito no Nested Desktop enquanto outro aplicativo do Modo Jogo está em execução",
     "Inércia do trackpad", "Mantém o movimento do cursor e da rolagem após um gesto rápido; desative para parar imediatamente ao soltar o trackpad",
+    "Correção do ponteiro do RustDesk", "Evita cursores duplicados e teletransporte do ponteiro no Nested Desktop; Adicionar / Reparar RustDesk instala automaticamente a integração de sistema necessária",
   ]),
   bulgarian: define([
     "Системни инструменти", "Инсталиране и управление на конкретни системни корекции", "Състояние", "Зареждане…",
@@ -127,6 +137,7 @@ Record<string, SystemToolsTranslation> = {
     "Добавяне / Поправяне на SteamOS", "Приложението SteamOS е готово",
     "Мишка за Nested Desktop върху игра", "Възстановява курсора и щракването с десния тракпад в Nested Desktop, докато работи друго приложение в игрови режим",
     "Инерция на тракпада", "Продължава движението на курсора и превъртането след бързо плъзване; изключете за незабавно спиране при отпускане на тракпада",
+    "Корекция на показалеца на RustDesk", "Предотвратява дублиран курсор и телепортиране на показалеца в Nested Desktop; Добавяне / Поправяне на RustDesk автоматично инсталира нужната системна интеграция",
   ]),
   czech: define([
     "Systémové nástroje", "Instalace a správa cílených systémových oprav", "Stav", "Načítání…",
@@ -137,6 +148,7 @@ Record<string, SystemToolsTranslation> = {
     "Přidat / Opravit SteamOS", "Aplikace SteamOS je připravena",
     "Myš Nested Desktop nad hrou", "Obnoví kurzor a kliknutí pravého trackpadu v Nested Desktop, když je spuštěna jiná aplikace v herním režimu",
     "Setrvačnost trackpadu", "Po rychlém přejetí pokračuje v pohybu kurzoru a posouvání; vypnutím se pohyb zastaví ihned po uvolnění trackpadu",
+    "Oprava ukazatele RustDesk", "Zabraňuje zdvojení kurzoru a přeskakování ukazatele v Nested Desktop; Přidat / Opravit RustDesk automaticky nainstaluje potřebné systémové propojení",
   ]),
   danish: define([
     "Systemværktøjer", "Installer og administrer målrettede systemrettelser", "Status", "Indlæser…",
@@ -147,6 +159,7 @@ Record<string, SystemToolsTranslation> = {
     "Tilføj / Reparer SteamOS", "SteamOS-programmet er klar",
     "Nested Desktop-mus over spil", "Gendanner markøren og klik med højre pegefelt i Nested Desktop, mens en anden app kører i spiltilstand",
     "Pegefeltets inerti", "Fortsætter markør- og rullebevægelse efter et hurtigt strøg; deaktiver for at stoppe med det samme, når pegefeltet slippes",
+    "RustDesk-markørrettelse", "Forhindrer dobbelte markører og springende markør i Nested Desktop; Tilføj / Reparer RustDesk installerer automatisk den nødvendige systemintegration",
   ]),
   dutch: define([
     "Systeemhulpmiddelen", "Gerichte systeemoplossingen installeren en beheren", "Status", "Laden…",
@@ -157,6 +170,7 @@ Record<string, SystemToolsTranslation> = {
     "SteamOS toevoegen / herstellen", "De SteamOS-toepassing is gereed",
     "Nested Desktop-muis boven games", "Herstelt de cursor en klik van de rechtertrackpad in Nested Desktop terwijl een andere gamemodus-app actief is",
     "Trackpadtraagheid", "Laat cursor en scrollen doorgaan na een snelle veeg; schakel uit om direct te stoppen zodra de trackpad wordt losgelaten",
+    "RustDesk-aanwijzercorrectie", "Voorkomt dubbele cursors en verspringen van de aanwijzer in Nested Desktop; RustDesk toevoegen / herstellen installeert automatisch de vereiste systeemkoppeling",
   ]),
   finnish: define([
     "Järjestelmätyökalut", "Asenna ja hallitse rajattuja järjestelmäkorjauksia", "Tila", "Ladataan…",
@@ -167,6 +181,7 @@ Record<string, SystemToolsTranslation> = {
     "Lisää / Korjaa SteamOS", "SteamOS-sovellus on valmis",
     "Nested Desktop -hiiri pelin päällä", "Palauttaa oikean ohjauslevyn osoittimen ja napsautuksen Nested Desktopissa, kun toinen pelitilan sovellus on käynnissä",
     "Ohjauslevyn inertia", "Jatkaa osoittimen ja vierityksen liikettä nopean pyyhkäisyn jälkeen; poista käytöstä, jos haluat pysäyttää heti ohjauslevyn vapautuessa",
+    "RustDesk-osoittimen korjaus", "Estää kaksoiskohdistimet ja osoittimen hyppimisen Nested Desktopissa; Lisää / Korjaa RustDesk asentaa tarvittavan järjestelmäintegraation automaattisesti",
   ]),
   french: define([
     "Outils système", "Installer et gérer des correctifs système ciblés", "État", "Chargement…",
@@ -177,6 +192,7 @@ Record<string, SystemToolsTranslation> = {
     "Ajouter / Réparer SteamOS", "L’application SteamOS est prête",
     "Souris de Nested Desktop sur un jeu", "Rétablit le curseur et le clic du pavé tactile droit dans Nested Desktop lorsqu’une autre application du mode Jeu est en cours d’exécution",
     "Inertie du pavé tactile", "Prolonge le mouvement du curseur et du défilement après un geste rapide ; désactivez-la pour arrêter dès que le pavé tactile est relâché",
+    "Correctif du pointeur RustDesk", "Évite les curseurs en double et les téléportations du pointeur dans Nested Desktop ; Ajouter / Réparer RustDesk installe automatiquement l’intégration système requise",
   ]),
   german: define([
     "Systemwerkzeuge", "Gezielte Systemkorrekturen installieren und verwalten", "Status", "Wird geladen…",
@@ -187,6 +203,7 @@ Record<string, SystemToolsTranslation> = {
     "SteamOS hinzufügen / reparieren", "Die SteamOS-Anwendung ist bereit",
     "Nested-Desktop-Maus über Spielen", "Stellt Cursor und Klick des rechten Trackpads in Nested Desktop wieder her, während eine andere Gaming-Modus-App läuft",
     "Trackpad-Trägheit", "Setzt Cursor- und Scrollbewegungen nach schnellem Wischen fort; deaktivieren, um beim Loslassen des Trackpads sofort anzuhalten",
+    "RustDesk-Zeigerkorrektur", "Verhindert doppelte Cursor und Zeigersprünge in Nested Desktop; RustDesk hinzufügen / reparieren installiert die erforderliche Systemintegration automatisch",
   ]),
   greek: define([
     "Εργαλεία συστήματος", "Εγκατάσταση και διαχείριση στοχευμένων διορθώσεων συστήματος", "Κατάσταση", "Φόρτωση…",
@@ -197,6 +214,7 @@ Record<string, SystemToolsTranslation> = {
     "Προσθήκη / Επιδιόρθωση SteamOS", "Η εφαρμογή SteamOS είναι έτοιμη",
     "Ποντίκι Nested Desktop πάνω από παιχνίδι", "Επαναφέρει τον δείκτη και το κλικ του δεξιού trackpad στο Nested Desktop όταν εκτελείται άλλη εφαρμογή σε λειτουργία παιχνιδιού",
     "Αδράνεια trackpad", "Συνεχίζει την κίνηση του δείκτη και την κύλιση μετά από γρήγορη σάρωση· απενεργοποιήστε την για άμεσο σταμάτημα όταν αφήνετε το trackpad",
+    "Διόρθωση δείκτη RustDesk", "Αποτρέπει διπλούς δρομείς και τηλεμεταφορά του δείκτη στο Nested Desktop· η Προσθήκη / Διόρθωση RustDesk εγκαθιστά αυτόματα την απαιτούμενη ενσωμάτωση συστήματος",
   ]),
   hungarian: define([
     "Rendszereszközök", "Célzott rendszerjavítások telepítése és kezelése", "Állapot", "Betöltés…",
@@ -207,6 +225,7 @@ Record<string, SystemToolsTranslation> = {
     "SteamOS hozzáadása / javítása", "A SteamOS alkalmazás készen áll",
     "Nested Desktop egér játék fölött", "Visszaállítja a jobb oldali érintőpad kurzorát és kattintását a Nested Desktopban, miközben egy másik játékmód-alkalmazás fut",
     "Érintőpad tehetetlensége", "Egy gyors húzás után tovább mozgatja a kurzort és a görgetést; kikapcsolva az érintőpad elengedésekor azonnal megáll",
+    "RustDesk-mutató javítása", "Megakadályozza a kettős kurzort és a mutató ugrálását a Nested Desktopban; a RustDesk hozzáadása / javítása automatikusan telepíti a szükséges rendszerintegrációt",
   ]),
   indonesian: define([
     "Alat sistem", "Instal dan kelola perbaikan sistem yang terarah", "Status", "Memuat…",
@@ -217,6 +236,7 @@ Record<string, SystemToolsTranslation> = {
     "Tambah / Perbaiki SteamOS", "Aplikasi SteamOS siap",
     "Mouse Nested Desktop di atas game", "Memulihkan kursor dan klik trackpad kanan di Nested Desktop saat aplikasi Mode Game lain sedang berjalan",
     "Inersia trackpad", "Melanjutkan gerakan kursor dan gulir setelah usapan cepat; nonaktifkan agar langsung berhenti saat trackpad dilepas",
+    "Perbaikan penunjuk RustDesk", "Mencegah kursor ganda dan penunjuk berpindah tiba-tiba di Nested Desktop; Tambah / Perbaiki RustDesk memasang integrasi sistem yang diperlukan secara otomatis",
   ]),
   italian: define([
     "Strumenti di sistema", "Installa e gestisci correzioni di sistema mirate", "Stato", "Caricamento…",
@@ -227,6 +247,7 @@ Record<string, SystemToolsTranslation> = {
     "Aggiungi / Ripara SteamOS", "L’applicazione SteamOS è pronta",
     "Mouse di Nested Desktop sopra i giochi", "Ripristina il cursore e il clic del trackpad destro in Nested Desktop mentre è in esecuzione un’altra app in modalità gioco",
     "Inerzia del trackpad", "Continua il movimento del cursore e lo scorrimento dopo uno swipe rapido; disattivala per fermarli subito quando rilasci il trackpad",
+    "Correzione puntatore RustDesk", "Evita cursori duplicati e salti del puntatore in Nested Desktop; Aggiungi / Ripara RustDesk installa automaticamente l’integrazione di sistema necessaria",
   ]),
   japanese: define([
     "システムツール", "対象を限定したシステム修正をインストールして管理します", "状態", "読み込み中…",
@@ -237,6 +258,7 @@ Record<string, SystemToolsTranslation> = {
     "SteamOS を追加 / 修復", "SteamOS アプリケーションの準備ができました",
     "ゲーム上の Nested Desktop マウス", "別のゲームモードアプリの実行中に、Nested Desktop で右トラックパッドのカーソルとクリックを復元します",
     "トラックパッドの慣性", "素早くスワイプした後もカーソルとスクロールを動かします。トラックパッドを離した瞬間に停止するには無効にします",
+    "RustDesk ポインター修正", "Nested Desktop での二重カーソルとポインターの飛びを防ぎます。「RustDesk を追加 / 修復」で必要なシステム連携が自動的にインストールされます",
   ]),
   koreana: define([
     "시스템 도구", "범위가 제한된 시스템 수정 사항을 설치하고 관리합니다", "상태", "불러오는 중…",
@@ -247,6 +269,7 @@ Record<string, SystemToolsTranslation> = {
     "SteamOS 추가 / 복구", "SteamOS 애플리케이션이 준비되었습니다",
     "게임 위 Nested Desktop 마우스", "다른 게임 모드 앱이 실행 중일 때 Nested Desktop에서 오른쪽 트랙패드 커서와 클릭을 복원합니다",
     "트랙패드 관성", "빠르게 스와이프한 뒤에도 커서와 스크롤 이동을 이어갑니다. 트랙패드에서 손을 떼는 즉시 멈추려면 끄세요",
+    "RustDesk 포인터 수정", "Nested Desktop의 이중 커서와 포인터 순간 이동을 방지합니다. RustDesk 추가 / 복구가 필요한 시스템 통합을 자동으로 설치합니다",
   ]),
   latam: define([
     "Herramientas del sistema", "Instala y administra correcciones específicas del sistema", "Estado", "Cargando…",
@@ -257,6 +280,7 @@ Record<string, SystemToolsTranslation> = {
     "Agregar / Reparar SteamOS", "La aplicación SteamOS está lista",
     "Mouse de Nested Desktop sobre juegos", "Restaura el cursor y el clic del trackpad derecho en Nested Desktop mientras se ejecuta otra aplicación del modo Juego",
     "Inercia del trackpad", "Mantiene el movimiento del cursor y el desplazamiento después de un deslizamiento rápido; desactívala para detenerlos al soltar el trackpad",
+    "Corrección del puntero de RustDesk", "Evita cursores duplicados y saltos del puntero en Nested Desktop; Agregar / Reparar RustDesk instala automáticamente la integración del sistema necesaria",
   ]),
   malay: define([
     "Alat sistem", "Pasang dan urus pembaikan sistem yang disasarkan", "Status", "Memuatkan…",
@@ -267,6 +291,7 @@ Record<string, SystemToolsTranslation> = {
     "Tambah / Baiki SteamOS", "Aplikasi SteamOS sudah sedia",
     "Tetikus Nested Desktop di atas permainan", "Memulihkan kursor dan klik pad jejak kanan dalam Nested Desktop semasa aplikasi Mod Permainan lain sedang berjalan",
     "Inersia pad jejak", "Meneruskan pergerakan kursor dan tatal selepas leretan pantas; nyahdayakan untuk berhenti serta-merta apabila pad jejak dilepaskan",
+    "Pembaikan penuding RustDesk", "Menghalang kursor berganda dan penuding melompat dalam Nested Desktop; Tambah / Baiki RustDesk memasang integrasi sistem yang diperlukan secara automatik",
   ]),
   norwegian: define([
     "Systemverktøy", "Installer og administrer målrettede systemrettinger", "Status", "Laster…",
@@ -277,6 +302,7 @@ Record<string, SystemToolsTranslation> = {
     "Legg til / Reparer SteamOS", "SteamOS-programmet er klart",
     "Nested Desktop-mus over spill", "Gjenoppretter markøren og klikk med høyre styreflate i Nested Desktop mens en annen spillmodus-app kjører",
     "Styreflateinerti", "Fortsetter markør- og rullebevegelsen etter et raskt sveip; deaktiver for å stoppe umiddelbart når styreflaten slippes",
+    "RustDesk-pekerrettelse", "Forhindrer doble markører og pekerhopp i Nested Desktop; Legg til / Reparer RustDesk installerer automatisk den nødvendige systemintegrasjonen",
   ]),
   polish: define([
     "Narzędzia systemowe", "Instaluj i zarządzaj precyzyjnymi poprawkami systemu", "Stan", "Wczytywanie…",
@@ -287,6 +313,7 @@ Record<string, SystemToolsTranslation> = {
     "Dodaj / Napraw SteamOS", "Aplikacja SteamOS jest gotowa",
     "Mysz Nested Desktop nad grą", "Przywraca kursor i kliknięcie prawego gładzika w Nested Desktop, gdy działa inna aplikacja w trybie gry",
     "Bezwładność gładzika", "Kontynuuje ruch kursora i przewijanie po szybkim przesunięciu; wyłącz, aby zatrzymać ruch natychmiast po puszczeniu gładzika",
+    "Poprawka wskaźnika RustDesk", "Zapobiega podwójnym kursorom i przeskakiwaniu wskaźnika w Nested Desktop; Dodaj / Napraw RustDesk automatycznie instaluje wymaganą integrację systemową",
   ]),
   portuguese: define([
     "Ferramentas do sistema", "Instale e faça a gestão de correções específicas do sistema", "Estado", "A carregar…",
@@ -297,6 +324,7 @@ Record<string, SystemToolsTranslation> = {
     "Adicionar / Reparar SteamOS", "A aplicação SteamOS está pronta",
     "Rato do Nested Desktop sobre jogos", "Restaura o cursor e o clique do trackpad direito no Nested Desktop enquanto outra aplicação do Modo de Jogo está em execução",
     "Inércia do trackpad", "Mantém o movimento do cursor e do deslocamento após um gesto rápido; desative para parar imediatamente ao soltar o trackpad",
+    "Correção do ponteiro do RustDesk", "Evita cursores duplicados e saltos do ponteiro no Nested Desktop; Adicionar / Reparar RustDesk instala automaticamente a integração de sistema necessária",
   ]),
   romanian: define([
     "Instrumente de sistem", "Instalează și gestionează remedieri de sistem punctuale", "Stare", "Se încarcă…",
@@ -307,6 +335,7 @@ Record<string, SystemToolsTranslation> = {
     "Adaugă / Repară SteamOS", "Aplicația SteamOS este pregătită",
     "Mouse Nested Desktop peste joc", "Restabilește cursorul și clicul trackpadului drept în Nested Desktop când rulează o altă aplicație în modul Joc",
     "Inerția trackpadului", "Continuă mișcarea cursorului și derularea după o glisare rapidă; dezactivează pentru oprire imediată la eliberarea trackpadului",
+    "Remediere indicator RustDesk", "Previne cursoarele duplicate și salturile indicatorului în Nested Desktop; Adaugă / Repară RustDesk instalează automat integrarea de sistem necesară",
   ]),
   russian: define([
     "Системные инструменты", "Установка и управление точечными системными исправлениями", "Состояние", "Загрузка…",
@@ -317,6 +346,7 @@ Record<string, SystemToolsTranslation> = {
     "Добавить / Исправить SteamOS", "Приложение SteamOS готово",
     "Мышь Nested Desktop поверх игры", "Восстанавливает курсор и клик правого трекпада в Nested Desktop, когда параллельно запущено другое приложение в игровом режиме",
     "Инерция трекпадов", "Продолжает движение курсора и прокрутки после быстрого свайпа; отключите для мгновенной остановки при отпускании трекпада",
+    "Исправление курсора RustDesk", "Убирает второй курсор и телепортацию указателя в Nested Desktop; «Добавить / исправить RustDesk» автоматически устанавливает нужную системную интеграцию",
   ]),
   schinese: define([
     "系统工具", "安装和管理范围明确的系统修复", "状态", "正在加载…",
@@ -327,6 +357,7 @@ Record<string, SystemToolsTranslation> = {
     "添加 / 修复 SteamOS", "SteamOS 应用已准备就绪",
     "游戏上方的 Nested Desktop 鼠标", "当另一个游戏模式应用正在运行时，恢复 Nested Desktop 中的右触控板光标和点击",
     "触控板惯性", "快速滑动后继续移动光标和滚动；关闭后松开触控板会立即停止",
+    "RustDesk 指针修复", "防止 Nested Desktop 中出现重复光标和指针跳跃；“添加 / 修复 RustDesk”会自动安装所需的系统集成",
   ]),
   spanish: define([
     "Herramientas del sistema", "Instala y administra correcciones específicas del sistema", "Estado", "Cargando…",
@@ -337,6 +368,7 @@ Record<string, SystemToolsTranslation> = {
     "Añadir / Reparar SteamOS", "La aplicación SteamOS está lista",
     "Ratón de Nested Desktop sobre juegos", "Restaura el cursor y el clic del trackpad derecho en Nested Desktop mientras se ejecuta otra aplicación del modo Juego",
     "Inercia del trackpad", "Continúa el movimiento del cursor y el desplazamiento tras un gesto rápido; desactívala para detenerlos al soltar el trackpad",
+    "Corrección del puntero de RustDesk", "Evita cursores duplicados y saltos del puntero en Nested Desktop; Añadir / Reparar RustDesk instala automáticamente la integración del sistema necesaria",
   ]),
   swedish: define([
     "Systemverktyg", "Installera och hantera riktade systemkorrigeringar", "Status", "Läser in…",
@@ -347,6 +379,7 @@ Record<string, SystemToolsTranslation> = {
     "Lägg till / Reparera SteamOS", "SteamOS-programmet är klart",
     "Nested Desktop-mus över spel", "Återställer markören och klick med höger styrplatta i Nested Desktop medan en annan spellägesapp körs",
     "Styrplattans tröghet", "Fortsätter markör- och rullrörelsen efter ett snabbt svep; inaktivera för att stanna direkt när styrplattan släpps",
+    "RustDesk-pekarkorrigering", "Förhindrar dubbla markörer och pekarhopp i Nested Desktop; Lägg till / Reparera RustDesk installerar automatiskt den systemintegration som krävs",
   ]),
   tchinese: define([
     "系統工具", "安裝及管理範圍明確的系統修正", "狀態", "載入中…",
@@ -357,6 +390,7 @@ Record<string, SystemToolsTranslation> = {
     "新增 / 修復 SteamOS", "SteamOS 應用程式已準備就緒",
     "遊戲上方的 Nested Desktop 滑鼠", "當另一個遊戲模式應用程式正在執行時，恢復 Nested Desktop 中的右觸控板游標與點擊",
     "觸控板慣性", "快速滑動後繼續移動游標與捲動；關閉後放開觸控板便會立即停止",
+    "RustDesk 指標修正", "防止 Nested Desktop 中出現重複游標與指標跳動；「新增 / 修復 RustDesk」會自動安裝所需的系統整合",
   ]),
   thai: define([
     "เครื่องมือระบบ", "ติดตั้งและจัดการการแก้ไขระบบแบบเฉพาะจุด", "สถานะ", "กำลังโหลด…",
@@ -367,6 +401,7 @@ Record<string, SystemToolsTranslation> = {
     "เพิ่ม / ซ่อมแซม SteamOS", "แอปพลิเคชัน SteamOS พร้อมแล้ว",
     "เมาส์ Nested Desktop เหนือเกม", "คืนค่าเคอร์เซอร์และการคลิกด้วยแทร็กแพดขวาใน Nested Desktop ขณะที่แอปโหมดเกมอื่นกำลังทำงาน",
     "แรงเฉื่อยของแทร็กแพด", "เลื่อนเคอร์เซอร์และการเลื่อนหน้าจอต่อหลังปัดเร็ว ปิดเพื่อหยุดทันทีเมื่อปล่อยแทร็กแพด",
+    "การแก้ไขตัวชี้ RustDesk", "ป้องกันเคอร์เซอร์ซ้ำและตัวชี้กระโดดใน Nested Desktop; เพิ่ม / ซ่อมแซม RustDesk จะติดตั้งการเชื่อมต่อระบบที่จำเป็นโดยอัตโนมัติ",
   ]),
   turkish: define([
     "Sistem araçları", "Hedefli sistem düzeltmelerini kurun ve yönetin", "Durum", "Yükleniyor…",
@@ -377,6 +412,7 @@ Record<string, SystemToolsTranslation> = {
     "SteamOS Ekle / Onar", "SteamOS uygulaması hazır",
     "Oyun üzerinde Nested Desktop faresi", "Başka bir Oyun Modu uygulaması çalışırken Nested Desktop’ta sağ izleme dörtgeni imlecini ve tıklamayı geri getirir",
     "İzleme dörtgeni ataleti", "Hızlı kaydırmadan sonra imleç ve kaydırma hareketini sürdürür; izleme dörtgeni bırakıldığında hemen durması için kapatın",
+    "RustDesk işaretçi düzeltmesi", "Nested Desktop’ta çift imleci ve işaretçi sıçramalarını önler; RustDesk Ekle / Onar gerekli sistem entegrasyonunu otomatik olarak kurar",
   ]),
   ukrainian: define([
     "Системні інструменти", "Встановлення й керування точковими системними виправленнями", "Стан", "Завантаження…",
@@ -387,6 +423,7 @@ Record<string, SystemToolsTranslation> = {
     "Додати / Виправити SteamOS", "Застосунок SteamOS готовий",
     "Миша Nested Desktop поверх гри", "Відновлює курсор і натискання правого трекпада в Nested Desktop, коли паралельно запущено іншу програму в ігровому режимі",
     "Інерція трекпада", "Продовжує рух курсора та прокручування після швидкого свайпа; вимкніть для миттєвої зупинки після відпускання трекпада",
+    "Виправлення вказівника RustDesk", "Запобігає подвійному курсору та стрибкам вказівника в Nested Desktop; «Додати / Виправити RustDesk» автоматично встановлює потрібну системну інтеграцію",
   ]),
   vietnamese: define([
     "Công cụ hệ thống", "Cài đặt và quản lý các bản sửa lỗi hệ thống có phạm vi rõ ràng", "Trạng thái", "Đang tải…",
@@ -397,5 +434,6 @@ Record<string, SystemToolsTranslation> = {
     "Thêm / Sửa SteamOS", "Ứng dụng SteamOS đã sẵn sàng",
     "Chuột Nested Desktop trên trò chơi", "Khôi phục con trỏ và thao tác nhấp của bàn di chuột phải trong Nested Desktop khi một ứng dụng Chế độ trò chơi khác đang chạy",
     "Quán tính bàn di chuột", "Tiếp tục di chuyển con trỏ và cuộn sau cú vuốt nhanh; tắt để dừng ngay khi nhả bàn di chuột",
+    "Bản sửa con trỏ RustDesk", "Ngăn con trỏ trùng lặp và nhảy vị trí trong Nested Desktop; Thêm / Sửa RustDesk tự động cài đặt tích hợp hệ thống cần thiết",
   ]),
 };

@@ -174,6 +174,26 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
     }
   };
 
+  const setRustDeskPointerFixEnabled = async (
+    enabled: boolean,
+  ): Promise<void> => {
+    setBusy(true);
+    setSteamOsMessage("");
+    try {
+      const nextStatus =
+        await api.setRustDeskPointerFixEnabled(enabled);
+      setNestedDesktopMouseStatus(nextStatus);
+      if (nextStatus.error)
+        setSteamOsMessage(nextStatus.error);
+    } catch (error) {
+      setSteamOsMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <PanelSection title={strings.mangoHudFix}>
@@ -252,6 +272,21 @@ export const SystemToolsPanel = ({ api }: SystemToolsPanelProps) => {
             }
             onChange={(enabled) =>
               void setNestedDesktopMouseInertiaEnabled(enabled)}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
+            label={strings.rustDeskPointerFix}
+            description={strings.rustDeskPointerFixDescription}
+            checked={
+              nestedDesktopMouseStatus?.rustDeskPointerFixEnabled ?? true
+            }
+            disabled={
+              busy
+              || !nestedDesktopMouseStatus?.available
+            }
+            onChange={(enabled) =>
+              void setRustDeskPointerFixEnabled(enabled)}
           />
         </PanelSectionRow>
         <PanelSectionRow>

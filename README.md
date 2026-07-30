@@ -61,7 +61,8 @@ layout and text input.
 - Includes a quick **Add / Fix Parsec** action that keeps the Steam session
   active for Parsec's real background process.
 - Includes a quick **Add / Fix RustDesk** action with Steam runtime cleanup,
-  RustDesk compatibility libraries, and the Gamescope/X11 environment.
+  RustDesk compatibility libraries, the Gamescope/X11 environment, and
+  automatic installation of the Nested Desktop pointer hook.
 - Updates existing shortcuts in place to preserve their Steam app ID,
   controller layout, and play history.
 - Refreshes branded portrait, grid, hero, and logo artwork for Parsec and
@@ -91,6 +92,10 @@ layout and text input.
 - Restores right-trackpad and right-stick cursor control, configurable clicks,
   and left-pad scrolling in Nested Desktop while another Game Mode application
   is running.
+- Fixes RustDesk's duplicate cursor, click offset, and pointer teleportation by
+  relaying only its pointer events through Nested Desktop's EIS input. The
+  setting is enabled by default and can be disabled without restarting
+  RustDesk.
 - Provides configurable controller bindings that are sent directly to Nested
   Desktop while it owns focus, including when a parallel game retains Steam
   Input.
@@ -102,6 +107,9 @@ layout and text input.
   switch, and can reset the complete set to Steam defaults.
 - Activates the input bridge only while Nested Desktop is frontmost, with
   configurable cursor and scroll inertia that is saved between sessions.
+- Uses Decky's root permission only for managed systemd compatibility
+  drop-ins; the latency-sensitive Nested Desktop input worker still runs as
+  the regular Steam Deck user.
 
 ### Why dual-language labels matter
 

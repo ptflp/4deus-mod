@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import socket
 import struct
 import tempfile
 import threading
@@ -19,6 +20,7 @@ from nested_desktop_mouse import (
     LEFT_PAD_TOUCHED,
     LEFT_TRIGGER,
     JoystickEvent,
+    LinuxInputEvent,
     NestedDesktopSession,
     PointerUpdate,
     RIGHT_PAD_TOUCHED,
@@ -28,6 +30,7 @@ from nested_desktop_mouse import (
     TrackpadTranslator,
     NestedDesktopMouseRuntime,
     RustDeskMouseTranslator,
+    RustDeskRelayTranslator,
     decode_gamescope_display,
     ensure_nested_wayland_alias,
     find_nested_desktop_session,
@@ -192,6 +195,46 @@ class RustDeskMouseTranslatorTests(unittest.TestCase):
         self.assertEqual(
             parse_joystick_events(record + b"\xff"),
             (JoystickEvent(42, -123, 2, 1, True),),
+        )
+
+    def test_relay_coalesces_native_absolute_motion_and_buttons(self):
+        translator = RustDeskRelayTranslator()
+
+        updates = translator.translate(
+            (
+                LinuxInputEvent(3, 0, 1280),
+                LinuxInputEvent(3, 1, 800),
+                LinuxInputEvent(0, 0, 0),
+                LinuxInputEvent(1, 0x110, 1),
+                LinuxInputEvent(0, 0, 0),
+            ),
+            (0, 0, 1280, 800),
+        )
+
+        self.assertEqual(
+            updates,
+            (
+                PointerUpdate(absolute_x=1279.0, absolute_y=799.0),
+                PointerUpdate(left_button=True),
+            ),
+        )
+
+    def test_relay_keeps_an_incomplete_frame_for_the_next_datagram(self):
+        translator = RustDeskRelayTranslator()
+
+        self.assertEqual(
+            translator.translate(
+                (LinuxInputEvent(1, 0x111, 1),),
+                (0, 0, 1280, 800),
+            ),
+            (),
+        )
+        self.assertEqual(
+            translator.translate(
+                (LinuxInputEvent(0, 0, 0),),
+                (0, 0, 1280, 800),
+            ),
+            (PointerUpdate(right_button=True),),
         )
 
 
@@ -822,6 +865,8 @@ class RuntimeSuspensionTests(unittest.TestCase):
 
     def test_remote_pointer_rearms_without_a_trackpad_device(self):
         class AbsoluteEis:
+            ready = True
+            keyboard_ready = True
             absolute_ready = True
             absolute_emulating = False
 
@@ -840,9 +885,30 @@ class RuntimeSuspensionTests(unittest.TestCase):
                 self.transitions.append(active)
                 return self.absolute_ready
 
+            def inject_absolute(self, _update):
+                pass
+
+        class OuterX11:
+            @staticmethod
+            def cardinals(name):
+                return {
+                    "GAMESCOPE_FOCUSED_APP": [2],
+                    "GAMESCOPE_FOCUSED_APP_GFX": [2],
+                    "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
+                    "GAMESCOPE_FOCUSABLE_APPS": [769, 2, 3],
+                }[name]
+
         runtime = NestedDesktopMouseRuntime(threading.Event())
         inner_eis = AbsoluteEis()
         runtime.inner_eis = inner_eis
+        runtime.outer_x11 = OuterX11()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
         runtime.rustdesk_fd = 42
 
         runtime._refresh_forwarding()
@@ -851,6 +917,160 @@ class RuntimeSuspensionTests(unittest.TestCase):
 
         self.assertEqual(inner_eis.transitions, [True, True])
         self.assertTrue(runtime.remote_forwarding)
+        self.assertTrue(runtime.remote_button_forwarding)
+
+    def test_remote_pointer_uses_relay_without_a_parallel_app(self):
+        class AbsoluteEis:
+            ready = True
+            keyboard_ready = True
+            absolute_ready = True
+            absolute_emulating = False
+
+            def dispatch(self):
+                pass
+
+            def set_absolute_emulating(self, active):
+                self.absolute_emulating = active
+                return self.absolute_ready
+
+            def absolute_bounds(self):
+                return (0, 0, 1280, 800)
+
+            def inject_absolute(self, _update):
+                pass
+
+        class OuterX11:
+            @staticmethod
+            def cardinals(name):
+                return {
+                    "GAMESCOPE_FOCUSED_APP": [2],
+                    "GAMESCOPE_FOCUSED_APP_GFX": [2],
+                    "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
+                    "GAMESCOPE_FOCUSABLE_APPS": [769, 2],
+                }[name]
+
+        with tempfile.TemporaryDirectory() as directory:
+            relay_path = Path(directory) / "pointer-relay.sock"
+            runtime = NestedDesktopMouseRuntime(
+                threading.Event(),
+                rustdesk_relay_path=relay_path,
+            )
+            runtime.inner_eis = AbsoluteEis()
+            runtime.outer_x11 = OuterX11()
+            runtime.session = NestedDesktopSession(
+                pid=1,
+                app_id=2,
+                display=":2",
+                xauthority=Path("/tmp/xauth"),
+                dbus_address="unix:path=/tmp/dbus",
+            )
+            runtime.rustdesk_fd = 42
+
+            runtime._refresh_forwarding()
+
+            self.assertTrue(runtime.remote_forwarding)
+            self.assertTrue(runtime.remote_button_forwarding)
+            self.assertTrue(runtime.remote_relaying)
+            self.assertTrue(runtime.inner_eis.absolute_emulating)
+            self.assertTrue(relay_path.is_socket())
+
+            runtime._set_remote_forwarding(False)
+            self.assertFalse(relay_path.exists())
+            self.assertFalse(runtime.remote_relaying)
+
+    def test_remote_relay_injects_motion_and_buttons_through_eis(self):
+        class AbsoluteEis:
+            def __init__(self):
+                self.updates = []
+
+            def absolute_bounds(self):
+                return (0, 0, 1280, 800)
+
+            def inject_absolute(self, update):
+                self.updates.append(update)
+
+        with tempfile.TemporaryDirectory() as directory:
+            relay_path = Path(directory) / "pointer-relay.sock"
+            runtime = NestedDesktopMouseRuntime(
+                threading.Event(),
+                rustdesk_relay_path=relay_path,
+            )
+            runtime.inner_eis = AbsoluteEis()
+            runtime.remote_forwarding = True
+            runtime.remote_button_forwarding = True
+            self.assertTrue(runtime._set_remote_relaying(True))
+            sender = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            try:
+                for event in (
+                    (3, 0, 640),
+                    (3, 1, 400),
+                    (0, 0, 0),
+                    (1, 0x110, 1),
+                    (0, 0, 0),
+                ):
+                    sender.sendto(
+                        struct.pack("@llHHi", 0, 0, *event),
+                        str(relay_path),
+                    )
+
+                runtime._read_rustdesk_relay_events()
+
+                self.assertEqual(
+                    runtime.inner_eis.updates,
+                    [
+                        PointerUpdate(
+                            absolute_x=639.5,
+                            absolute_y=399.5,
+                        ),
+                        PointerUpdate(left_button=True),
+                    ],
+                )
+            finally:
+                sender.close()
+                runtime._set_remote_relaying(False)
+
+    def test_remote_motion_mode_drops_duplicated_native_buttons(self):
+        class AbsoluteEis:
+            def __init__(self):
+                self.updates = []
+
+            def absolute_bounds(self):
+                return (0, 0, 1280, 800)
+
+            def inject_absolute(self, update):
+                self.updates.append(update)
+
+        read_fd, write_fd = os.pipe()
+        os.set_blocking(read_fd, False)
+        runtime = NestedDesktopMouseRuntime(threading.Event())
+        runtime.rustdesk_fd = read_fd
+        runtime.inner_eis = AbsoluteEis()
+        runtime.remote_forwarding = True
+        try:
+            records = (
+                (1, 0, 0x82, 0),
+                (1, 0, 0x82, 1),
+                (2, 1_000, 0x02, 0),
+                (2, 2_000, 0x02, 1),
+                (3, 1, 0x01, 0),
+                (4, 0, 0x01, 0),
+            )
+            os.write(
+                write_fd,
+                b"".join(struct.pack("<IhBB", *record) for record in records),
+            )
+
+            runtime._read_rustdesk_events()
+
+            self.assertEqual(len(runtime.inner_eis.updates), 1)
+            update = runtime.inner_eis.updates[0]
+            self.assertIsNotNone(update.absolute_x)
+            self.assertIsNotNone(update.absolute_y)
+            self.assertIsNone(update.left_button)
+        finally:
+            os.close(write_fd)
+            runtime.rustdesk_fd = None
+            os.close(read_fd)
 
 
 class DiscoveryTests(unittest.TestCase):

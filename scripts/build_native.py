@@ -5,11 +5,19 @@ import tempfile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE = PROJECT_ROOT / "native/mangoapp_fdinfo_guard.rs"
-OUTPUT = PROJECT_ROOT / "bin/mangoapp-fdinfo-guard.so"
+TARGETS = (
+    (
+        PROJECT_ROOT / "native/mangoapp_fdinfo_guard.rs",
+        PROJECT_ROOT / "bin/mangoapp-fdinfo-guard.so",
+    ),
+    (
+        PROJECT_ROOT / "native/rustdesk_uinput_pointer_sync.rs",
+        PROJECT_ROOT / "bin/rustdesk-uinput-pointer-sync.so",
+    ),
+)
 
 
-def main():
+def build(source: Path, output: Path):
     command = [
         "rustc",
         "--edition=2021",
@@ -20,9 +28,9 @@ def main():
         "panic=abort",
         "-C",
         "strip=symbols",
-        str(SOURCE),
+        str(source),
         "-o",
-        str(OUTPUT),
+        str(output),
     ]
 
     if shutil.which("cc"):
@@ -47,6 +55,11 @@ def main():
             "link-arg=-L/usr/lib",
         ]
         subprocess.run(command, check=True)
+
+
+def main():
+    for source, output in TARGETS:
+        build(source, output)
 
 
 if __name__ == "__main__":

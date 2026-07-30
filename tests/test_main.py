@@ -6,7 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +41,7 @@ class RecordingMouseBridge:
         self.is_running = True
         self.inertia_values = []
         self.binding_values = []
+        self.rustdesk_pointer_fix_values = []
         self.suspended_values = []
 
     def start(self):
@@ -59,6 +60,9 @@ class RecordingMouseBridge:
 
     def set_bindings(self, enabled, bindings):
         self.binding_values.append((enabled, dict(bindings)))
+
+    def set_rustdesk_pointer_fix_enabled(self, enabled):
+        self.rustdesk_pointer_fix_values.append(enabled)
 
     def set_suspended(self, suspended):
         self.suspended_values.append(suspended)
@@ -239,6 +243,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "inertiaEnabled": True,
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    "rustDeskPointerFixEnabled": True,
                 },
             )
             self.assertEqual(
@@ -248,6 +253,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    True,
                 ),
             )
 
@@ -263,6 +269,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "inertiaEnabled": True,
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    "rustDeskPointerFixEnabled": True,
                 },
             )
             self.assertEqual(
@@ -272,6 +279,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    True,
                 ),
             )
 
@@ -318,6 +326,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "inertiaEnabled": False,
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    "rustDeskPointerFixEnabled": True,
                 },
             )
 
@@ -358,8 +367,47 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    True,
                 ),
             )
+
+    async def test_rustdesk_pointer_fix_defaults_on_and_can_be_disabled(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_rustdesk_pointer_fix_enabled(False)
+
+            self.assertFalse(result["rustDeskPointerFixEnabled"])
+            self.assertEqual(
+                bridge.rustdesk_pointer_fix_values,
+                [False],
+            )
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["rustDeskPointerFixEnabled"])
+
+    async def test_enabling_rustdesk_pointer_fix_installs_system_hook(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+        manager = types.SimpleNamespace(
+            executable=PROJECT_ROOT / "package.json",
+            install=MagicMock(),
+        )
+        plugin.rustdesk_pointer_fix = manager
+
+        with tempfile.TemporaryDirectory() as directory:
+            plugin.nested_desktop_mouse_settings_path = (
+                Path(directory) / "nested-desktop-mouse.json"
+            )
+            result = await plugin.set_rustdesk_pointer_fix_enabled(True)
+
+        self.assertTrue(result["rustDeskPointerFixEnabled"])
+        manager.install.assert_called_once_with(restart=True)
 
     async def test_bindings_can_be_disabled_and_persisted(self):
         plugin = plugin_backend.Plugin()
