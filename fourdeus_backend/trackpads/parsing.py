@@ -77,6 +77,33 @@ def _parse_trackpad_metrics_report(
         buttons=buttons,
     )
 
+
+def _report_control_state(report: bytes) -> int | None:
+    if (
+        len(report) < MIN_REPORT_SIZE
+        or not report.startswith(REPORT_HEADER)
+    ):
+        return None
+    controls = int.from_bytes(report[8:12], "little")
+    left_pressure = int.from_bytes(
+        report[
+            LEFT_PAD_PRESSURE_OFFSET:LEFT_PAD_PRESSURE_OFFSET + 2
+        ],
+        "little",
+    )
+    right_pressure = int.from_bytes(
+        report[
+            RIGHT_PAD_PRESSURE_OFFSET:RIGHT_PAD_PRESSURE_OFFSET + 2
+        ],
+        "little",
+    )
+    return (
+        controls & TRACKPAD_CONTROL_MASK
+        | bool(left_pressure) << 32
+        | bool(right_pressure) << 33
+    )
+
+
 def _report_trackpads_safely_released(report: bytes) -> bool:
     controls = struct.unpack_from("<I", report, 8)[0]
     pressures = struct.unpack_from(

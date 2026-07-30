@@ -28,6 +28,7 @@ from .controller import (
 from .models import TrackpadMetricsSample, _TrackpadGesture
 from .parsing import (
     _parse_trackpad_metrics_report,
+    _report_control_state,
     _report_trackpads_safely_released,
     _sample_trackpads_safely_released,
     _state_signature,
@@ -466,16 +467,30 @@ class TrackpadMetricsMonitor(
         return _sample_trackpads_safely_released(self.raw_latest)
 
     def _read_reports(self, descriptor: int, *, drain: bool = False):
+        pending_report: bytes | None = None
+        pending_state: int | None = None
         for _ in range(MAX_REPORT_BATCH_SIZE):
             try:
                 report = os.read(descriptor, 64)
             except BlockingIOError:
+                if pending_report is not None:
+                    self.record_report(pending_report)
                 return
             if not report:
                 raise OSError("Steam Deck trackpad device closed")
-            self.record_report(report)
             if not drain:
+                self.record_report(report)
                 return
+            state = _report_control_state(report)
+            if (
+                pending_report is not None
+                and state != pending_state
+            ):
+                self.record_report(pending_report)
+            pending_report = report
+            pending_state = state
+        if pending_report is not None:
+            self.record_report(pending_report)
 
     def _set_device_error(
         self,

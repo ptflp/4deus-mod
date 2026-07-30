@@ -359,6 +359,49 @@ class TrackpadMetricsMonitorTests(unittest.TestCase):
                 reports,
             )
 
+    def test_idle_reader_collapses_repeated_control_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            monitor = self.make_monitor(directory)
+            reports = [
+                make_report(sequence=1),
+                make_report(sequence=2),
+                make_report(sequence=3),
+            ]
+            with (
+                patch.object(
+                    trackpad_metrics.os,
+                    "read",
+                    side_effect=[*reports, BlockingIOError()],
+                ),
+                patch.object(monitor, "record_report") as record_report,
+            ):
+                monitor._read_reports(7, drain=True)
+
+            record_report.assert_called_once_with(reports[-1])
+
+    def test_idle_reader_preserves_pressure_transitions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            monitor = self.make_monitor(directory)
+            reports = [
+                make_report(sequence=1),
+                make_report(right_pressure=1, sequence=2),
+                make_report(sequence=3),
+            ]
+            with (
+                patch.object(
+                    trackpad_metrics.os,
+                    "read",
+                    side_effect=[*reports, BlockingIOError()],
+                ),
+                patch.object(monitor, "record_report") as record_report,
+            ):
+                monitor._read_reports(7, drain=True)
+
+            self.assertEqual(
+                [call.args[0] for call in record_report.call_args_list],
+                reports,
+            )
+
     def test_active_reader_processes_one_report_per_wakeup(self):
         with tempfile.TemporaryDirectory() as directory:
             monitor = self.make_monitor(directory)
