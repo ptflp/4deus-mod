@@ -18,6 +18,8 @@ from nested_desktop_mouse import (
     InputBindingTranslator,
     LEFT_PAD_TOUCHED,
     LEFT_TRIGGER,
+    JoystickEvent,
+    NestedDesktopSession,
     PointerUpdate,
     RIGHT_PAD_TOUCHED,
     RIGHT_PAD_PRESSED,
@@ -25,10 +27,15 @@ from nested_desktop_mouse import (
     TrackpadState,
     TrackpadTranslator,
     NestedDesktopMouseRuntime,
+    RustDeskMouseTranslator,
     decode_gamescope_display,
+    ensure_nested_wayland_alias,
     find_nested_desktop_session,
+    find_rustdesk_joystick,
     find_steam_deck_hidraw,
+    parse_joystick_events,
     parse_trackpad_report,
+    remove_nested_wayland_alias,
     should_forward_back_button,
     should_forward_pointer,
 )
@@ -130,6 +137,61 @@ class TrackpadReportTests(unittest.TestCase):
         self.assertIsNone(parse_trackpad_report(b"\x01\x00\x09"))
         self.assertIsNone(
             parse_trackpad_report(b"\x01\x00\x09" + b"\0" * 56)
+        )
+
+
+class RustDeskMouseTranslatorTests(unittest.TestCase):
+    def test_coalesces_axes_from_one_joystick_frame(self):
+        translator = RustDeskMouseTranslator()
+        initial = (
+            JoystickEvent(1, -32_767, 2, 0, True),
+            JoystickEvent(1, -32_767, 2, 1, True),
+        )
+        self.assertEqual(
+            translator.translate(initial, (0, 0, 1280, 800)),
+            (),
+        )
+
+        updates = translator.translate(
+            (
+                JoystickEvent(2, 32_767, 2, 0),
+                JoystickEvent(2, 32_767, 2, 1),
+            ),
+            (0, 0, 1280, 800),
+        )
+
+        self.assertEqual(
+            updates,
+            (PointerUpdate(absolute_x=1279.0, absolute_y=799.0),),
+        )
+
+    def test_preserves_button_transitions(self):
+        translator = RustDeskMouseTranslator()
+
+        updates = translator.translate(
+            (
+                JoystickEvent(1, 0, 2, 0, True),
+                JoystickEvent(1, 0, 2, 1, True),
+                JoystickEvent(2, 1, 1, 0),
+                JoystickEvent(3, 0, 1, 0),
+            ),
+            (0, 0, 1280, 800),
+        )
+
+        self.assertEqual(
+            updates,
+            (
+                PointerUpdate(left_button=True),
+                PointerUpdate(left_button=False),
+            ),
+        )
+
+    def test_parses_complete_joystick_records_only(self):
+        record = struct.pack("<IhBB", 42, -123, 0x82, 1)
+
+        self.assertEqual(
+            parse_joystick_events(record + b"\xff"),
+            (JoystickEvent(42, -123, 2, 1, True),),
         )
 
 
@@ -409,6 +471,22 @@ class TrackpadTranslatorTests(unittest.TestCase):
         self.assertEqual(first_inertia, PointerUpdate(dx=5))
         self.assertEqual(second_inertia, PointerUpdate(dx=5))
 
+    def test_slow_pointer_motion_stops_immediately_on_release(self):
+        translator = TrackpadTranslator(scale=0.1)
+        translator.set_active(True)
+        for position in (0, 20, 40, 60, 80):
+            translator.translate(
+                trackpad_state(
+                    right_touched=True,
+                    right_x=position,
+                )
+            )
+
+        released = translator.translate(trackpad_state())
+
+        self.assertEqual(released, PointerUpdate())
+        self.assertFalse(translator.pointer_inertia)
+
     def test_pointer_inertia_decays_and_retouch_stops_it(self):
         translator = TrackpadTranslator(scale=0.1)
         translator.set_active(True)
@@ -507,6 +585,26 @@ class TrackpadTranslatorTests(unittest.TestCase):
         stopped = translator.translate(trackpad_state())
 
         self.assertEqual(stopped, PointerUpdate(scroll_stop_y=True))
+
+    def test_sustained_slow_scroll_stops_without_inertia(self):
+        translator = TrackpadTranslator(
+            scroll_scale=0.1,
+            scroll_start_deadzone=0,
+            scroll_emit_threshold=0,
+        )
+        translator.set_active(True)
+        for position in (100, 110, 120, 130, 140):
+            translator.translate(
+                trackpad_state(
+                    left_touched=True,
+                    left_y=position,
+                )
+            )
+
+        stopped = translator.translate(trackpad_state())
+
+        self.assertEqual(stopped, PointerUpdate(scroll_stop_y=True))
+        self.assertFalse(translator.scroll_inertia)
 
     def test_scroll_stops_on_release_when_inertia_is_disabled(self):
         translator = TrackpadTranslator(
@@ -722,6 +820,38 @@ class RuntimeSuspensionTests(unittest.TestCase):
             os.close(write_fd)
             os.close(read_fd)
 
+    def test_remote_pointer_rearms_without_a_trackpad_device(self):
+        class AbsoluteEis:
+            absolute_ready = True
+            absolute_emulating = False
+
+            def __init__(self):
+                self.dispatches = 0
+                self.transitions = []
+
+            def dispatch(self):
+                self.dispatches += 1
+
+            def absolute_bounds(self):
+                return (0, 0, 1280, 800)
+
+            def set_absolute_emulating(self, active):
+                self.absolute_emulating = active
+                self.transitions.append(active)
+                return self.absolute_ready
+
+        runtime = NestedDesktopMouseRuntime(threading.Event())
+        inner_eis = AbsoluteEis()
+        runtime.inner_eis = inner_eis
+        runtime.rustdesk_fd = 42
+
+        runtime._refresh_forwarding()
+        inner_eis.absolute_emulating = False
+        runtime._refresh_forwarding()
+
+        self.assertEqual(inner_eis.transitions, [True, True])
+        self.assertTrue(runtime.remote_forwarding)
+
 
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
@@ -771,6 +901,8 @@ class DiscoveryTests(unittest.TestCase):
             101,
             [
                 "/usr/bin/kwin_wayland",
+                "--socket",
+                "wayland-7",
                 "--xwayland-display",
                 ":2",
                 "--xwayland-xauthority",
@@ -795,6 +927,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(session.display, ":2")
         self.assertEqual(session.xauthority, authority)
         self.assertEqual(session.dbus_address, dbus_address)
+        self.assertEqual(session.wayland_display, "wayland-7")
 
     def test_discovers_vendor_hid_interface_instead_of_mouse_interface(self):
         sys_class = self.root / "sys/class/hidraw"
@@ -813,6 +946,48 @@ class DiscoveryTests(unittest.TestCase):
         result = find_steam_deck_hidraw(sys_class, self.root / "dev")
 
         self.assertEqual(result, self.root / "dev/hidraw3")
+
+    def test_discovers_world_readable_rustdesk_joystick(self):
+        sys_class = self.root / "sys/class/input"
+        for name, device_name in (
+            ("js0", "Valve Software Steam Controller"),
+            ("js2", "mouce-library-fake-mouse"),
+        ):
+            device = sys_class / name / "device"
+            device.mkdir(parents=True)
+            (device / "name").write_text(device_name, encoding="utf-8")
+
+        result = find_rustdesk_joystick(
+            sys_class,
+            self.root / "dev/input",
+        )
+
+        self.assertEqual(result, self.root / "dev/input/js2")
+
+    def test_manages_only_the_nested_wayland_alias(self):
+        runtime = self.root / "run/user/1000/nested-desktop.test"
+        runtime.mkdir(parents=True)
+        authority = runtime / "xauth_test"
+        authority.write_bytes(b"cookie")
+        target = runtime / "wayland-0"
+        target.write_bytes(b"socket")
+        session = NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=authority,
+            dbus_address="unix:path=/tmp/test",
+        )
+
+        alias = ensure_nested_wayland_alias(session)
+
+        self.assertEqual(alias, runtime.parent / "wayland-0")
+        self.assertTrue(alias.is_symlink())
+        self.assertEqual(alias.resolve(), target)
+
+        remove_nested_wayland_alias(session, alias)
+
+        self.assertFalse(os.path.lexists(alias))
 
 
 if __name__ == "__main__":

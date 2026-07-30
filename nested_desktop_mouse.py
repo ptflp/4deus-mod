@@ -47,11 +47,11 @@ SCROLL_START_DEADZONE = 320
 SCROLL_EMIT_THRESHOLD = 48
 POINTER_VELOCITY_BLEND = 0.55
 POINTER_INERTIA_DECAY = 0.90
-POINTER_INERTIA_START = 0.8
+POINTER_INERTIA_START = 4.0
 POINTER_INERTIA_STOP = 0.15
 SCROLL_VELOCITY_BLEND = 0.55
 SCROLL_INERTIA_DECAY = 0.90
-SCROLL_INERTIA_START = 0.35
+SCROLL_INERTIA_START = 1.2
 SCROLL_INERTIA_STOP = 0.01
 RIGHT_STICK_DEADZONE = 8_000
 RIGHT_STICK_MAX_SPEED = 18.0
@@ -59,8 +59,16 @@ INPUT_FRAME_INTERVAL = 1 / 60
 FOCUS_CHECK_INTERVAL = 0.25
 DISCOVERY_INTERVAL = 5.0
 KEYBOARD_DEVICE_GRACE = 0.5
+RUSTDESK_MOUSE_NAME = "mouce-library-fake-mouse"
+JOYSTICK_EVENT_SIZE = 8
+JOYSTICK_EVENT_BUTTON = 0x01
+JOYSTICK_EVENT_AXIS = 0x02
+JOYSTICK_EVENT_INIT = 0x80
+JOYSTICK_AXIS_MIN = -32_767
+JOYSTICK_AXIS_SPAN = 65_534
 
 EI_DEVICE_CAP_POINTER = 1 << 0
+EI_DEVICE_CAP_POINTER_ABSOLUTE = 1 << 1
 EI_DEVICE_CAP_KEYBOARD = 1 << 2
 EI_DEVICE_CAP_SCROLL = 1 << 4
 EI_DEVICE_CAP_BUTTON = 1 << 5
@@ -267,6 +275,7 @@ class NestedDesktopSession:
     display: str
     xauthority: Path
     dbus_address: str
+    wayland_display: str = "wayland-0"
 
 
 @dataclass(frozen=True)
@@ -293,6 +302,8 @@ class TrackpadState:
 class PointerUpdate:
     dx: int = 0
     dy: int = 0
+    absolute_x: float | None = None
+    absolute_y: float | None = None
     left_button: bool | None = None
     right_button: bool | None = None
     middle_button: bool | None = None
@@ -306,6 +317,8 @@ class PointerUpdate:
         return (
             self.dx == 0
             and self.dy == 0
+            and self.absolute_x is None
+            and self.absolute_y is None
             and self.left_button is None
             and self.right_button is None
             and self.middle_button is None
@@ -314,6 +327,121 @@ class PointerUpdate:
             and not self.scroll_stop_x
             and not self.scroll_stop_y
         )
+
+
+@dataclass(frozen=True)
+class JoystickEvent:
+    timestamp: int
+    value: int
+    event_type: int
+    number: int
+    initial: bool = False
+
+
+def parse_joystick_events(data: bytes) -> tuple[JoystickEvent, ...]:
+    events = []
+    usable = len(data) - (len(data) % JOYSTICK_EVENT_SIZE)
+    for offset in range(0, usable, JOYSTICK_EVENT_SIZE):
+        timestamp, value, raw_type, number = struct.unpack_from(
+            "<IhBB",
+            data,
+            offset,
+        )
+        events.append(
+            JoystickEvent(
+                timestamp=timestamp,
+                value=value,
+                event_type=raw_type & ~JOYSTICK_EVENT_INIT,
+                number=number,
+                initial=bool(raw_type & JOYSTICK_EVENT_INIT),
+            )
+        )
+    return tuple(events)
+
+
+class RustDeskMouseTranslator:
+    def __init__(self):
+        self.axes = [0, 0]
+        self.axis_known = [False, False]
+
+    @staticmethod
+    def _coordinate(value: int, start: int, size: int) -> float:
+        normalized = (
+            max(JOYSTICK_AXIS_MIN, min(JOYSTICK_AXIS_MIN + JOYSTICK_AXIS_SPAN, value))
+            - JOYSTICK_AXIS_MIN
+        ) / JOYSTICK_AXIS_SPAN
+        return float(start) + normalized * max(0, size - 1)
+
+    def translate(
+        self,
+        events: Sequence[JoystickEvent],
+        bounds: tuple[int, int, int, int],
+    ) -> tuple[PointerUpdate, ...]:
+        updates: list[PointerUpdate] = []
+        frame_time: int | None = None
+        axis_changed = False
+        buttons: dict[str, bool] = {}
+
+        def flush():
+            nonlocal axis_changed, buttons
+            if not axis_changed and not buttons:
+                return
+            x, y, width, height = bounds
+            absolute = (
+                axis_changed
+                and self.axis_known[0]
+                and self.axis_known[1]
+            )
+            updates.append(
+                PointerUpdate(
+                    absolute_x=(
+                        self._coordinate(self.axes[0], x, width)
+                        if absolute
+                        else None
+                    ),
+                    absolute_y=(
+                        self._coordinate(self.axes[1], y, height)
+                        if absolute
+                        else None
+                    ),
+                    left_button=buttons.get("left"),
+                    right_button=buttons.get("right"),
+                    middle_button=buttons.get("middle"),
+                )
+            )
+            axis_changed = False
+            buttons = {}
+
+        for event in events:
+            if event.initial:
+                if (
+                    event.event_type == JOYSTICK_EVENT_AXIS
+                    and event.number < 2
+                ):
+                    self.axes[event.number] = event.value
+                    self.axis_known[event.number] = True
+                continue
+            if frame_time is None:
+                frame_time = event.timestamp
+            elif event.timestamp != frame_time:
+                flush()
+                frame_time = event.timestamp
+            if (
+                event.event_type == JOYSTICK_EVENT_AXIS
+                and event.number < 2
+            ):
+                self.axes[event.number] = event.value
+                self.axis_known[event.number] = True
+                axis_changed = True
+            elif (
+                event.event_type == JOYSTICK_EVENT_BUTTON
+                and event.number < 3
+            ):
+                buttons[("left", "right", "middle")[event.number]] = bool(
+                    event.value
+                )
+        flush()
+        return tuple(updates)
 
 
 def parse_trackpad_report(report: bytes) -> TrackpadState | None:
@@ -946,6 +1074,7 @@ def find_nested_desktop_session(
             continue
         display = _option_value(arguments, "--xwayland-display")
         xauthority = _option_value(arguments, "--xwayland-xauthority")
+        wayland_display = _option_value(arguments, "--socket") or "wayland-0"
         if (
             not display
             or not xauthority
@@ -973,6 +1102,7 @@ def find_nested_desktop_session(
             display=display,
             xauthority=authority_path,
             dbus_address=dbus_address,
+            wayland_display=wayland_display,
         )
     return None
 
@@ -1027,6 +1157,107 @@ def find_steam_deck_hidraw(
             continue
         return dev_root / candidate.name
     return None
+
+
+def find_rustdesk_joystick(
+    sys_class_input: Path = Path("/sys/class/input"),
+    dev_root: Path = Path("/dev/input"),
+) -> Path | None:
+    try:
+        candidates = sorted(sys_class_input.glob("js*"))
+    except OSError:
+        return None
+    for candidate in candidates:
+        try:
+            name = (candidate / "device/name").read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).strip()
+        except (FileNotFoundError, PermissionError, OSError):
+            continue
+        if name == RUSTDESK_MOUSE_NAME:
+            return dev_root / candidate.name
+    return None
+
+
+def _wayland_alias_paths(
+    session: NestedDesktopSession,
+) -> tuple[Path, Path]:
+    runtime_directory = session.xauthority.parent
+    return (
+        runtime_directory.parent / session.wayland_display,
+        runtime_directory / session.wayland_display,
+    )
+
+
+def _resolved_link(path: Path) -> Path | None:
+    try:
+        target = Path(os.readlink(path))
+    except OSError:
+        return None
+    if not target.is_absolute():
+        target = path.parent / target
+    return target.resolve(strict=False)
+
+
+def _is_nested_wayland_target(path: Path, runtime_root: Path) -> bool:
+    try:
+        relative = path.relative_to(runtime_root)
+    except ValueError:
+        return False
+    return bool(
+        len(relative.parts) == 2
+        and relative.parts[0].startswith("nested-desktop.")
+        and relative.parts[1].startswith("wayland-")
+    )
+
+
+def ensure_nested_wayland_alias(
+    session: NestedDesktopSession,
+) -> Path | None:
+    alias, target = _wayland_alias_paths(session)
+    if not target.exists():
+        return None
+    if alias.is_symlink():
+        current = _resolved_link(alias)
+        if current == target.resolve(strict=False):
+            return alias
+        if current is None or not _is_nested_wayland_target(
+            current,
+            alias.parent,
+        ):
+            return None
+    elif os.path.lexists(alias):
+        return None
+
+    temporary = alias.with_name(
+        f".{alias.name}.4deus-{os.getpid()}-{time.monotonic_ns()}"
+    )
+    try:
+        os.symlink(target, temporary)
+        os.replace(temporary, alias)
+    except OSError:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        return None
+    return alias
+
+
+def remove_nested_wayland_alias(
+    session: NestedDesktopSession | None,
+    alias: Path | None,
+):
+    if session is None or alias is None or not alias.is_symlink():
+        return
+    _, target = _wayland_alias_paths(session)
+    if _resolved_link(alias) != target.resolve(strict=False):
+        return
+    try:
+        alias.unlink()
+    except OSError:
+        pass
 
 
 class X11Connection:
@@ -1159,10 +1390,13 @@ class EisConnection:
         self.cookie = None
         self.ei = None
         self.pointer_device = None
+        self.absolute_pointer_device = None
         self.keyboard_device = None
         self.ready = False
+        self.absolute_ready = False
         self.keyboard_ready = False
         self.emulating = False
+        self.absolute_emulating = False
         self.keyboard_emulating = False
         self.sequence = 0
         self.lib = ctypes.CDLL(
@@ -1251,6 +1485,11 @@ class EisConnection:
             ctypes.c_double,
             ctypes.c_double,
         ]
+        self.lib.ei_device_pointer_motion_absolute.argtypes = [
+            pointer,
+            ctypes.c_double,
+            ctypes.c_double,
+        ]
         self.lib.ei_device_button_button.argtypes = [
             pointer,
             ctypes.c_uint32,
@@ -1275,6 +1514,19 @@ class EisConnection:
             pointer,
             ctypes.c_uint64,
         ]
+        self.lib.ei_device_get_region.argtypes = [
+            pointer,
+            ctypes.c_size_t,
+        ]
+        self.lib.ei_device_get_region.restype = pointer
+        self.lib.ei_region_get_x.argtypes = [pointer]
+        self.lib.ei_region_get_x.restype = ctypes.c_uint32
+        self.lib.ei_region_get_y.argtypes = [pointer]
+        self.lib.ei_region_get_y.restype = ctypes.c_uint32
+        self.lib.ei_region_get_width.argtypes = [pointer]
+        self.lib.ei_region_get_width.restype = ctypes.c_uint32
+        self.lib.ei_region_get_height.argtypes = [pointer]
+        self.lib.ei_region_get_height.restype = ctypes.c_uint32
         self.lib.ei_now.argtypes = [pointer]
         self.lib.ei_now.restype = ctypes.c_uint64
         self.lib.ei_unref.argtypes = [pointer]
@@ -1329,6 +1581,7 @@ class EisConnection:
             self.lib.ei_seat_bind_capabilities(
                 self.lib.ei_event_get_seat(event),
                 ctypes.c_int(EI_DEVICE_CAP_POINTER),
+                ctypes.c_int(EI_DEVICE_CAP_POINTER_ABSOLUTE),
                 ctypes.c_int(EI_DEVICE_CAP_KEYBOARD),
                 ctypes.c_int(EI_DEVICE_CAP_SCROLL),
                 ctypes.c_int(EI_DEVICE_CAP_BUTTON),
@@ -1354,6 +1607,20 @@ class EisConnection:
             ):
                 self.pointer_device = self.lib.ei_device_ref(candidate)
             if (
+                self.absolute_pointer_device is None
+                and self.lib.ei_device_has_capability(
+                    candidate,
+                    EI_DEVICE_CAP_POINTER_ABSOLUTE,
+                )
+                and self.lib.ei_device_has_capability(
+                    candidate,
+                    EI_DEVICE_CAP_BUTTON,
+                )
+            ):
+                self.absolute_pointer_device = self.lib.ei_device_ref(
+                    candidate
+                )
+            if (
                 self.keyboard_device is None
                 and self.lib.ei_device_has_capability(
                     candidate,
@@ -1366,12 +1633,17 @@ class EisConnection:
         if event_type == EI_EVENT_DEVICE_RESUMED:
             if event_device == self.pointer_device:
                 self.ready = True
+            if event_device == self.absolute_pointer_device:
+                self.absolute_ready = True
             if event_device == self.keyboard_device:
                 self.keyboard_ready = True
         elif event_type == EI_EVENT_DEVICE_PAUSED:
             if event_device == self.pointer_device:
                 self.ready = False
                 self.emulating = False
+            if event_device == self.absolute_pointer_device:
+                self.absolute_ready = False
+                self.absolute_emulating = False
             if event_device == self.keyboard_device:
                 self.keyboard_ready = False
                 self.keyboard_emulating = False
@@ -1381,6 +1653,12 @@ class EisConnection:
                 self.emulating = False
                 self.pointer_device = self.lib.ei_device_unref(
                     self.pointer_device
+                )
+            if event_device == self.absolute_pointer_device:
+                self.absolute_ready = False
+                self.absolute_emulating = False
+                self.absolute_pointer_device = self.lib.ei_device_unref(
+                    self.absolute_pointer_device
                 )
             if event_device == self.keyboard_device:
                 self.keyboard_ready = False
@@ -1396,21 +1674,39 @@ class EisConnection:
         if active:
             if not self.ready or self.pointer_device is None:
                 return False
-            if (
-                self.pointer_device != self.keyboard_device
-                or not self.keyboard_emulating
+            if not self._device_emulating_elsewhere(
+                self.pointer_device,
+                "pointer",
             ):
                 self._start_emulating(self.pointer_device)
             self.emulating = True
         elif self.pointer_device is not None:
-            if (
-                self.pointer_device != self.keyboard_device
-                or not self.keyboard_emulating
+            self.emulating = False
+            if not self._device_emulating_elsewhere(
+                self.pointer_device,
+                "pointer",
             ):
                 self.lib.ei_device_stop_emulating(self.pointer_device)
-            self.emulating = False
         self.lib.ei_dispatch(self.ei)
         return self.ready
+
+    def set_absolute_emulating(self, active: bool) -> bool:
+        self.dispatch()
+        if active == self.absolute_emulating:
+            return self.absolute_ready
+        device = self.absolute_pointer_device
+        if active:
+            if not self.absolute_ready or device is None:
+                return False
+            if not self._device_emulating_elsewhere(device, "absolute"):
+                self._start_emulating(device)
+            self.absolute_emulating = True
+        elif device is not None:
+            self.absolute_emulating = False
+            if not self._device_emulating_elsewhere(device, "absolute"):
+                self.lib.ei_device_stop_emulating(device)
+        self.lib.ei_dispatch(self.ei)
+        return self.absolute_ready
 
     def set_keyboard_emulating(self, active: bool) -> bool:
         self.dispatch()
@@ -1419,21 +1715,36 @@ class EisConnection:
         if active:
             if not self.keyboard_ready or self.keyboard_device is None:
                 return False
-            if (
-                self.keyboard_device != self.pointer_device
-                or not self.emulating
+            if not self._device_emulating_elsewhere(
+                self.keyboard_device,
+                "keyboard",
             ):
                 self._start_emulating(self.keyboard_device)
             self.keyboard_emulating = True
         elif self.keyboard_device is not None:
-            if (
-                self.keyboard_device != self.pointer_device
-                or not self.emulating
+            self.keyboard_emulating = False
+            if not self._device_emulating_elsewhere(
+                self.keyboard_device,
+                "keyboard",
             ):
                 self.lib.ei_device_stop_emulating(self.keyboard_device)
-            self.keyboard_emulating = False
         self.lib.ei_dispatch(self.ei)
         return self.keyboard_ready
+
+    def _device_emulating_elsewhere(self, device, owner: str) -> bool:
+        return any(
+            active and candidate == device
+            for candidate, active, candidate_owner in (
+                (self.pointer_device, self.emulating, "pointer"),
+                (
+                    self.absolute_pointer_device,
+                    self.absolute_emulating,
+                    "absolute",
+                ),
+                (self.keyboard_device, self.keyboard_emulating, "keyboard"),
+            )
+            if candidate_owner != owner
+        )
 
     def _start_emulating(self, device):
         self.sequence = (self.sequence + 1) & 0xFFFFFFFF
@@ -1491,6 +1802,59 @@ class EisConnection:
         )
         self.lib.ei_dispatch(self.ei)
 
+    def absolute_bounds(self) -> tuple[int, int, int, int] | None:
+        device = self.absolute_pointer_device
+        if device is None:
+            return None
+        region = self.lib.ei_device_get_region(device, 0)
+        if not region:
+            return None
+        return (
+            int(self.lib.ei_region_get_x(region)),
+            int(self.lib.ei_region_get_y(region)),
+            int(self.lib.ei_region_get_width(region)),
+            int(self.lib.ei_region_get_height(region)),
+        )
+
+    def inject_absolute(self, update: PointerUpdate):
+        device = self.absolute_pointer_device
+        if (
+            update.empty
+            or not self.absolute_ready
+            or not self.absolute_emulating
+            or device is None
+        ):
+            return
+        if (
+            update.absolute_x is not None
+            and update.absolute_y is not None
+        ):
+            self.lib.ei_device_pointer_motion_absolute(
+                device,
+                update.absolute_x,
+                update.absolute_y,
+            )
+        if update.left_button is not None:
+            self.lib.ei_device_button_button(
+                device,
+                BTN_LEFT,
+                update.left_button,
+            )
+        if update.right_button is not None:
+            self.lib.ei_device_button_button(
+                device,
+                BTN_RIGHT,
+                update.right_button,
+            )
+        if update.middle_button is not None:
+            self.lib.ei_device_button_button(
+                device,
+                BTN_MIDDLE,
+                update.middle_button,
+            )
+        self.lib.ei_device_frame(device, self.lib.ei_now(self.ei))
+        self.lib.ei_dispatch(self.ei)
+
     def inject_key(self, key_code: int, pressed: bool):
         if (
             not self.keyboard_ready
@@ -1516,6 +1880,10 @@ class EisConnection:
                     device
                     for device, active in (
                         (self.pointer_device, self.emulating),
+                        (
+                            self.absolute_pointer_device,
+                            self.absolute_emulating,
+                        ),
                         (self.keyboard_device, self.keyboard_emulating),
                     )
                     if device is not None and active
@@ -1530,14 +1898,20 @@ class EisConnection:
                 self.pointer_device = self.lib.ei_device_unref(
                     self.pointer_device
                 )
+            if self.absolute_pointer_device is not None:
+                self.absolute_pointer_device = self.lib.ei_device_unref(
+                    self.absolute_pointer_device
+                )
             if self.keyboard_device is not None:
                 self.keyboard_device = self.lib.ei_device_unref(
                     self.keyboard_device
                 )
             self.ei = self.lib.ei_unref(self.ei)
         self.ready = False
+        self.absolute_ready = False
         self.keyboard_ready = False
         self.emulating = False
+        self.absolute_emulating = False
         self.keyboard_emulating = False
         if self.remote is not None and self.cookie is not None:
             try:
@@ -1561,6 +1935,8 @@ class NestedDesktopMouseRuntime:
         proc_root: Path = Path("/proc"),
         sys_class_hidraw: Path = Path("/sys/class/hidraw"),
         dev_root: Path = Path("/dev"),
+        sys_class_input: Path = Path("/sys/class/input"),
+        input_dev_root: Path = Path("/dev/input"),
         inertia_enabled: bool = True,
         bindings_enabled: bool = True,
         bindings: Mapping[str, object] | None = None,
@@ -1572,11 +1948,18 @@ class NestedDesktopMouseRuntime:
         self.proc_root = proc_root
         self.sys_class_hidraw = sys_class_hidraw
         self.dev_root = dev_root
+        self.sys_class_input = sys_class_input
+        self.input_dev_root = input_dev_root
         self.outer_x11: X11Connection | None = None
         self.inner_eis: EisConnection | None = None
         self.session: NestedDesktopSession | None = None
         self.hidraw_path: Path | None = None
         self.hidraw_fd: int | None = None
+        self.rustdesk_path: Path | None = None
+        self.rustdesk_fd: int | None = None
+        self.rustdesk_buffer = b""
+        self.rustdesk_translator = RustDeskMouseTranslator()
+        self.wayland_alias: Path | None = None
         self.translator = TrackpadTranslator(
             inertia_enabled=inertia_enabled,
         )
@@ -1587,6 +1970,7 @@ class NestedDesktopMouseRuntime:
         self.control_fd = control_fd
         self.control_buffer = b""
         self.forwarding = False
+        self.remote_forwarding = False
         self.binding_forwarding = False
         self.next_input_frame = 0.0
 
@@ -1607,7 +1991,11 @@ class NestedDesktopMouseRuntime:
         finally:
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
+            self._set_remote_forwarding(False)
             self._close_hidraw()
+            self._close_rustdesk_joystick()
+            remove_nested_wayland_alias(self.session, self.wayland_alias)
+            self.wayland_alias = None
             if self.inner_eis is not None:
                 self.inner_eis.close()
             if self.outer_x11 is not None:
@@ -1681,6 +2069,10 @@ class NestedDesktopMouseRuntime:
         if discovered_session != self.session:
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
+            self._set_remote_forwarding(False)
+            self._close_rustdesk_joystick()
+            remove_nested_wayland_alias(self.session, self.wayland_alias)
+            self.wayland_alias = None
             if self.inner_eis is not None:
                 self.inner_eis.close()
                 self.inner_eis = None
@@ -1691,6 +2083,14 @@ class NestedDesktopMouseRuntime:
                     discovered_session.app_id,
                     discovered_session.display,
                 )
+        if self.session is not None:
+            alias = ensure_nested_wayland_alias(self.session)
+            if alias is not None and alias != self.wayland_alias:
+                LOGGER.info(
+                    "Exposed Nested Desktop Wayland socket at %s",
+                    alias,
+                )
+            self.wayland_alias = alias
 
         if self.session is not None and self.inner_eis is None:
             try:
@@ -1700,6 +2100,41 @@ class NestedDesktopMouseRuntime:
                 LOGGER.info("Connected to the Nested Desktop KWin EIS input")
             except Exception as error:
                 LOGGER.debug("Nested Desktop input is unavailable: %s", error)
+
+        discovered_rustdesk = (
+            self.rustdesk_path
+            if self.rustdesk_fd is not None
+            else find_rustdesk_joystick(
+                self.sys_class_input,
+                self.input_dev_root,
+            )
+        )
+        if discovered_rustdesk != self.rustdesk_path:
+            self._close_rustdesk_joystick()
+            self.rustdesk_path = discovered_rustdesk
+        if (
+            self.rustdesk_fd is None
+            and self.rustdesk_path is not None
+            and self.inner_eis is not None
+            and self.inner_eis.absolute_ready
+        ):
+            try:
+                self.rustdesk_fd = os.open(
+                    self.rustdesk_path,
+                    os.O_RDONLY | os.O_NONBLOCK,
+                )
+                self.rustdesk_buffer = b""
+                self.rustdesk_translator = RustDeskMouseTranslator()
+                self._set_remote_forwarding(True)
+                LOGGER.info(
+                    "Bridging RustDesk pointer from %s into Nested Desktop",
+                    self.rustdesk_path,
+                )
+            except OSError as error:
+                LOGGER.debug(
+                    "RustDesk pointer device is unavailable: %s",
+                    error,
+                )
 
         discovered_hidraw = (
             self.hidraw_path
@@ -1723,10 +2158,18 @@ class NestedDesktopMouseRuntime:
                 LOGGER.debug("Trackpad device is unavailable: %s", error)
 
     def _refresh_forwarding(self):
+        inner_eis = self.inner_eis
+        if inner_eis is not None:
+            try:
+                inner_eis.dispatch()
+            except Exception as error:
+                self._handle_eis_loss(error)
+                return
+            self._set_remote_forwarding(self.rustdesk_fd is not None)
         if (
             self.suspended
             or self.outer_x11 is None
-            or self.inner_eis is None
+            or inner_eis is None
             or self.session is None
             or self.hidraw_fd is None
         ):
@@ -1734,8 +2177,6 @@ class NestedDesktopMouseRuntime:
             self._set_binding_forwarding(False)
             return
         try:
-            inner_eis = self.inner_eis
-            inner_eis.dispatch()
             app_id = self.session.app_id
             focused_app = self.outer_x11.cardinals(
                 "GAMESCOPE_FOCUSED_APP"
@@ -1855,6 +2296,40 @@ class NestedDesktopMouseRuntime:
         else:
             LOGGER.info("Nested Desktop configurable bindings disabled")
 
+    def _set_remote_forwarding(self, active: bool):
+        if active == self.remote_forwarding:
+            inner_eis = self.inner_eis
+            if (
+                active
+                and inner_eis is not None
+                and inner_eis.absolute_ready
+                and inner_eis.absolute_emulating
+            ):
+                return
+            if not active and (
+                inner_eis is None
+                or not inner_eis.absolute_emulating
+            ):
+                return
+        inner_eis = self.inner_eis
+        try:
+            if active:
+                active = bool(
+                    inner_eis is not None
+                    and inner_eis.absolute_bounds() is not None
+                    and inner_eis.set_absolute_emulating(True)
+                )
+            elif inner_eis is not None:
+                inner_eis.set_absolute_emulating(False)
+        except Exception as error:
+            self._handle_eis_loss(error)
+            active = False
+        self.remote_forwarding = active
+        if active:
+            LOGGER.info("RustDesk Nested Desktop pointer bridge enabled")
+        else:
+            LOGGER.info("RustDesk Nested Desktop pointer bridge disabled")
+
     def _inject_binding_update(self, update: BindingUpdate):
         inner_eis = self.inner_eis
         if inner_eis is not None:
@@ -1881,15 +2356,74 @@ class NestedDesktopMouseRuntime:
         self.translator.set_active(False)
         self.binding_translator.set_active(False)
         self.forwarding = False
+        self.remote_forwarding = False
         self.binding_forwarding = False
         self.next_input_frame = 0.0
 
+    def _read_rustdesk_events(self):
+        fd = self.rustdesk_fd
+        inner_eis = self.inner_eis
+        if (
+            fd is None
+            or inner_eis is None
+            or not self.remote_forwarding
+        ):
+            return
+        try:
+            chunks = []
+            while True:
+                try:
+                    chunk = os.read(fd, 4096)
+                except BlockingIOError:
+                    break
+                if not chunk:
+                    self._close_rustdesk_joystick()
+                    return
+                chunks.append(chunk)
+            if not chunks:
+                return
+            self.rustdesk_buffer += b"".join(chunks)
+            usable = len(self.rustdesk_buffer) - (
+                len(self.rustdesk_buffer) % JOYSTICK_EVENT_SIZE
+            )
+            if not usable:
+                return
+            events = parse_joystick_events(self.rustdesk_buffer[:usable])
+            self.rustdesk_buffer = self.rustdesk_buffer[usable:]
+            bounds = inner_eis.absolute_bounds()
+            if bounds is None:
+                self._set_remote_forwarding(False)
+                return
+            for update in self.rustdesk_translator.translate(events, bounds):
+                inner_eis.inject_absolute(update)
+        except (OSError, ValueError) as error:
+            LOGGER.warning("Lost the RustDesk pointer device: %s", error)
+            self._close_rustdesk_joystick()
+        except Exception as error:
+            self._handle_eis_loss(error)
+
     def _read_reports(self, timeout: float):
+        if self.rustdesk_fd is not None and self.remote_forwarding:
+            try:
+                readable, _, _ = select.select(
+                    [self.rustdesk_fd],
+                    [],
+                    [],
+                    0,
+                )
+                if readable:
+                    self._read_rustdesk_events()
+            except (OSError, ValueError) as error:
+                LOGGER.warning(
+                    "Lost the RustDesk pointer device: %s",
+                    error,
+                )
+                self._close_rustdesk_joystick()
         if self.hidraw_fd is None:
-            self.stop_event.wait(timeout)
+            self._wait_for_rustdesk(timeout)
             return
         if not self.forwarding and not self.binding_forwarding:
-            self.stop_event.wait(timeout)
+            self._wait_for_rustdesk(timeout)
             return
 
         now = time.monotonic()
@@ -1963,6 +2497,35 @@ class NestedDesktopMouseRuntime:
                 pass
         self.hidraw_fd = None
         self.hidraw_path = None
+
+    def _wait_for_rustdesk(self, timeout: float):
+        if self.rustdesk_fd is None or not self.remote_forwarding:
+            self.stop_event.wait(timeout)
+            return
+        try:
+            readable, _, _ = select.select(
+                [self.rustdesk_fd],
+                [],
+                [],
+                timeout,
+            )
+            if readable:
+                self._read_rustdesk_events()
+        except (OSError, ValueError) as error:
+            LOGGER.warning("Lost the RustDesk pointer device: %s", error)
+            self._close_rustdesk_joystick()
+
+    def _close_rustdesk_joystick(self):
+        self._set_remote_forwarding(False)
+        if self.rustdesk_fd is not None:
+            try:
+                os.close(self.rustdesk_fd)
+            except OSError:
+                pass
+        self.rustdesk_fd = None
+        self.rustdesk_path = None
+        self.rustdesk_buffer = b""
+        self.rustdesk_translator = RustDeskMouseTranslator()
 
 
 class NestedDesktopMouseSupervisor:
