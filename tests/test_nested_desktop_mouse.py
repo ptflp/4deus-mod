@@ -19,6 +19,8 @@ from nested_desktop_mouse import (
     CursorSnapshot,
     DEFAULT_NESTED_DESKTOP_BINDINGS,
     EIS_KEY_CODES,
+    IDLE_INPUT_FRAME_INTERVAL,
+    INPUT_FRAME_INTERVAL,
     InputBindingTranslator,
     LEFT_PAD_TOUCHED,
     LEFT_TRIGGER,
@@ -41,11 +43,13 @@ from nested_desktop_mouse import (
     encode_rustdesk_ipc_frame,
     ensure_nested_wayland_alias,
     find_nested_desktop_session,
+    find_rustdesk_keyboard,
     find_rustdesk_joystick,
     find_steam_deck_hidraw,
     outlined_cursor_snapshot,
     parse_joystick_events,
     parse_trackpad_report,
+    prioritize_focus_app,
     query_rustdesk_video_connection_count,
     receive_rustdesk_ipc_frame,
     remove_nested_wayland_alias,
@@ -894,6 +898,46 @@ class TrackpadTranslatorTests(unittest.TestCase):
 
 
 class GamescopeFocusTests(unittest.TestCase):
+    def test_focus_snapshot_reuses_values_until_an_event_or_fallback(self):
+        class OuterX11:
+            def __init__(self):
+                self.changed = False
+                self.reads = []
+
+            def drain_property_events(self):
+                changed = self.changed
+                self.changed = False
+                return changed
+
+            def cardinals(self, name):
+                self.reads.append(name)
+                return {
+                    "GAMESCOPE_FOCUSED_APP": [22],
+                    "GAMESCOPE_FOCUSED_APP_GFX": [22],
+                    "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":2"),
+                    "GAMESCOPE_FOCUSABLE_APPS": [769, 22],
+                }[name]
+
+        runtime = NestedDesktopMouseRuntime(threading.Event())
+        runtime.outer_x11 = OuterX11()
+
+        first = runtime._gamescope_focus_snapshot(0.0)
+        cached = runtime._gamescope_focus_snapshot(0.25)
+        runtime.outer_x11.changed = True
+        changed = runtime._gamescope_focus_snapshot(0.3)
+        fallback = runtime._gamescope_focus_snapshot(0.8)
+
+        self.assertIs(first, cached)
+        self.assertEqual(first, changed)
+        self.assertEqual(changed, fallback)
+        self.assertEqual(len(runtime.outer_x11.reads), 12)
+
+    def test_prioritizes_nested_desktop_without_losing_focus_history(self):
+        self.assertEqual(
+            prioritize_focus_app(22, [11, 22, 769, 22]),
+            (22, 11, 769),
+        )
+
     def test_cursor_alpha_mask_uses_x11_lsb_bit_order(self):
         pixels = [
             0x00000000,
@@ -1057,6 +1101,50 @@ class GamescopeFocusTests(unittest.TestCase):
 
 
 class RuntimeSuspensionTests(unittest.TestCase):
+    def test_idle_trackpad_sampling_accelerates_while_touched(self):
+        class InnerEis:
+            @staticmethod
+            def inject(_update):
+                pass
+
+            @staticmethod
+            def inject_key(_key_code, _pressed):
+                pass
+
+        read_fd, write_fd = os.pipe()
+        os.set_blocking(read_fd, False)
+        runtime = NestedDesktopMouseRuntime(threading.Event())
+        runtime.hidraw_fd = read_fd
+        runtime.binding_forwarding = True
+        runtime.binding_translator.set_active(True)
+        runtime.inner_eis = InnerEis()
+
+        def report(controls=0):
+            payload = bytearray(64)
+            payload[:3] = b"\x01\x00\x09"
+            payload[8:12] = controls.to_bytes(4, "little")
+            return payload
+
+        try:
+            os.write(write_fd, report())
+            runtime._read_reports(0)
+            self.assertEqual(
+                runtime.input_frame_interval,
+                IDLE_INPUT_FRAME_INTERVAL,
+            )
+
+            runtime.next_input_frame = 0.0
+            os.write(write_fd, report(RIGHT_PAD_TOUCHED))
+            runtime._read_reports(0)
+            self.assertEqual(
+                runtime.input_frame_interval,
+                INPUT_FRAME_INTERVAL,
+            )
+        finally:
+            os.close(write_fd)
+            runtime.hidraw_fd = None
+            os.close(read_fd)
+
     def test_control_channel_pauses_and_resumes_without_restarting(self):
         read_fd, write_fd = os.pipe()
         runtime = NestedDesktopMouseRuntime(
@@ -1094,6 +1182,108 @@ class RuntimeSuspensionTests(unittest.TestCase):
             actions,
             [ACTION_HIDE_KEYBOARD, ACTION_HIDE_KEYBOARD],
         )
+
+    def test_remote_input_requests_nested_desktop_focus_once(self):
+        class OuterX11:
+            def __init__(self):
+                self.writes = []
+
+            @staticmethod
+            def cardinals(name):
+                return {
+                    "GAMESCOPE_FOCUSED_APP": [31],
+                    "GAMESCOPE_FOCUSED_APP_GFX": [31],
+                    "GAMESCOPECTRL_BASELAYER_APPID": [31, 22, 769],
+                }[name]
+
+            def set_cardinals(self, name, values):
+                self.writes.append((name, tuple(values)))
+
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            rustdesk_connection_query=lambda _path: 1,
+            rustdesk_focus_on_input_enabled=True,
+        )
+        runtime.outer_x11 = OuterX11()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=22,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+
+        runtime._request_focus_for_remote_input()
+        runtime._request_focus_for_remote_input()
+
+        self.assertEqual(
+            runtime.outer_x11.writes,
+            [
+                (
+                    "GAMESCOPECTRL_BASELAYER_APPID",
+                    (22, 31, 769),
+                )
+            ],
+        )
+
+    def test_remote_input_does_not_rewrite_focus_when_already_frontmost(self):
+        class OuterX11:
+            writes = []
+
+            @staticmethod
+            def cardinals(name):
+                return {
+                    "GAMESCOPE_FOCUSED_APP": [22],
+                    "GAMESCOPE_FOCUSED_APP_GFX": [22],
+                }[name]
+
+            @classmethod
+            def set_cardinals(cls, name, values):
+                cls.writes.append((name, tuple(values)))
+
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            rustdesk_connection_query=lambda _path: 1,
+            rustdesk_focus_on_input_enabled=True,
+        )
+        runtime.outer_x11 = OuterX11()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=22,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+
+        runtime._request_focus_for_remote_input()
+
+        self.assertTrue(runtime.nested_desktop_focused)
+        self.assertEqual(runtime.outer_x11.writes, [])
+
+    def test_remote_keyboard_press_is_treated_as_remote_input(self):
+        actions = []
+        read_fd, write_fd = os.pipe()
+        os.set_blocking(read_fd, False)
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            action_callback=actions.append,
+            rustdesk_connection_query=lambda _path: 1,
+            suspended=True,
+        )
+        runtime.rustdesk_keyboard_fd = read_fd
+        try:
+            os.write(
+                write_fd,
+                struct.pack("@llHHi", 0, 0, 1, 30, 1),
+            )
+
+            runtime._read_rustdesk_keyboard_events()
+
+            self.assertEqual(actions, [ACTION_HIDE_KEYBOARD])
+        finally:
+            os.close(write_fd)
+            runtime.rustdesk_keyboard_fd = None
+            os.close(read_fd)
 
     def test_remote_pointer_rearms_without_a_trackpad_device(self):
         class CursorOverlay:
@@ -1663,8 +1853,9 @@ class RustDeskIpcTests(unittest.TestCase):
         self.assertTrue(runtime._has_active_rustdesk_connection(0.0))
         self.assertTrue(runtime._has_active_rustdesk_connection(0.25))
         self.assertTrue(runtime._has_active_rustdesk_connection(0.5))
-        self.assertFalse(runtime._has_active_rustdesk_connection(2.1))
-        self.assertFalse(runtime._has_active_rustdesk_connection(2.6))
+        self.assertTrue(runtime._has_active_rustdesk_connection(2.1))
+        self.assertFalse(runtime._has_active_rustdesk_connection(4.2))
+        self.assertFalse(runtime._has_active_rustdesk_connection(4.7))
         self.assertEqual(queries, [path, path, path, path])
 
     def test_disconnect_count_disables_bridge_without_grace(self):
@@ -1675,7 +1866,8 @@ class RustDeskIpcTests(unittest.TestCase):
         )
 
         self.assertTrue(runtime._has_active_rustdesk_connection(0.0))
-        self.assertFalse(runtime._has_active_rustdesk_connection(0.5))
+        self.assertTrue(runtime._has_active_rustdesk_connection(0.5))
+        self.assertFalse(runtime._has_active_rustdesk_connection(2.0))
 
 
 class DiscoveryTests(unittest.TestCase):
@@ -1794,6 +1986,23 @@ class DiscoveryTests(unittest.TestCase):
         )
 
         self.assertEqual(result, self.root / "dev/input/js2")
+
+    def test_discovers_rustdesk_virtual_keyboard(self):
+        sys_class = self.root / "sys/class/input"
+        for name, device_name in (
+            ("event4", "Valve Software Steam Controller"),
+            ("event10", "RustDesk UInput Keyboard"),
+        ):
+            device = sys_class / name / "device"
+            device.mkdir(parents=True)
+            (device / "name").write_text(device_name, encoding="utf-8")
+
+        result = find_rustdesk_keyboard(
+            sys_class,
+            self.root / "dev/input",
+        )
+
+        self.assertEqual(result, self.root / "dev/input/event10")
 
     def test_manages_only_the_nested_wayland_alias(self):
         runtime = self.root / "run/user/1000/nested-desktop.test"

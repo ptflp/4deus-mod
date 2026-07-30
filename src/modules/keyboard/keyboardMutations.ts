@@ -54,6 +54,19 @@ const isShiftKey = (key: HTMLElement): boolean =>
   key.dataset.keyRow === SHIFT_KEY_ROW
   && key.dataset.keyCol === SHIFT_KEY_COLUMN;
 
+const hasNativeNode = (nodes: NodeList): boolean => {
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes.item(index);
+    if (node && !isModNode(node))
+      return true;
+  }
+  return false;
+};
+
+const hasNativeChildChange = (mutation: MutationRecord): boolean =>
+  hasNativeNode(mutation.addedNodes)
+  || hasNativeNode(mutation.removedNodes);
+
 export const isRelevantKeyboardMutation = (
   mutation: MutationRecord,
 ): boolean => {
@@ -65,15 +78,9 @@ export const isRelevantKeyboardMutation = (
     return !key;
 
   if (mutation.type === "childList") {
-    const changedNodes = [
-      ...Array.from(mutation.addedNodes),
-      ...Array.from(mutation.removedNodes),
-    ];
-    if (!changedNodes.some((node) => !isModNode(node)))
-      return false;
     // Steam adds and removes focus/ripple nodes inside a key on every press.
     // Key identity changes are reported separately through data-key.
-    return !key;
+    return hasNativeChildChange(mutation) && !key;
   }
 
   if (mutation.attributeName !== "class")

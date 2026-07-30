@@ -45,10 +45,23 @@ export interface NestedDesktopMouseStatus {
   enabled: boolean;
   error?: string;
   inertiaEnabled: boolean;
+  rustDeskFocusOnInputEnabled: boolean;
   rustDeskPointerFixEnabled: boolean;
   rustDeskScrollInertiaEnabled: boolean;
   running: boolean;
   suspended: boolean;
+}
+
+export interface ControllerStatus {
+  armed: boolean;
+  autoRecoveryEnabled: boolean;
+  available: boolean;
+  error?: string;
+  lastAttemptAtMs: number;
+  lastSuccessAtMs: number;
+  monitoring: boolean;
+  pending: boolean;
+  successCount: number;
 }
 
 export interface SystemToolsApi {
@@ -70,6 +83,9 @@ export interface SystemToolsApi {
   setRustDeskPointerFixEnabled(
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
+  setRustDeskFocusOnInputEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
   setRustDeskScrollInertiaEnabled(
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
@@ -81,4 +97,8 @@ export interface SystemToolsApi {
     action: NestedDesktopBindingAction,
   ): Promise<NestedDesktopMouseStatus>;
   resetNestedDesktopBindings(): Promise<NestedDesktopMouseStatus>;
+  getControllerStatus(): Promise<ControllerStatus>;
+  setTrackpadAutoRecoveryEnabled(
+    enabled: boolean,
+  ): Promise<ControllerStatus>;
 }

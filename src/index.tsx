@@ -5,7 +5,6 @@ import {
   removeEventListener,
   routerHook,
 } from "@decky/api";
-import { staticClasses } from "@decky/ui";
 import { FaSlidersH } from "react-icons/fa";
 
 import { ModuleHost } from "./core/module";
@@ -17,6 +16,11 @@ import type {
   AppBridgeStatus,
   PreparedAppBridgeProfile,
 } from "./modules/appBridge/types";
+import type {
+  DeveloperApi,
+  DeveloperSettingsStatus,
+  TrackpadMetricsWindow,
+} from "./modules/developer/types";
 import { KeyboardFeature } from "./modules/keyboard/KeyboardFeature";
 import type {
   NestedDesktopBindingAction,
@@ -24,6 +28,7 @@ import type {
 } from "./modules/systemTools/nestedDesktopBindings";
 import type {
   MangoHudFixStatus,
+  ControllerStatus,
   NestedDesktopMouseStatus,
   PreparedSteamOsApplication,
   SteamOsApplicationStatus,
@@ -32,6 +37,11 @@ import type {
 } from "./modules/systemTools/types";
 import { AppBridgeSettingsRoute } from "./ui/AppBridgeSettingsRoute";
 import { KeyboardSettingsRoute } from "./ui/KeyboardSettingsRoute";
+import {
+  PLUGIN_SETTINGS_ROUTE,
+  PluginSettingsRoute,
+} from "./ui/PluginSettingsRoute";
+import { PluginTitle } from "./ui/PluginTitle";
 import { SystemToolsSettingsRoute } from "./ui/SystemToolsSettingsRoute";
 import {
   APP_BRIDGE_SETTINGS_ROUTE,
@@ -112,6 +122,10 @@ export default definePlugin(() => {
       [boolean],
       NestedDesktopMouseStatus
     >("set_rustdesk_pointer_fix_enabled"),
+    setRustDeskFocusOnInputEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_rustdesk_focus_on_input_enabled"),
     setRustDeskScrollInertiaEnabled: callable<
       [boolean],
       NestedDesktopMouseStatus
@@ -128,6 +142,39 @@ export default definePlugin(() => {
       [],
       NestedDesktopMouseStatus
     >("reset_nested_desktop_bindings"),
+    getControllerStatus: callable<[], ControllerStatus>(
+      "get_controller_status",
+    ),
+    setTrackpadAutoRecoveryEnabled: callable<
+      [boolean],
+      ControllerStatus
+    >("set_trackpad_auto_recovery_enabled"),
+  };
+  const developerApi: DeveloperApi = {
+    getStatus: callable<[], DeveloperSettingsStatus>(
+      "get_developer_settings_status",
+    ),
+    setDeveloperMode: callable<[boolean], DeveloperSettingsStatus>(
+      "set_developer_mode",
+    ),
+    setTrackpadMetricsEnabled: callable<
+      [boolean],
+      DeveloperSettingsStatus
+    >("set_trackpad_metrics_enabled"),
+    getTrackpadMetricsWindow: callable<
+      [string, number],
+      TrackpadMetricsWindow
+    >("get_trackpad_metrics_window"),
+    captureTrackpadMetrics: callable<[], DeveloperSettingsStatus>(
+      "capture_trackpad_metrics",
+    ),
+    clearTrackpadMetricsBuffer: callable<[], DeveloperSettingsStatus>(
+      "clear_trackpad_metrics_buffer",
+    ),
+    deleteTrackpadMetricsCapture: callable<
+      [string],
+      DeveloperSettingsStatus
+    >("delete_trackpad_metrics_capture"),
   };
   const keyboardFeature = new KeyboardFeature(
     settings,
@@ -153,6 +200,9 @@ export default definePlugin(() => {
   const SystemToolsRoute = () => (
     <SystemToolsSettingsRoute api={systemToolsApi} />
   );
+  const PluginSettings = () => (
+    <PluginSettingsRoute api={developerApi} />
+  );
   routerHook.addRoute(KEYBOARD_SETTINGS_ROUTE, KeyboardRoute, {
     exact: true,
   });
@@ -162,11 +212,14 @@ export default definePlugin(() => {
   routerHook.addRoute(SYSTEM_TOOLS_SETTINGS_ROUTE, SystemToolsRoute, {
     exact: true,
   });
+  routerHook.addRoute(PLUGIN_SETTINGS_ROUTE, PluginSettings, {
+    exact: true,
+  });
   host.start();
 
   return {
     name: "4deus Mod",
-    titleView: <div className={staticClasses.Title}>4deus Mod</div>,
+    titleView: <PluginTitle />,
     content: <ModsPanel settings={settings} />,
     icon: <FaSlidersH />,
     onDismount: () => {
@@ -174,6 +227,7 @@ export default definePlugin(() => {
         "nested_desktop_action",
         nestedDesktopActionListener,
       );
+      routerHook.removeRoute(PLUGIN_SETTINGS_ROUTE);
       routerHook.removeRoute(SYSTEM_TOOLS_SETTINGS_ROUTE);
       routerHook.removeRoute(APP_BRIDGE_SETTINGS_ROUTE);
       routerHook.removeRoute(KEYBOARD_SETTINGS_ROUTE);

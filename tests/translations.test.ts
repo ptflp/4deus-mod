@@ -107,8 +107,13 @@ const SYSTEM_TOOLS_KEYS = [
   "nestedDesktopTrackpadInertiaDescription",
   "rustDeskPointerFix",
   "rustDeskPointerFixDescription",
+  "rustDeskFocusOnInput",
+  "rustDeskFocusOnInputDescription",
   "rustDeskScrollInertia",
   "rustDeskScrollInertiaDescription",
+  "controller",
+  "trackpadAutoRecovery",
+  "trackpadAutoRecoveryDescription",
 ] as const;
 
 test("System Tools has complete translations for every Steam locale", () => {
@@ -127,6 +132,22 @@ test("System Tools has complete translations for every Steam locale", () => {
   for (const [language, strings] of Object.entries(systemToolsTranslations)) {
     for (const key of SYSTEM_TOOLS_KEYS)
       assert.ok(strings[key].trim(), `${language}.${key}`);
+  }
+});
+
+test("RustDesk auto-focus warnings identify the Steam PIN bypass", () => {
+  for (const [language, strings] of Object.entries(
+    systemToolsTranslations,
+  )) {
+    assert.ok(
+      strings.rustDeskFocusOnInputDescription.startsWith("⚠"),
+      `${language}.rustDeskFocusOnInputDescription warning`,
+    );
+    assert.match(
+      strings.rustDeskFocusOnInputDescription,
+      /PIN/iu,
+      `${language}.rustDeskFocusOnInputDescription PIN`,
+    );
   }
 });
 

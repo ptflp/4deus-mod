@@ -1,5 +1,10 @@
 import type { SecondaryLabelMap } from "./steamLayouts";
-import { isSecondaryLabelRow } from "./layoutLabels";
+import {
+  isSecondaryLabelRow,
+  isSingleCharacter,
+  isVisualSwapRow,
+  selectSecondaryLabel,
+} from "./layoutLabels";
 import { resolveVisualKeyLabels } from "./visualKeyLabels";
 
 const LABEL_CLASS = "fourdeus-secondary-label";
@@ -13,7 +18,16 @@ const SHIFT_BACKGROUND_VARIABLES = [
   "--key-toggleoneshot-background-color",
   "--key-toggleon-background-color",
 ];
-const shiftClassesByDocument = new WeakMap<Document, string[]>();
+const EMPTY_LABELS: readonly string[] = [];
+const formatUpperCase = (label: string): string => label.toLocaleUpperCase();
+const formatLowerCase = (label: string): string => label.toLocaleLowerCase();
+
+interface ShiftClassCache {
+  classes: string[];
+  styleSheetCount: number;
+}
+
+const shiftClassesByDocument = new WeakMap<Document, ShiftClassCache>();
 
 const isUpperCaseLetter = (value: string): boolean =>
   LETTER_PATTERN.test(value)
@@ -29,9 +43,10 @@ const readStyleRules = (sheet: CSSStyleSheet): CSSStyleRule[] => {
 };
 
 const resolveShiftClasses = (document: Document): string[] => {
+  const styleSheetCount = document.styleSheets.length;
   const cached = shiftClassesByDocument.get(document);
-  if (cached)
-    return cached;
+  if (cached?.styleSheetCount === styleSheetCount)
+    return cached.classes;
 
   const classes = Array.from(document.styleSheets)
   .flatMap(readStyleRules)
@@ -43,50 +58,69 @@ const resolveShiftClasses = (document: Document): string[] => {
   .flatMap((rule) =>
     rule.selectorText?.match(/^\.([A-Za-z0-9_-]+)$/)?.[1] ?? [],
   );
-  if (classes.length > 0)
-    shiftClassesByDocument.set(document, classes);
+  shiftClassesByDocument.set(document, { classes, styleSheetCount });
   return classes;
+};
+
+const nativeCharacterSpans = (
+  nativeKey: Element | null,
+): HTMLElement[] => {
+  if (!nativeKey)
+    return [];
+
+  const characters: HTMLElement[] = [];
+  for (const span of nativeKey.querySelectorAll<HTMLElement>("span")) {
+    const label = span.textContent?.trim();
+    if (
+      isSingleCharacter(label)
+      && !span.classList.contains(LABEL_CLASS)
+      && !span.classList.contains(SWAPPED_PRIMARY_LABEL_CLASS)
+    ) {
+      characters.push(span);
+    }
+  }
+  return characters;
+};
+
+interface DisplayedSpan {
+  opacity: number;
+  span: HTMLElement;
+}
+
+const preferVisibleSpan = (
+  ownerWindow: Window,
+  displayed: DisplayedSpan | undefined,
+  span: HTMLElement,
+): DisplayedSpan | undefined => {
+  const style = ownerWindow.getComputedStyle(span);
+  if (style.display === "none" || style.visibility === "hidden")
+    return displayed;
+  const parsedOpacity = Number.parseFloat(style.opacity);
+  const candidate = {
+    opacity: Number.isFinite(parsedOpacity) ? parsedOpacity : 1,
+    span,
+  };
+  return !displayed || candidate.opacity >= displayed.opacity
+    ? candidate
+    : displayed;
 };
 
 const displayedPrimarySpan = (
   key: HTMLElement,
+  candidates = nativeCharacterSpans(key.firstElementChild),
 ): HTMLElement | undefined => {
-  const nativeKey = key.firstElementChild;
   const ownerWindow = key.ownerDocument.defaultView;
-  if (!nativeKey || !ownerWindow)
+  if (!ownerWindow)
     return undefined;
-
-  const candidates = Array.from(
-    nativeKey.querySelectorAll<HTMLElement>("span"),
-  ).filter((span) => {
-    const label = span.textContent?.trim();
-    return Boolean(
-      label
-      && Array.from(label).length === 1
-      && !span.classList.contains(LABEL_CLASS)
-      && !span.classList.contains(SWAPPED_PRIMARY_LABEL_CLASS),
-    );
-  });
   if (candidates.length <= 1)
     return candidates[0];
 
-  let displayed: { opacity: number; span: HTMLElement } | undefined;
   // Symbol keys can render active and inactive Shift labels together; opacity
   // identifies the active one without depending on hashed CSS class names.
-  candidates.forEach((span) => {
-    const style = ownerWindow.getComputedStyle(span);
-    if (style.display === "none" || style.visibility === "hidden")
-      return;
-
-    const opacity = Number.parseFloat(style.opacity);
-    const candidate = {
-      opacity: Number.isFinite(opacity) ? opacity : 1,
-      span,
-    };
-    if (!displayed || candidate.opacity >= displayed.opacity)
-      displayed = candidate;
-  });
-
+  const displayed = candidates.reduce<DisplayedSpan | undefined>(
+    (current, span) => preferVisibleSpan(ownerWindow, current, span),
+    undefined,
+  );
   return displayed?.span;
 };
 
@@ -137,9 +171,12 @@ const secondaryText = (
   const variants = row !== undefined && column !== undefined
     ? labels.get(`${row}:${column}`)
     : undefined;
-  const label = shifted
-    ? variants?.shifted ?? variants?.normal
-    : variants?.normal;
+  const label = selectSecondaryLabel(
+    variants?.normal,
+    variants?.shifted,
+    Number(row),
+    shifted,
+  );
   return label && LETTER_PATTERN.test(label) ? formatLetter(label) : label;
 };
 
@@ -231,8 +268,9 @@ const applyNativeVisualSwap = (
   primary: string | undefined,
   replacement: string | undefined,
   swapped: boolean,
+  nativeCharacters: readonly HTMLElement[],
 ): boolean => {
-  if (!swapped || !active || !primary || Array.from(primary).length !== 1) {
+  if (!swapped || !active || !isSingleCharacter(primary)) {
     if (key.classList.contains(SWAPPED_KEY_CLASS)) {
       clearNativeVisualSwap(key);
       key.classList.remove(SWAPPED_KEY_CLASS);
@@ -241,19 +279,8 @@ const applyNativeVisualSwap = (
   }
 
   key.classList.add(SWAPPED_KEY_CLASS);
-  (nativeKey ?? key)
-    .querySelectorAll<HTMLElement>("span")
-    .forEach((span) => {
-      const label = span.textContent?.trim();
-      if (
-        label
-        && Array.from(label).length === 1
-        && !span.classList.contains(LABEL_CLASS)
-        && !span.classList.contains(SWAPPED_PRIMARY_LABEL_CLASS)
-      ) {
-        span.classList.add(SWAPPED_NATIVE_LABEL_CLASS);
-      }
-    });
+  nativeCharacters.forEach((span) =>
+    span.classList.add(SWAPPED_NATIVE_LABEL_CLASS));
 
   const existing = key.querySelector<HTMLElement>(
     `.${SWAPPED_PRIMARY_LABEL_CLASS}`,
@@ -292,6 +319,37 @@ const renderCornerLabel = (
   (nativeKey ?? key).appendChild(label);
 };
 
+interface NativeLabelState {
+  active?: HTMLElement;
+  characters: HTMLElement[];
+  nativeKey: HTMLElement | null;
+  primary?: string;
+  visibleLabels: readonly string[];
+}
+
+const readNativeLabelState = (
+  key: HTMLElement,
+  swapped: boolean,
+): NativeLabelState => {
+  const nativeKey = key.firstElementChild as HTMLElement | null;
+  const numberRow = key.dataset.keyRow === "0";
+  const characters = swapped || numberRow
+    ? nativeCharacterSpans(nativeKey)
+    : [];
+  const active = swapped
+    ? displayedPrimarySpan(key, characters)
+    : undefined;
+  return {
+    active,
+    characters,
+    nativeKey,
+    primary: swapped ? nativePrimaryText(key, active) : key.dataset.key,
+    visibleLabels: numberRow
+      ? characters.map((span) => span.textContent?.trim() ?? "")
+      : EMPTY_LABELS,
+  };
+};
+
 const renderKeyLabels = (
   key: HTMLElement,
   labels: SecondaryLabelMap,
@@ -302,13 +360,14 @@ const renderKeyLabels = (
   const text = secondaryText(key, labels, shifted, format);
   if (!text && !key.classList.contains(KEY_CLASS))
     return;
-  const active = swapped ? displayedPrimarySpan(key) : undefined;
-  const primary = swapped
-    ? nativePrimaryText(key, active)
-    : key.dataset.key;
-  const visualLabels = resolveVisualKeyLabels(primary, text, swapped);
-  const nativeKey = key.firstElementChild as HTMLElement | null;
-  const existing = nativeKey?.querySelector<HTMLElement>(
+  const native = readNativeLabelState(key, swapped);
+  const visualLabels = resolveVisualKeyLabels(
+    native.primary,
+    text,
+    swapped,
+    native.visibleLabels,
+  );
+  const existing = native.nativeKey?.querySelector<HTMLElement>(
     `:scope > .${LABEL_CLASS}`,
   ) ?? key.querySelector<HTMLElement>(
     `:scope > .${LABEL_CLASS}`,
@@ -322,15 +381,16 @@ const renderKeyLabels = (
   key.classList.add(KEY_CLASS);
   const didSwap = applyNativeVisualSwap(
     key,
-    nativeKey,
-    active,
-    primary,
+    native.nativeKey,
+    native.active,
+    native.primary,
     visualLabels.primary,
     swapped,
+    native.characters,
   );
   renderCornerLabel(
     key,
-    nativeKey,
+    native.nativeKey,
     existing,
     (didSwap ? visualLabels.secondary : text) ?? "",
   );
@@ -343,17 +403,35 @@ export const renderSecondaryLabels = (
 ): void => {
   ensureStyles(keyboard.ownerDocument);
 
-  const keys = Array.from(
-    keyboard.querySelectorAll<HTMLElement>("div[data-key-row][data-key-col]"),
-  ).filter((key) =>
-    isSecondaryLabelRow(Number(key.dataset.keyRow)));
+  const keys: HTMLElement[] = [];
+  for (const key of keyboard.querySelectorAll<HTMLElement>(
+    "div[data-key-row][data-key-col]",
+  )) {
+    if (isSecondaryLabelRow(Number(key.dataset.keyRow))) {
+      keys.push(key);
+    } else if (
+        key.classList.contains(KEY_CLASS)
+        || key.classList.contains(SWAPPED_KEY_CLASS)
+    ) {
+      clearKeyLabels(
+        key,
+        key.querySelector<HTMLElement>(`.${LABEL_CLASS}`) ?? undefined,
+      );
+    }
+  }
   const format = keyboardUsesUpperCase(keys)
-    ? (label: string) => label.toLocaleUpperCase()
-    : (label: string) => label.toLocaleLowerCase();
+    ? formatUpperCase
+    : formatLowerCase;
   const shifted = keyboardUsesShift(keys);
 
   keys.forEach((key) =>
-    renderKeyLabels(key, labels, shifted, format, swapped));
+    renderKeyLabels(
+      key,
+      labels,
+      shifted,
+      format,
+      swapped && isVisualSwapRow(Number(key.dataset.keyRow)),
+    ));
 };
 
 export const clearSecondaryLabels = (document: Document): void => {

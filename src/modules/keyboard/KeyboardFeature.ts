@@ -1,6 +1,7 @@
 import type { ModModule } from "../../core/module";
 import type {
   LanguageSwitchShortcut,
+  ModSettings,
   SettingsStore,
 } from "../../core/settings";
 import {
@@ -29,6 +30,7 @@ const CHORD_NAVIGATION_DELAY_MS = 75;
 const DIAGNOSTIC_INTERVAL_MS = 5000;
 const KEYBOARD_ID = "virtual keyboard";
 const KEYBOARD_ROUTE = "/keyboard";
+const KEY_SELECTOR = "div[data-key-row][data-key-col]";
 const SHIFT_KEY_SELECTOR = 'div[data-key-row="3"][data-key-col="0"]';
 const BRING_TO_FRONT_AND_FORCE_OS = 1;
 
@@ -59,6 +61,7 @@ export class KeyboardFeature implements ModModule {
   private activeWindow?: WindowInstance;
   private activeDocument?: Document;
   private keyboardObserver?: MutationObserver;
+  private keyboardStructureObserver?: MutationObserver;
   private shiftObserver?: MutationObserver;
   private keyboardElement?: HTMLElement;
   private shiftElement?: HTMLElement;
@@ -68,8 +71,10 @@ export class KeyboardFeature implements ModModule {
   private dismissOnEnterManager?: WindowInstance["VirtualKeyboardManager"];
   private originalDismissOnEnter?: boolean;
   private settingsUnsubscribe?: () => void;
+  private appliedKeyboardSettings?: ModSettings["keyboard"];
   private windowTimer?: number;
   private refreshFrame?: number;
+  private refreshSystemLayer = false;
   private diagnosticTimer?: number;
   private keyboardVisible?: boolean;
   private visibilityQueue = Promise.resolve();
@@ -102,6 +107,7 @@ export class KeyboardFeature implements ModModule {
   }
 
   start(): void {
+    this.appliedKeyboardSettings = this.settings.getSnapshot().keyboard;
     this.settingsUnsubscribe = this.settings.subscribe(() =>
       this.runSafely("apply settings", () => this.applySettings()),
     );
@@ -132,6 +138,7 @@ export class KeyboardFeature implements ModModule {
     this.keyboardRegistration = undefined;
     this.settingsUnsubscribe?.();
     this.settingsUnsubscribe = undefined;
+    this.appliedKeyboardSettings = undefined;
     this.restoreDismissOnEnter();
     if (this.windowTimer !== undefined)
       window.clearInterval(this.windowTimer);
@@ -186,6 +193,8 @@ export class KeyboardFeature implements ModModule {
   private unbindDocument(reportHidden: boolean): void {
     this.keyboardObserver?.disconnect();
     this.keyboardObserver = undefined;
+    this.keyboardStructureObserver?.disconnect();
+    this.keyboardStructureObserver = undefined;
     this.shiftObserver?.disconnect();
     this.shiftObserver = undefined;
     this.shiftElement = undefined;
@@ -195,6 +204,7 @@ export class KeyboardFeature implements ModModule {
     if (this.refreshFrame !== undefined)
       window.cancelAnimationFrame(this.refreshFrame);
     this.refreshFrame = undefined;
+    this.refreshSystemLayer = false;
     const document = this.activeDocument;
     if (document?.defaultView)
       clearSecondaryLabels(document);
@@ -216,6 +226,8 @@ export class KeyboardFeature implements ModModule {
 
     this.keyboardObserver?.disconnect();
     this.keyboardObserver = undefined;
+    this.keyboardStructureObserver?.disconnect();
+    this.keyboardStructureObserver = undefined;
     this.shiftObserver?.disconnect();
     this.shiftObserver = undefined;
     this.shiftElement = undefined;
@@ -231,35 +243,76 @@ export class KeyboardFeature implements ModModule {
     this.systemKeyLayer.bind(keyboard);
     this.keyboardObserver = new MutationObserver((mutations) => {
       this.runSafely("process keyboard mutations", () =>
-        this.processKeyboardMutations(mutations),
+        this.processKeyboardMutations(mutations, true),
       );
     });
     this.keyboardObserver.observe(keyboard, {
       attributes: true,
       attributeFilter: KEYBOARD_IDENTITY_ATTRIBUTES,
-      characterData: true,
-      childList: true,
       subtree: true,
     });
+    this.keyboardStructureObserver = new MutationObserver((mutations) => {
+      this.runSafely("process keyboard structure", () => {
+        const changed = this.processKeyboardMutations(mutations, true);
+        if (changed && keyboard === this.keyboardElement)
+          this.observeKeyboardStructure(keyboard);
+      });
+    });
+    this.observeKeyboardStructure(keyboard);
     this.syncShiftObserver(keyboard);
     this.refresh();
   }
 
-  private processKeyboardMutations(mutations: MutationRecord[]): void {
-    const relevantCount = mutations.filter(
-      isRelevantKeyboardMutation,
-    ).length;
+  private processKeyboardMutations(
+    mutations: MutationRecord[],
+    refreshSystemLayer: boolean,
+  ): boolean {
+    let relevantCount = 0;
+    for (const mutation of mutations) {
+      if (isRelevantKeyboardMutation(mutation))
+        relevantCount += 1;
+    }
     this.observedMutationCount += mutations.length;
     this.ignoredMutationCount += mutations.length - relevantCount;
-    if (relevantCount > 0)
-      this.scheduleRefresh();
+    const changed = relevantCount > 0;
+    if (changed)
+      this.scheduleRefresh(refreshSystemLayer);
+    return changed;
+  }
+
+  private observeKeyboardStructure(keyboard: HTMLElement): void {
+    const observer = this.keyboardStructureObserver;
+    if (!observer)
+      return;
+    observer.disconnect();
+    const targets = new Set<HTMLElement>([keyboard]);
+    keyboard.querySelectorAll<HTMLElement>(KEY_SELECTOR).forEach((key) =>
+      this.addKeyAncestors(key, keyboard, targets));
+    targets.forEach((target) => observer.observe(target, { childList: true }));
+  }
+
+  private addKeyAncestors(
+    key: HTMLElement,
+    keyboard: HTMLElement,
+    targets: Set<HTMLElement>,
+  ): void {
+    let ancestor = key.parentElement;
+    while (ancestor && ancestor !== keyboard) {
+      targets.add(ancestor);
+      ancestor = ancestor.parentElement;
+    }
   }
 
   private syncShiftObserver(keyboard: HTMLElement): void {
+    if (
+      this.shiftElement?.isConnected
+      && this.shiftElement.ownerDocument === keyboard.ownerDocument
+      && keyboard.contains(this.shiftElement)
+    ) {
+      return;
+    }
     const shift = keyboard.querySelector<HTMLElement>(SHIFT_KEY_SELECTOR)
       ?? undefined;
-    if (shift === this.shiftElement && shift?.isConnected)
-      return;
     this.shiftObserver?.disconnect();
     this.shiftObserver = undefined;
     this.shiftElement = shift;
@@ -267,7 +320,7 @@ export class KeyboardFeature implements ModModule {
       return;
     this.shiftObserver = new MutationObserver((mutations) => {
       this.runSafely("process Shift mutations", () =>
-        this.processKeyboardMutations(mutations),
+        this.processKeyboardMutations(mutations, false),
       );
     });
     this.shiftObserver.observe(shift, {
@@ -303,16 +356,22 @@ export class KeyboardFeature implements ModModule {
       });
   }
 
-  private scheduleRefresh(): void {
+  private scheduleRefresh(refreshSystemLayer: boolean): void {
+    this.refreshSystemLayer ||= refreshSystemLayer;
     if (this.refreshFrame !== undefined)
       return;
     this.refreshFrame = window.requestAnimationFrame(() => {
       this.refreshFrame = undefined;
-      this.runSafely("refresh keyboard", () => this.refresh());
+      const shouldRefreshSystemLayer = this.refreshSystemLayer;
+      this.refreshSystemLayer = false;
+      this.runSafely(
+        "refresh keyboard",
+        () => this.refresh(shouldRefreshSystemLayer),
+      );
     });
   }
 
-  private refresh(): void {
+  private refresh(refreshSystemLayer = true): void {
     const document = liveDocument(this.activeWindow);
     if (!document || document !== this.activeDocument)
       return;
@@ -329,6 +388,30 @@ export class KeyboardFeature implements ModModule {
     this.refreshCount += 1;
 
     const settings = this.settings.getSnapshot().keyboard;
+    this.configureSystemKeyLayer(settings, refreshSystemLayer);
+    if (!settings.enabled || !settings.secondaryLabels || !keyboard) {
+      clearSecondaryLabels(document);
+      this.refreshSystemKeys(refreshSystemLayer);
+      return;
+    }
+
+    renderSecondaryLabels(
+      keyboard,
+      buildSecondaryLabelMap(
+        settings.secondaryLayout,
+        settings.secondaryLabelsQwertyOnly,
+      ),
+      settings.secondaryLayerSwapped,
+    );
+    this.refreshSystemKeys(refreshSystemLayer);
+  }
+
+  private configureSystemKeyLayer(
+    settings: ModSettings["keyboard"],
+    enabled: boolean,
+  ): void {
+    if (!enabled)
+      return;
     this.systemKeyLayer.configure(
       settings.enabled,
       settings.systemKeyLayer,
@@ -342,24 +425,18 @@ export class KeyboardFeature implements ModModule {
       settings.deckButtonSecondLayerEnabled,
       settings.deckButtonSecondLayerActions,
     );
-    if (!settings.enabled || !settings.secondaryLabels || !keyboard) {
-      clearSecondaryLabels(document);
-      this.systemKeyLayer.refresh();
-      return;
-    }
+  }
 
-    renderSecondaryLabels(
-      keyboard,
-      buildSecondaryLabelMap(
-        settings.secondaryLayout,
-        settings.secondaryLabelsQwertyOnly,
-      ),
-      settings.secondaryLayerSwapped,
-    );
-    this.systemKeyLayer.refresh();
+  private refreshSystemKeys(enabled: boolean): void {
+    if (enabled)
+      this.systemKeyLayer.refresh();
   }
 
   private applySettings(): void {
+    const settings = this.settings.getSnapshot().keyboard;
+    if (settings === this.appliedKeyboardSettings)
+      return;
+    this.appliedKeyboardSettings = settings;
     this.syncDiagnosticTimer();
     this.applyEnterBehavior();
     this.refresh();

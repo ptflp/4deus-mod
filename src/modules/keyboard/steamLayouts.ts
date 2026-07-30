@@ -124,10 +124,12 @@ export const buildSecondaryLabelMap = (
     row.forEach((key, columnIndex) => {
       const normal = getVariantLabel(key, 0);
       const shifted = getVariantLabel(key, 1);
-      if (isSingleCharacter(normal) || isSingleCharacter(shifted)) {
+      const hasNormal = isSingleCharacter(normal);
+      const hasShifted = isSingleCharacter(shifted);
+      if (hasNormal || hasShifted) {
         labels.set(`${rowIndex}:${columnIndex}`, {
-          normal: isSingleCharacter(normal) ? normal : undefined,
-          shifted: isSingleCharacter(shifted) ? shifted : undefined,
+          normal: hasNormal ? normal : undefined,
+          shifted: hasShifted ? shifted : undefined,
         });
       }
     });

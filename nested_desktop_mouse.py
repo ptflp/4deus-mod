@@ -58,7 +58,9 @@ SCROLL_INERTIA_STOP = 0.01
 RIGHT_STICK_DEADZONE = 8_000
 RIGHT_STICK_MAX_SPEED = 18.0
 INPUT_FRAME_INTERVAL = 1 / 60
+IDLE_INPUT_FRAME_INTERVAL = 1 / 30
 FOCUS_CHECK_INTERVAL = 0.25
+FOCUS_SNAPSHOT_FALLBACK_INTERVAL = 0.5
 DISCOVERY_INTERVAL = 5.0
 CURSOR_IMAGE_REFRESH_INTERVAL = 0.25
 CURSOR_OUTLINE_RADIUS = 1
@@ -69,9 +71,12 @@ RUSTDESK_POINTER_RELAY_SOCKET = Path(
     "/run/user/1000/4deus-mod-rustdesk-pointer-relay.sock"
 )
 RUSTDESK_CONNECTION_CHECK_INTERVAL = 0.5
+RUSTDESK_ACTIVE_CONNECTION_CHECK_INTERVAL = 2.0
 RUSTDESK_CONNECTION_STALE_GRACE = 2.0
+RUSTDESK_FOCUS_REQUEST_COOLDOWN = 1.0
 RUSTDESK_IPC_TIMEOUT = 0.01
 RUSTDESK_IPC_MAX_FRAME = 4_096
+RUSTDESK_KEYBOARD_NAME = "RustDesk UInput Keyboard"
 RUSTDESK_SCROLL_UNIT = 90
 RUSTDESK_SCROLL_INERTIA_BURST_GAP = 0.14
 RUSTDESK_SCROLL_INERTIA_DELAY = 0.05
@@ -101,6 +106,19 @@ LINUX_ABS_X = 0
 LINUX_ABS_Y = 1
 RUSTDESK_ABS_MAX_X = 1280
 RUSTDESK_ABS_MAX_Y = 800
+X11_PROPERTY_CHANGE_MASK = 1 << 22
+X11_PROPERTY_NOTIFY = 28
+X11_EVENT_LONGS = 24
+GAMESCOPE_FOCUS_PROPERTIES = (
+    "GAMESCOPE_FOCUSED_APP",
+    "GAMESCOPE_FOCUSED_APP_GFX",
+    "GAMESCOPE_MOUSE_FOCUS_DISPLAY",
+    "GAMESCOPE_FOCUSABLE_APPS",
+)
+GAMESCOPE_FOCUS_EVENT_PROPERTIES = (
+    "GAMESCOPECTRL_BASELAYER_APPID",
+    "GAMESCOPECTRL_BASELAYER_WINDOW",
+)
 
 EI_DEVICE_CAP_POINTER = 1 << 0
 EI_DEVICE_CAP_POINTER_ABSOLUTE = 1 << 1
@@ -311,7 +329,7 @@ BUTTON_SOURCE_MASKS = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class NestedDesktopSession:
     pid: int
     app_id: int
@@ -322,7 +340,7 @@ class NestedDesktopSession:
     software_cursor_forced: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TrackpadState:
     back_pressed: bool
     left_touched: bool
@@ -342,7 +360,7 @@ class TrackpadState:
     right_stick_y: int = 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PointerUpdate:
     dx: int = 0
     dy: int = 0
@@ -377,7 +395,7 @@ class PointerUpdate:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class JoystickEvent:
     timestamp: int
     value: int
@@ -386,7 +404,7 @@ class JoystickEvent:
     initial: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LinuxInputEvent:
     event_type: int
     code: int
@@ -908,7 +926,21 @@ def should_forward_back_button(
     return True
 
 
-@dataclass(frozen=True)
+def prioritize_focus_app(
+    app_id: int,
+    focus_control_app_ids: Sequence[int],
+) -> tuple[int, ...]:
+    return (
+        app_id,
+        *(
+            candidate
+            for candidate in focus_control_app_ids
+            if candidate != app_id
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class BindingUpdate:
     key_events: tuple[tuple[int, bool], ...] = ()
     pointer: PointerUpdate = PointerUpdate()
@@ -939,6 +971,18 @@ class InputBindingTranslator:
         pointer_actions_enabled: bool = True,
     ):
         self.bindings = normalize_nested_desktop_bindings(bindings)
+        self._has_key_actions = any(
+            action in EIS_KEY_CODES
+            for action in self.bindings.values()
+        )
+        self._has_pointer_actions = any(
+            action in MOUSE_BINDING_ACTIONS
+            for action in self.bindings.values()
+        )
+        self._has_actions = any(
+            action != ACTION_NONE
+            for action in self.bindings.values()
+        )
         self.pointer_actions_enabled = pointer_actions_enabled
         self.pointer_activation_blocked = False
         self.active = False
@@ -952,14 +996,11 @@ class InputBindingTranslator:
 
     @property
     def has_key_actions(self) -> bool:
-        return any(action in EIS_KEY_CODES for action in self.bindings.values())
+        return self._has_key_actions
 
     @property
     def has_pointer_actions(self) -> bool:
-        return any(
-            action in MOUSE_BINDING_ACTIONS
-            for action in self.bindings.values()
-        )
+        return self._has_pointer_actions
 
     @property
     def pointer_actions_active(self) -> bool:
@@ -970,9 +1011,7 @@ class InputBindingTranslator:
 
     @property
     def has_actions(self) -> bool:
-        return any(
-            action != ACTION_NONE for action in self.bindings.values()
-        )
+        return self._has_actions
 
     def set_active(self, active: bool) -> BindingUpdate:
         if active == self.active:
@@ -1086,6 +1125,8 @@ class InputBindingTranslator:
                     for source, pressed in sources.items()
                 )
             )
+            return BindingUpdate()
+        if sources == self.last_sources:
             return BindingUpdate()
 
         desired_keys = {
@@ -1633,6 +1674,27 @@ def find_rustdesk_joystick(
     return None
 
 
+def find_rustdesk_keyboard(
+    sys_class_input: Path = Path("/sys/class/input"),
+    dev_root: Path = Path("/dev/input"),
+) -> Path | None:
+    try:
+        candidates = sorted(sys_class_input.glob("event*"))
+    except OSError:
+        return None
+    for candidate in candidates:
+        try:
+            name = (candidate / "device/name").read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).strip()
+        except (FileNotFoundError, PermissionError, OSError):
+            continue
+        if name == RUSTDESK_KEYBOARD_NAME:
+            return dev_root / candidate.name
+    return None
+
+
 def _wayland_alias_paths(
     session: NestedDesktopSession,
 ) -> tuple[Path, Path]:
@@ -1713,6 +1775,19 @@ def remove_nested_wayland_alias(
         pass
 
 
+class _XPropertyEvent(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("serial", ctypes.c_ulong),
+        ("send_event", ctypes.c_int),
+        ("display", ctypes.c_void_p),
+        ("window", ctypes.c_ulong),
+        ("atom", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("state", ctypes.c_int),
+    ]
+
+
 class X11Connection:
     def __init__(
         self,
@@ -1727,6 +1802,24 @@ class X11Connection:
             raise RuntimeError(f"Cannot open X display {display_name}")
         self.root = self.x11.XDefaultRootWindow(self.display)
         self.atoms: dict[str, int] = {}
+        self.focus_property_atoms = {
+            atom
+            for property_name in GAMESCOPE_FOCUS_EVENT_PROPERTIES
+            for atom in (
+                self.x11.XInternAtom(
+                    self.display,
+                    property_name.encode("ascii"),
+                    1,
+                ),
+            )
+            if atom != 0
+        }
+        self.x11.XSelectInput(
+            self.display,
+            self.root,
+            X11_PROPERTY_CHANGE_MASK,
+        )
+        self.x11.XFlush(self.display)
 
     def _configure_x11(self):
         self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
@@ -1754,6 +1847,30 @@ class X11Connection:
             ctypes.POINTER(ctypes.POINTER(ctypes.c_ubyte)),
         ]
         self.x11.XGetWindowProperty.restype = ctypes.c_int
+        self.x11.XChangeProperty.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_ubyte),
+            ctypes.c_int,
+        ]
+        self.x11.XChangeProperty.restype = ctypes.c_int
+        self.x11.XSelectInput.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_long,
+        ]
+        self.x11.XSelectInput.restype = ctypes.c_int
+        self.x11.XPending.argtypes = [ctypes.c_void_p]
+        self.x11.XPending.restype = ctypes.c_int
+        self.x11.XNextEvent.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self.x11.XNextEvent.restype = ctypes.c_int
         self.x11.XFree.argtypes = [ctypes.c_void_p]
         self.x11.XFree.restype = ctypes.c_int
         self.x11.XFlush.argtypes = [ctypes.c_void_p]
@@ -1825,6 +1942,64 @@ class X11Connection:
             ]
         finally:
             self.x11.XFree(value)
+
+    def set_cardinals(
+        self,
+        property_name: str,
+        values: Sequence[int],
+    ):
+        atom = self.x11.XInternAtom(
+            self.display,
+            property_name.encode("ascii"),
+            0,
+        )
+        cardinal_atom = self.x11.XInternAtom(
+            self.display,
+            b"CARDINAL",
+            0,
+        )
+        if atom == 0 or cardinal_atom == 0:
+            raise RuntimeError(
+                f"Cannot create X11 property {property_name}"
+            )
+        payload = (ctypes.c_ulong * len(values))(
+            *(int(value) & 0xFFFFFFFF for value in values)
+        )
+        self.x11.XChangeProperty(
+            self.display,
+            self.root,
+            atom,
+            cardinal_atom,
+            32,
+            0,
+            ctypes.cast(
+                payload,
+                ctypes.POINTER(ctypes.c_ubyte),
+            ),
+            len(values),
+        )
+        self.x11.XFlush(self.display)
+
+    def drain_property_events(self) -> bool:
+        event = (ctypes.c_long * X11_EVENT_LONGS)()
+        changed = False
+        while self.x11.XPending(self.display) > 0:
+            self.x11.XNextEvent(
+                self.display,
+                ctypes.byref(event),
+            )
+            property_event = ctypes.cast(
+                ctypes.byref(event),
+                ctypes.POINTER(_XPropertyEvent),
+            ).contents
+            changed = bool(
+                changed
+                or (
+                    property_event.type == X11_PROPERTY_NOTIFY
+                    and property_event.atom in self.focus_property_atoms
+                )
+            )
+        return changed
 
     def close(self):
         display = getattr(self, "display", None)
@@ -3029,6 +3204,7 @@ class NestedDesktopMouseRuntime:
         bindings: Mapping[str, object] | None = None,
         rustdesk_pointer_fix_enabled: bool = True,
         rustdesk_scroll_inertia_enabled: bool = False,
+        rustdesk_focus_on_input_enabled: bool = False,
         action_callback: Callable[[str], None] | None = None,
         suspended: bool = False,
         control_fd: int | None = None,
@@ -3056,6 +3232,9 @@ class NestedDesktopMouseRuntime:
         self.rustdesk_fd: int | None = None
         self.rustdesk_buffer = b""
         self.rustdesk_translator = RustDeskMouseTranslator()
+        self.rustdesk_keyboard_path: Path | None = None
+        self.rustdesk_keyboard_fd: int | None = None
+        self.rustdesk_keyboard_buffer = b""
         self.rustdesk_pointer_fix_enabled = (
             rustdesk_pointer_fix_enabled
         )
@@ -3064,6 +3243,9 @@ class NestedDesktopMouseRuntime:
         self.rustdesk_relay_translator = RustDeskRelayTranslator()
         self.rustdesk_scroll_inertia = RustDeskScrollInertia(
             enabled=rustdesk_scroll_inertia_enabled,
+        )
+        self.rustdesk_focus_on_input_enabled = (
+            rustdesk_focus_on_input_enabled
         )
         self.rustdesk_ipc_path = rustdesk_ipc_path or Path(
             f"/tmp/RustDesk-{os.geteuid()}/ipc"
@@ -3094,6 +3276,8 @@ class NestedDesktopMouseRuntime:
         self.action_callback = action_callback
         self.suspended = suspended
         self.remote_keyboard_dismiss_requested = False
+        self.nested_desktop_focused = False
+        self.next_rustdesk_focus_request = 0.0
         self.control_fd = control_fd
         self.control_buffer = b""
         self.forwarding = False
@@ -3104,6 +3288,14 @@ class NestedDesktopMouseRuntime:
         self.binding_forwarding = False
         self.binding_pointer_forwarding = False
         self.next_input_frame = 0.0
+        self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
+        self.focus_snapshot: tuple[
+            tuple[int, ...],
+            tuple[int, ...],
+            tuple[int, ...],
+            tuple[int, ...],
+        ] | None = None
+        self.next_focus_snapshot_refresh = 0.0
 
     def run(self):
         next_discovery = 0.0
@@ -3142,6 +3334,7 @@ class NestedDesktopMouseRuntime:
             self._set_remote_relaying(False)
             self._close_hidraw()
             self._close_rustdesk_joystick()
+            self._close_rustdesk_keyboard()
             remove_nested_wayland_alias(self.session, self.wayland_alias)
             self.wayland_alias = None
             if self.inner_eis is not None:
@@ -3158,6 +3351,7 @@ class NestedDesktopMouseRuntime:
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
         self.next_input_frame = 0.0
+        self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
         LOGGER.info(
             "Nested Desktop input bridge %s for the Steam keyboard",
             "paused" if suspended else "resumed",
@@ -3180,6 +3374,60 @@ class NestedDesktopMouseRuntime:
                 "Failed to request Steam keyboard dismissal "
                 "for RustDesk input"
             )
+
+    def _request_focus_for_remote_input(self):
+        session = self.session
+        outer_x11 = self.outer_x11
+        if (
+            not self.rustdesk_focus_on_input_enabled
+            or self.nested_desktop_focused
+            or session is None
+            or outer_x11 is None
+        ):
+            return
+        now = time.monotonic()
+        if (
+            now < self.next_rustdesk_focus_request
+            or not self._has_active_rustdesk_connection(now)
+        ):
+            return
+        self.next_rustdesk_focus_request = (
+            now + RUSTDESK_FOCUS_REQUEST_COOLDOWN
+        )
+        try:
+            focused_app = outer_x11.cardinals(
+                "GAMESCOPE_FOCUSED_APP"
+            )
+            focused_gfx_app = outer_x11.cardinals(
+                "GAMESCOPE_FOCUSED_APP_GFX"
+            )
+            if (
+                focused_app
+                and focused_app[0] == session.app_id
+                and focused_gfx_app
+                and focused_gfx_app[0] == session.app_id
+            ):
+                self.nested_desktop_focused = True
+                return
+            current = outer_x11.cardinals(
+                "GAMESCOPECTRL_BASELAYER_APPID"
+            )
+            outer_x11.set_cardinals(
+                "GAMESCOPECTRL_BASELAYER_APPID",
+                prioritize_focus_app(session.app_id, current),
+            )
+            self.focus_snapshot = None
+            LOGGER.info(
+                "Requested Nested Desktop focus for RustDesk input"
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to focus Nested Desktop for RustDesk input"
+            )
+
+    def _handle_remote_input(self):
+        self._request_focus_for_remote_input()
+        self._request_keyboard_dismiss_for_remote_input()
 
     def _read_control_commands(self):
         control_fd = self.control_fd
@@ -3224,6 +3472,9 @@ class NestedDesktopMouseRuntime:
             timeout = self.rustdesk_scroll_inertia.timeout(now, timeout)
         control_fd = self.control_fd
         rustdesk_fd = self.rustdesk_fd if include_remote else None
+        rustdesk_keyboard_fd = (
+            self.rustdesk_keyboard_fd if include_remote else None
+        )
         relay = (
             self.rustdesk_relay_socket
             if include_remote
@@ -3231,7 +3482,12 @@ class NestedDesktopMouseRuntime:
         )
         descriptors = [
             descriptor
-            for descriptor in (control_fd, rustdesk_fd, relay)
+            for descriptor in (
+                control_fd,
+                rustdesk_fd,
+                rustdesk_keyboard_fd,
+                relay,
+            )
             if descriptor is not None
         ]
         if not descriptors:
@@ -3258,6 +3514,7 @@ class NestedDesktopMouseRuntime:
                 self.control_buffer = b""
             if include_remote:
                 self._close_rustdesk_joystick()
+                self._close_rustdesk_keyboard()
                 self._set_remote_relaying(False)
             return
 
@@ -3269,6 +3526,12 @@ class NestedDesktopMouseRuntime:
             and rustdesk_fd in readable
         ):
             self._read_rustdesk_events()
+        if (
+            rustdesk_keyboard_fd is not None
+            and rustdesk_keyboard_fd == self.rustdesk_keyboard_fd
+            and rustdesk_keyboard_fd in readable
+        ):
+            self._read_rustdesk_keyboard_events()
         if (
             relay is not None
             and relay is self.rustdesk_relay_socket
@@ -3312,6 +3575,7 @@ class NestedDesktopMouseRuntime:
             else find_nested_desktop_session(self.proc_root)
         )
         if discovered_session != self.session:
+            self.nested_desktop_focused = False
             self._set_cursor_overlay(False)
             self._close_cursor_overlay()
             self.cursor_overlay_failed_session_pid = None
@@ -3319,6 +3583,7 @@ class NestedDesktopMouseRuntime:
             self._set_binding_forwarding(False)
             self._set_remote_forwarding(False)
             self._close_rustdesk_joystick()
+            self._close_rustdesk_keyboard()
             remove_nested_wayland_alias(self.session, self.wayland_alias)
             self.wayland_alias = None
             if self.inner_eis is not None:
@@ -3350,7 +3615,10 @@ class NestedDesktopMouseRuntime:
                 LOGGER.debug("Nested Desktop input is unavailable: %s", error)
 
         discovered_rustdesk = None
-        if self.rustdesk_pointer_fix_enabled:
+        if (
+            self.rustdesk_pointer_fix_enabled
+            or self.rustdesk_focus_on_input_enabled
+        ):
             discovered_rustdesk = (
                 self.rustdesk_path
                 if self.rustdesk_fd is not None
@@ -3365,8 +3633,13 @@ class NestedDesktopMouseRuntime:
         if (
             self.rustdesk_fd is None
             and self.rustdesk_path is not None
-            and self.inner_eis is not None
-            and self.inner_eis.absolute_ready
+            and (
+                self.rustdesk_focus_on_input_enabled
+                or (
+                    self.inner_eis is not None
+                    and self.inner_eis.absolute_ready
+                )
+            )
         ):
             try:
                 self.rustdesk_fd = os.open(
@@ -3382,6 +3655,39 @@ class NestedDesktopMouseRuntime:
             except OSError as error:
                 LOGGER.debug(
                     "RustDesk pointer device is unavailable: %s",
+                    error,
+                )
+
+        discovered_rustdesk_keyboard = None
+        if self.rustdesk_focus_on_input_enabled:
+            discovered_rustdesk_keyboard = (
+                self.rustdesk_keyboard_path
+                if self.rustdesk_keyboard_fd is not None
+                else find_rustdesk_keyboard(
+                    self.sys_class_input,
+                    self.input_dev_root,
+                )
+            )
+        if discovered_rustdesk_keyboard != self.rustdesk_keyboard_path:
+            self._close_rustdesk_keyboard()
+            self.rustdesk_keyboard_path = discovered_rustdesk_keyboard
+        if (
+            self.rustdesk_keyboard_fd is None
+            and self.rustdesk_keyboard_path is not None
+        ):
+            try:
+                self.rustdesk_keyboard_fd = os.open(
+                    self.rustdesk_keyboard_path,
+                    os.O_RDONLY | os.O_NONBLOCK,
+                )
+                self.rustdesk_keyboard_buffer = b""
+                LOGGER.info(
+                    "Reading RustDesk keyboard from %s",
+                    self.rustdesk_keyboard_path,
+                )
+            except OSError as error:
+                LOGGER.debug(
+                    "RustDesk keyboard device is unavailable: %s",
                     error,
                 )
 
@@ -3406,6 +3712,47 @@ class NestedDesktopMouseRuntime:
             except OSError as error:
                 LOGGER.debug("Trackpad device is unavailable: %s", error)
 
+    def _gamescope_focus_snapshot(
+        self,
+        now: float,
+    ) -> tuple[
+        tuple[int, ...],
+        tuple[int, ...],
+        tuple[int, ...],
+        tuple[int, ...],
+    ] | None:
+        outer_x11 = self.outer_x11
+        if outer_x11 is None:
+            self.focus_snapshot = None
+            return None
+        drain_events = getattr(
+            outer_x11,
+            "drain_property_events",
+            None,
+        )
+        changed = (
+            bool(drain_events())
+            if callable(drain_events)
+            else True
+        )
+        if (
+            self.focus_snapshot is not None
+            and not changed
+            and now < self.next_focus_snapshot_refresh
+        ):
+            return self.focus_snapshot
+        snapshot = (
+            tuple(outer_x11.cardinals("GAMESCOPE_FOCUSED_APP")),
+            tuple(outer_x11.cardinals("GAMESCOPE_FOCUSED_APP_GFX")),
+            tuple(outer_x11.cardinals("GAMESCOPE_MOUSE_FOCUS_DISPLAY")),
+            tuple(outer_x11.cardinals("GAMESCOPE_FOCUSABLE_APPS")),
+        )
+        self.focus_snapshot = snapshot
+        self.next_focus_snapshot_refresh = (
+            now + FOCUS_SNAPSHOT_FALLBACK_INTERVAL
+        )
+        return snapshot
+
     def _refresh_forwarding(self):
         inner_eis = self.inner_eis
         if inner_eis is not None:
@@ -3419,6 +3766,7 @@ class NestedDesktopMouseRuntime:
             or inner_eis is None
             or self.session is None
         ):
+            self.nested_desktop_focused = False
             self._set_cursor_overlay(False)
             self._set_remote_forwarding(False)
             self._set_forwarding(False)
@@ -3426,17 +3774,21 @@ class NestedDesktopMouseRuntime:
             return
         try:
             app_id = self.session.app_id
-            focused_app = self.outer_x11.cardinals(
-                "GAMESCOPE_FOCUSED_APP"
-            )
-            focused_gfx_app = self.outer_x11.cardinals(
-                "GAMESCOPE_FOCUSED_APP_GFX"
-            )
-            mouse_focus_display = self.outer_x11.cardinals(
-                "GAMESCOPE_MOUSE_FOCUS_DISPLAY"
-            )
-            focusable_apps = self.outer_x11.cardinals(
-                "GAMESCOPE_FOCUSABLE_APPS"
+            now = time.monotonic()
+            snapshot = self._gamescope_focus_snapshot(now)
+            if snapshot is None:
+                return
+            (
+                focused_app,
+                focused_gfx_app,
+                mouse_focus_display,
+                focusable_apps,
+            ) = snapshot
+            self.nested_desktop_focused = bool(
+                focused_app
+                and focused_app[0] == app_id
+                and focused_gfx_app
+                and focused_gfx_app[0] == app_id
             )
             pointer_needs_bridge = should_forward_pointer(
                 app_id,
@@ -3456,7 +3808,7 @@ class NestedDesktopMouseRuntime:
                 and self.rustdesk_fd is not None
                 and remote_pointer_targeted
                 and self._has_active_rustdesk_connection(
-                    time.monotonic()
+                    now
                 )
             )
             relay_active = self._set_remote_relaying(
@@ -3491,12 +3843,7 @@ class NestedDesktopMouseRuntime:
                     self.bindings_enabled
                     and self.binding_translator.has_actions
                     and binding_capabilities_ready
-                    and should_forward_back_button(
-                        app_id,
-                        focused_app,
-                        focused_gfx_app,
-                        mouse_focus_display,
-                    )
+                    and remote_pointer_targeted
                 )
                 self._set_binding_pointer_forwarding(
                     self.binding_forwarding
@@ -3624,8 +3971,13 @@ class NestedDesktopMouseRuntime:
 
     def _has_active_rustdesk_connection(self, now: float) -> bool:
         if now >= self.next_rustdesk_connection_check:
+            interval = (
+                RUSTDESK_ACTIVE_CONNECTION_CHECK_INTERVAL
+                if self.rustdesk_video_connection_count > 0
+                else RUSTDESK_CONNECTION_CHECK_INTERVAL
+            )
             self.next_rustdesk_connection_check = (
-                now + RUSTDESK_CONNECTION_CHECK_INTERVAL
+                now + interval
             )
             count = self.rustdesk_connection_query(
                 self.rustdesk_ipc_path
@@ -3633,8 +3985,16 @@ class NestedDesktopMouseRuntime:
             if count is not None:
                 previous = self.rustdesk_video_connection_count
                 self.rustdesk_video_connection_count = count
+                interval = (
+                    RUSTDESK_ACTIVE_CONNECTION_CHECK_INTERVAL
+                    if count > 0
+                    else RUSTDESK_CONNECTION_CHECK_INTERVAL
+                )
+                self.next_rustdesk_connection_check = now + interval
                 self.rustdesk_connection_valid_until = (
-                    now + RUSTDESK_CONNECTION_STALE_GRACE
+                    now
+                    + interval
+                    + RUSTDESK_CONNECTION_STALE_GRACE
                 )
                 if count != previous:
                     LOGGER.info(
@@ -3643,6 +4003,9 @@ class NestedDesktopMouseRuntime:
                     )
             elif now >= self.rustdesk_connection_valid_until:
                 self.rustdesk_video_connection_count = 0
+                self.next_rustdesk_connection_check = (
+                    now + RUSTDESK_CONNECTION_CHECK_INTERVAL
+                )
         return self.rustdesk_video_connection_count > 0
 
     def _set_forwarding(self, active: bool):
@@ -3668,6 +4031,7 @@ class NestedDesktopMouseRuntime:
             active = False
         if active != self.forwarding:
             self.next_input_frame = 0.0
+            self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
         if active == self.forwarding:
             return
         self.forwarding = active
@@ -3701,6 +4065,7 @@ class NestedDesktopMouseRuntime:
             active = False
         if active != self.binding_forwarding:
             self.next_input_frame = 0.0
+            self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
         if active == self.binding_forwarding:
             return
         self.binding_forwarding = active
@@ -3927,6 +4292,7 @@ class NestedDesktopMouseRuntime:
         self.binding_pointer_forwarding = False
         self._set_cursor_overlay(False)
         self.next_input_frame = 0.0
+        self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
 
     def _read_rustdesk_events(self):
         fd = self.rustdesk_fd
@@ -3962,7 +4328,7 @@ class NestedDesktopMouseRuntime:
                 )
                 for event in events
             ):
-                self._request_keyboard_dismiss_for_remote_input()
+                self._handle_remote_input()
             forwarding = self.remote_forwarding and inner_eis is not None
             bounds = inner_eis.absolute_bounds() if forwarding else None
             if forwarding and bounds is None:
@@ -3987,6 +4353,49 @@ class NestedDesktopMouseRuntime:
             self._close_rustdesk_joystick()
         except Exception as error:
             self._handle_eis_loss(error)
+
+    def _read_rustdesk_keyboard_events(self):
+        fd = self.rustdesk_keyboard_fd
+        if fd is None:
+            return
+        try:
+            chunks = []
+            while True:
+                try:
+                    chunk = os.read(fd, 4096)
+                except BlockingIOError:
+                    break
+                if not chunk:
+                    self._close_rustdesk_keyboard()
+                    return
+                chunks.append(chunk)
+            if not chunks:
+                return
+            self.rustdesk_keyboard_buffer += b"".join(chunks)
+            usable = len(self.rustdesk_keyboard_buffer) - (
+                len(self.rustdesk_keyboard_buffer)
+                % LINUX_INPUT_EVENT.size
+            )
+            if not usable:
+                return
+            events = parse_linux_input_events(
+                self.rustdesk_keyboard_buffer[:usable]
+            )
+            self.rustdesk_keyboard_buffer = (
+                self.rustdesk_keyboard_buffer[usable:]
+            )
+            if any(
+                event.event_type == LINUX_EV_KEY
+                and event.value != 0
+                for event in events
+            ):
+                self._handle_remote_input()
+        except OSError as error:
+            LOGGER.warning(
+                "Lost the RustDesk keyboard device: %s",
+                error,
+            )
+            self._close_rustdesk_keyboard()
 
     def _read_rustdesk_relay_events(self):
         relay = self.rustdesk_relay_socket
@@ -4017,7 +4426,7 @@ class NestedDesktopMouseRuntime:
                     event.event_type != LINUX_EV_SYN
                     for event in events
                 ):
-                    self._request_keyboard_dismiss_for_remote_input()
+                    self._handle_remote_input()
                 updates = self.rustdesk_relay_translator.translate(
                     events,
                     bounds,
@@ -4076,7 +4485,10 @@ class NestedDesktopMouseRuntime:
         self._read_auxiliary_events(0)
         if not self.forwarding and not self.binding_forwarding:
             return
-        self.next_input_frame = time.monotonic() + INPUT_FRAME_INTERVAL
+        frame_started = time.monotonic()
+        self.next_input_frame = (
+            frame_started + self.input_frame_interval
+        )
 
         try:
             latest_report: bytes | None = None
@@ -4100,14 +4512,26 @@ class NestedDesktopMouseRuntime:
                 if self.binding_forwarding
                 else BindingUpdate()
             )
-            if (
-                not state.left_touched
-                and not state.right_touched
-                and abs(state.right_stick_x) <= RIGHT_STICK_DEADZONE
-                and abs(state.right_stick_y) <= RIGHT_STICK_DEADZONE
-                and not self.translator.needs_idle_tick
-                and binding_update.empty
-            ):
+            input_active = bool(
+                state.left_touched
+                or state.right_touched
+                or abs(state.right_stick_x) > RIGHT_STICK_DEADZONE
+                or abs(state.right_stick_y) > RIGHT_STICK_DEADZONE
+                or self.translator.needs_idle_tick
+                or not binding_update.empty
+            )
+            next_interval = (
+                INPUT_FRAME_INTERVAL
+                if input_active
+                else IDLE_INPUT_FRAME_INTERVAL
+            )
+            if next_interval < self.input_frame_interval:
+                self.next_input_frame = min(
+                    self.next_input_frame,
+                    frame_started + next_interval,
+                )
+            self.input_frame_interval = next_interval
+            if not input_active:
                 return
             update = (
                 self.translator.translate(state)
@@ -4150,6 +4574,16 @@ class NestedDesktopMouseRuntime:
         self.rustdesk_connection_valid_until = 0.0
         self.next_rustdesk_connection_check = 0.0
 
+    def _close_rustdesk_keyboard(self):
+        if self.rustdesk_keyboard_fd is not None:
+            try:
+                os.close(self.rustdesk_keyboard_fd)
+            except OSError:
+                pass
+        self.rustdesk_keyboard_fd = None
+        self.rustdesk_keyboard_path = None
+        self.rustdesk_keyboard_buffer = b""
+
 
 class NestedDesktopMouseSupervisor:
     def __init__(
@@ -4162,6 +4596,7 @@ class NestedDesktopMouseSupervisor:
         bindings: Mapping[str, object] | None = None,
         rustdesk_pointer_fix_enabled: bool = True,
         rustdesk_scroll_inertia_enabled: bool = False,
+        rustdesk_focus_on_input_enabled: bool = False,
         run_as_user: str | None = None,
         action_callback: Callable[[str], None] | None = None,
     ):
@@ -4174,6 +4609,9 @@ class NestedDesktopMouseSupervisor:
         self.rustdesk_pointer_fix_enabled = rustdesk_pointer_fix_enabled
         self.rustdesk_scroll_inertia_enabled = (
             rustdesk_scroll_inertia_enabled
+        )
+        self.rustdesk_focus_on_input_enabled = (
+            rustdesk_focus_on_input_enabled
         )
         self.run_as_user = run_as_user
         self.action_callback = action_callback
@@ -4251,6 +4689,17 @@ class NestedDesktopMouseSupervisor:
             )
         )
 
+    def set_rustdesk_focus_on_input_enabled(self, enabled: bool):
+        if enabled == self.rustdesk_focus_on_input_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(
+                self,
+                "rustdesk_focus_on_input_enabled",
+                enabled,
+            )
+        )
+
     def set_bindings(
         self,
         enabled: bool,
@@ -4308,6 +4757,7 @@ class NestedDesktopMouseSupervisor:
             self.mouse_enabled
             or self.bindings_enabled
             or self.rustdesk_pointer_fix_enabled
+            or self.rustdesk_focus_on_input_enabled
         ):
             self.start()
 
@@ -4379,6 +4829,8 @@ class NestedDesktopMouseSupervisor:
                     command.append("--no-rustdesk-pointer-fix")
                 if self.rustdesk_scroll_inertia_enabled:
                     command.append("--rustdesk-scroll-inertia")
+                if self.rustdesk_focus_on_input_enabled:
+                    command.append("--rustdesk-focus-on-input")
                 if launch_suspended:
                     command.append("--suspended")
                 command.extend(
@@ -4486,6 +4938,7 @@ def run_worker(
     bindings: Mapping[str, object] | None = None,
     rustdesk_pointer_fix_enabled: bool = True,
     rustdesk_scroll_inertia_enabled: bool = False,
+    rustdesk_focus_on_input_enabled: bool = False,
     suspended: bool = False,
     control_fd: int | None = None,
 ) -> int:
@@ -4511,6 +4964,9 @@ def run_worker(
         rustdesk_scroll_inertia_enabled=(
             rustdesk_scroll_inertia_enabled
         ),
+        rustdesk_focus_on_input_enabled=(
+            rustdesk_focus_on_input_enabled
+        ),
         action_callback=lambda action: print(action, flush=True),
         suspended=suspended,
         control_fd=control_fd,
@@ -4532,6 +4988,10 @@ def main() -> int:
     parser.add_argument("--no-bindings", action="store_true")
     parser.add_argument("--no-rustdesk-pointer-fix", action="store_true")
     parser.add_argument("--rustdesk-scroll-inertia", action="store_true")
+    parser.add_argument(
+        "--rustdesk-focus-on-input",
+        action="store_true",
+    )
     parser.add_argument("--suspended", action="store_true")
     parser.add_argument("--bindings-json", default="{}")
     arguments = parser.parse_args()
@@ -4553,6 +5013,9 @@ def main() -> int:
         ),
         rustdesk_scroll_inertia_enabled=(
             arguments.rustdesk_scroll_inertia
+        ),
+        rustdesk_focus_on_input_enabled=(
+            arguments.rustdesk_focus_on_input
         ),
         suspended=arguments.suspended,
         control_fd=sys.stdin.fileno(),

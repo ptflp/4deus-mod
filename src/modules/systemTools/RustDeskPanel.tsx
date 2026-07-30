@@ -60,6 +60,18 @@ export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {
       </PanelSectionRow>
       <PanelSectionRow>
         <ToggleField
+          label={strings.rustDeskFocusOnInput}
+          description={strings.rustDeskFocusOnInputDescription}
+          checked={status?.rustDeskFocusOnInputEnabled ?? false}
+          disabled={busy || !status?.available}
+          onChange={(enabled) =>
+            void update(
+              () => api.setRustDeskFocusOnInputEnabled(enabled),
+            )}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
           label={strings.rustDeskScrollInertia}
           description={strings.rustDeskScrollInertiaDescription}
           checked={status?.rustDeskScrollInertiaEnabled ?? false}

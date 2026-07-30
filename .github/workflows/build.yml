@@ -36,7 +36,7 @@ jobs:
       - name: Package plugin
         run: |
           mkdir -p out/4deusMod
-          cp -r assets bin dist docs LICENSE README.md app_bridge.py mangoapp_hotfix.py nested_desktop_mouse.py rustdesk_pointer_fix.py steam_artwork.py steamos_application.py logo.png main.py package.json plugin.json out/4deusMod/
+          cp -r assets bin dist docs LICENSE README.md app_bridge.py mangoapp_hotfix.py nested_desktop_mouse.py rustdesk_pointer_fix.py steam_artwork.py steamos_application.py trackpad_metrics.py logo.png main.py package.json plugin.json out/4deusMod/
           cd out
           zip -r 4deusMod.zip 4deusMod
 

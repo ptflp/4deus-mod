@@ -89,6 +89,7 @@ const activeToggleClass = (rule: CSSStyleRule): string | undefined => {
 export class SystemKeyView {
   private keyboard?: HTMLElement;
   private toggleOnClass?: string;
+  private toggleOnClassStyleSheetCount = -1;
 
   bind(keyboard: HTMLElement): void {
     this.unbind();
@@ -99,6 +100,7 @@ export class SystemKeyView {
     this.clear();
     this.keyboard = undefined;
     this.toggleOnClass = undefined;
+    this.toggleOnClassStyleSheetCount = -1;
   }
 
   render(state: ViewState): void {
@@ -184,6 +186,7 @@ export class SystemKeyView {
       key.firstElementChild?.classList.toggle(toggleOnClass, active);
 
     const nativeKey = key.firstElementChild as HTMLElement | null;
+    let typographyChanged = false;
     let label = nativeKey?.querySelector<HTMLElement>(
       `:scope > .${LABEL_CLASS}`,
     ) ?? key.querySelector<HTMLElement>(`:scope > .${LABEL_CLASS}`);
@@ -192,10 +195,13 @@ export class SystemKeyView {
       label.className = LABEL_CLASS;
       label.setAttribute("aria-hidden", "true");
       (nativeKey ?? key).appendChild(label);
+      typographyChanged = true;
     } else if (nativeKey && label.parentElement !== nativeKey) {
       nativeKey.appendChild(label);
+      typographyChanged = true;
     }
-    this.syncTypography(label, key);
+    if (typographyChanged)
+      this.syncTypography(label, key);
     if (label.textContent !== presentation.label)
       label.textContent = presentation.label;
   }
@@ -279,14 +285,15 @@ export class SystemKeyView {
   }
 
   private resolveToggleOnClass(): string | undefined {
-    if (this.toggleOnClass)
-      return this.toggleOnClass;
-
     const document = this.keyboard?.ownerDocument;
     if (!document)
       return undefined;
+    const styleSheetCount = document.styleSheets.length;
+    if (this.toggleOnClassStyleSheetCount === styleSheetCount)
+      return this.toggleOnClass;
     // Steam hashes class names, but its active-toggle class uses this stable
     // theme variable in every keyboard theme.
+    this.toggleOnClassStyleSheetCount = styleSheetCount;
     this.toggleOnClass = Array.from(document.styleSheets)
       .flatMap(readStyleRules)
       .map(activeToggleClass)
@@ -318,6 +325,8 @@ export class SystemKeyView {
   }
 
   private syncRegularKeyWidth(key: HTMLElement): void {
+    if (key.style.getPropertyValue("--fourdeus-regular-key-width"))
+      return;
     const regularKey = findKey(this.keyboard!, 0, 1);
     const width = regularKey?.getBoundingClientRect().width ?? 0;
     if (width > 0) {

@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import json
 import logging
@@ -48,6 +49,7 @@ class RecordingMouseBridge:
         self.binding_values = []
         self.rustdesk_pointer_fix_values = []
         self.rustdesk_scroll_inertia_values = []
+        self.rustdesk_focus_on_input_values = []
         self.suspended_values = []
 
     def start(self):
@@ -76,8 +78,103 @@ class RecordingMouseBridge:
     def set_rustdesk_scroll_inertia_enabled(self, enabled):
         self.rustdesk_scroll_inertia_values.append(enabled)
 
+    def set_rustdesk_focus_on_input_enabled(self, enabled):
+        self.rustdesk_focus_on_input_values.append(enabled)
+
     def set_suspended(self, suspended):
         self.suspended_values.append(suspended)
+
+
+class RecordingTrackpadMetrics:
+    def __init__(self):
+        self.started = 0
+        self.stopped = 0
+        self.is_running = False
+        self.captures = []
+        self.window_requests = []
+        self.cleared = 0
+        self.deleted = []
+        self.metrics_enabled = False
+        self.recovery_enabled = False
+        self.configurations = []
+        self.recovery_results = []
+
+    def configure(self, *, metrics_enabled, recovery_enabled):
+        self.configurations.append((metrics_enabled, recovery_enabled))
+        should_run = metrics_enabled or recovery_enabled
+        if should_run and not self.is_running:
+            self.started += 1
+        elif not should_run and self.is_running:
+            self.stopped += 1
+        self.is_running = should_run
+        self.metrics_enabled = metrics_enabled
+        self.recovery_enabled = recovery_enabled
+
+    def start(self):
+        self.started += 1
+        self.is_running = True
+
+    def stop(self):
+        self.stopped += 1
+        self.is_running = False
+
+    def status(self):
+        return {
+            "running": self.metrics_enabled and self.is_running,
+            "devicePath": "/dev/hidraw0" if self.is_running else "",
+            "sampleCount": 3,
+            "retainedSeconds": 2,
+            "capacitySeconds": 900,
+            "sampleRateHz": 20,
+            "latest": None,
+            "captures": list(self.captures),
+        }
+
+    def recovery_status(self):
+        return {
+            "enabled": self.recovery_enabled,
+            "monitoring": self.recovery_enabled and self.is_running,
+            "armed": False,
+            "pending": False,
+            "lastAttemptAtMs": 0,
+            "lastSuccessAtMs": 0,
+            "successCount": 0,
+        }
+
+    def report_recovery_result(self, request_id, success, error=""):
+        self.recovery_results.append((request_id, success, error))
+        return True
+
+    def window(self, capture_id, max_samples):
+        self.window_requests.append((capture_id, max_samples))
+        return {
+            "captureId": capture_id or "",
+            "sampleCount": 0,
+            "samples": [],
+        }
+
+    def capture(self):
+        self.captures.insert(0, {
+            "id": "capture-1",
+            "createdAtMs": 1,
+            "reason": "manual",
+            "automatic": False,
+            "sampleCount": 3,
+            "durationMs": 2_000,
+            "leftPeakPressure": 100,
+            "rightPeakPressure": 200,
+        })
+
+    def clear(self):
+        self.cleared += 1
+
+    def delete_capture(self, capture_id):
+        self.deleted.append(capture_id)
+        self.captures = [
+            capture
+            for capture in self.captures
+            if capture["id"] != capture_id
+        ]
 
 
 class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
@@ -280,6 +377,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
+                    "rustDeskFocusOnInputEnabled": False,
                 },
             )
             self.assertEqual(
@@ -290,6 +388,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     True,
+                    False,
                     False,
                 ),
             )
@@ -312,6 +411,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
+                    "rustDeskFocusOnInputEnabled": False,
                 },
             )
             self.assertEqual(
@@ -322,6 +422,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     True,
+                    False,
                     False,
                 ),
             )
@@ -371,6 +472,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
+                    "rustDeskFocusOnInputEnabled": False,
                 },
             )
 
@@ -412,6 +514,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     True,
+                    False,
                     False,
                 ),
             )
@@ -491,6 +594,44 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(settings_path.exists())
             self.assertEqual(bridge.rustdesk_scroll_inertia_values, [])
 
+    async def test_rustdesk_focus_on_input_defaults_off_and_can_be_enabled(
+        self,
+    ):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+        self.assertFalse(plugin.rustdesk_focus_on_input_enabled)
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_rustdesk_focus_on_input_enabled(True)
+
+            self.assertTrue(result["rustDeskFocusOnInputEnabled"])
+            self.assertEqual(
+                bridge.rustdesk_focus_on_input_values,
+                [True],
+            )
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["rustDeskFocusOnInputEnabled"])
+
+    async def test_invalid_rustdesk_focus_on_input_is_rejected(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_rustdesk_focus_on_input_enabled("true")
+
+            self.assertIn("error", result)
+            self.assertFalse(result["rustDeskFocusOnInputEnabled"])
+            self.assertFalse(settings_path.exists())
+            self.assertEqual(bridge.rustdesk_focus_on_input_values, [])
+
     async def test_bindings_can_be_disabled_and_persisted(self):
         plugin = plugin_backend.Plugin()
         bridge = RecordingMouseBridge()
@@ -547,6 +688,128 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("error", result)
             self.assertFalse(settings_path.exists())
             self.assertEqual(bridge.binding_values, [])
+
+
+class DeveloperSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_metrics_require_developer_mode_and_persist(self):
+        plugin = plugin_backend.Plugin()
+        monitor = RecordingTrackpadMetrics()
+        plugin.trackpad_metrics = monitor
+        plugin.developer_mode = False
+        plugin.trackpad_metrics_enabled = False
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "developer-settings.json"
+            plugin.developer_settings_path = settings_path
+
+            rejected = await plugin.set_trackpad_metrics_enabled(True)
+            self.assertIn("error", rejected)
+            self.assertFalse(settings_path.exists())
+
+            await plugin.set_developer_mode(True)
+            enabled = await plugin.set_trackpad_metrics_enabled(True)
+
+            self.assertTrue(enabled["developerMode"])
+            self.assertTrue(enabled["trackpadMetricsEnabled"])
+            self.assertTrue(enabled["metrics"]["running"])
+            self.assertEqual(monitor.started, 1)
+            self.assertEqual(
+                json.loads(settings_path.read_text(encoding="utf-8")),
+                {
+                    "developerMode": True,
+                    "trackpadMetricsEnabled": True,
+                },
+            )
+
+            disabled = await plugin.set_developer_mode(False)
+            self.assertFalse(disabled["developerMode"])
+            self.assertTrue(disabled["trackpadMetricsEnabled"])
+            self.assertFalse(disabled["metrics"]["running"])
+            self.assertEqual(
+                plugin._load_developer_settings(),
+                (False, True),
+            )
+
+    async def test_metrics_capture_window_clear_and_delete_are_forwarded(
+        self,
+    ):
+        plugin = plugin_backend.Plugin()
+        monitor = RecordingTrackpadMetrics()
+        plugin.trackpad_metrics = monitor
+        plugin.developer_mode = True
+        plugin.trackpad_metrics_enabled = True
+
+        captured = await plugin.capture_trackpad_metrics()
+        window = await plugin.get_trackpad_metrics_window(
+            "capture-1",
+            400,
+        )
+        cleared = await plugin.clear_trackpad_metrics_buffer()
+        deleted = await plugin.delete_trackpad_metrics_capture("capture-1")
+
+        self.assertEqual(captured["metrics"]["captures"][0]["id"], "capture-1")
+        self.assertEqual(window["captureId"], "capture-1")
+        self.assertEqual(monitor.window_requests, [("capture-1", 400)])
+        self.assertEqual(monitor.cleared, 1)
+        self.assertEqual(cleared["metrics"]["sampleCount"], 3)
+        self.assertEqual(monitor.deleted, ["capture-1"])
+        self.assertEqual(deleted["metrics"]["captures"], [])
+
+    async def test_unload_stops_metrics_monitor(self):
+        plugin = plugin_backend.Plugin()
+        monitor = RecordingTrackpadMetrics()
+        plugin.trackpad_metrics = monitor
+        plugin.nested_desktop_mouse = None
+        plugin.keyboard = None
+
+        await plugin._unload()
+
+        self.assertEqual(monitor.stopped, 1)
+
+
+class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_auto_recovery_defaults_on_and_persists(self):
+        plugin = plugin_backend.Plugin()
+        monitor = RecordingTrackpadMetrics()
+        plugin.trackpad_metrics = monitor
+        plugin.trackpad_auto_recovery_enabled = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "controller-settings.json"
+            plugin.controller_settings_path = settings_path
+
+            disabled = await plugin.set_trackpad_auto_recovery_enabled(False)
+
+            self.assertFalse(disabled["autoRecoveryEnabled"])
+            self.assertFalse(disabled["monitoring"])
+            self.assertEqual(
+                json.loads(settings_path.read_text(encoding="utf-8")),
+                {"trackpadAutoRecoveryEnabled": False},
+            )
+            self.assertFalse(plugin._load_controller_settings())
+
+            enabled = await plugin.set_trackpad_auto_recovery_enabled(True)
+
+            self.assertTrue(enabled["autoRecoveryEnabled"])
+            self.assertTrue(enabled["monitoring"])
+            self.assertEqual(
+                monitor.configurations[-1],
+                (False, True),
+            )
+
+    async def test_confirmed_recovery_power_cycles_the_usb_controller(self):
+        plugin = plugin_backend.Plugin()
+        plugin.trackpad_metrics = None
+
+        with patch.object(
+            plugin_backend,
+            "power_cycle_steam_deck_controller",
+            return_value=Path("/dev/hidraw7"),
+        ) as power_cycle:
+            recovered = plugin._recover_trackpad_controller(12)
+
+        self.assertTrue(recovered)
+        power_cycle.assert_called_once_with(device_path=None)
 
 
 if __name__ == "__main__":

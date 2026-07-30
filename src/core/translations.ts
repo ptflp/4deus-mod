@@ -79,8 +79,13 @@ export interface Strings {
   nestedDesktopTrackpadInertiaDescription: string;
   rustDeskPointerFix: string;
   rustDeskPointerFixDescription: string;
+  rustDeskFocusOnInput: string;
+  rustDeskFocusOnInputDescription: string;
   rustDeskScrollInertia: string;
   rustDeskScrollInertiaDescription: string;
+  controller: string;
+  trackpadAutoRecovery: string;
+  trackpadAutoRecoveryDescription: string;
   nestedDesktopHotkeys: string;
   nestedDesktopHotkeysDescription: string;
   nestedDesktopHotkeysEnabled: string;
@@ -99,6 +104,38 @@ export interface Strings {
   automatic: string;
   diagnostics: string;
   diagnosticsDescription: string;
+  pluginSettings: string;
+  developerMode: string;
+  developerModeDescription: string;
+  trackpadMetrics: string;
+  trackpadMetricsDescription: string;
+  trackpadMetricsPrivacy: string;
+  trackpadMetricsCaptureDescription: string;
+  trackpadMetricsLiveBuffer: string;
+  trackpadMetricsSaveCapture: string;
+  trackpadMetricsClearBuffer: string;
+  trackpadMetricsCaptures: string;
+  trackpadMetricsLive: string;
+  trackpadMetricsNoData: string;
+  trackpadMetricsDeleteCapture: string;
+  trackpadMetricsManual: string;
+  trackpadMetricsRunning: string;
+  trackpadMetricsStopped: string;
+  trackpadMetricsDevice: string;
+  trackpadMetricsRetention: string;
+  trackpadMetricsSamples: string;
+  trackpadMetricsPressure: string;
+  trackpadMetricsTouched: string;
+  trackpadMetricsPressed: string;
+  trackpadMetricsLeft: string;
+  trackpadMetricsRight: string;
+  trackpadMetricsEnableDeveloperFirst: string;
+  trackpadMetricsCaptureSaved: string;
+  trackpadMetricsClearConfirmation: string;
+  trackpadMetricsClearCancel: string;
+  trackpadMetricsJournal: string;
+  trackpadMetricsToggleConfirmation: string;
+  trackpadMetricsConfirm: string;
 }
 
 type Values = [
@@ -166,6 +203,38 @@ type Values = [
   autoSwapVisualLayerDescription?: string,
   secondaryLabelsQwertyOnly?: string,
   secondaryLabelsQwertyOnlyDescription?: string,
+  pluginSettings?: string,
+  developerMode?: string,
+  developerModeDescription?: string,
+  trackpadMetrics?: string,
+  trackpadMetricsDescription?: string,
+  trackpadMetricsPrivacy?: string,
+  trackpadMetricsCaptureDescription?: string,
+  trackpadMetricsLiveBuffer?: string,
+  trackpadMetricsSaveCapture?: string,
+  trackpadMetricsClearBuffer?: string,
+  trackpadMetricsCaptures?: string,
+  trackpadMetricsLive?: string,
+  trackpadMetricsNoData?: string,
+  trackpadMetricsDeleteCapture?: string,
+  trackpadMetricsManual?: string,
+  trackpadMetricsRunning?: string,
+  trackpadMetricsStopped?: string,
+  trackpadMetricsDevice?: string,
+  trackpadMetricsRetention?: string,
+  trackpadMetricsSamples?: string,
+  trackpadMetricsPressure?: string,
+  trackpadMetricsTouched?: string,
+  trackpadMetricsPressed?: string,
+  trackpadMetricsLeft?: string,
+  trackpadMetricsRight?: string,
+  trackpadMetricsEnableDeveloperFirst?: string,
+  trackpadMetricsCaptureSaved?: string,
+  trackpadMetricsClearConfirmation?: string,
+  trackpadMetricsClearCancel?: string,
+  trackpadMetricsJournal?: string,
+  trackpadMetricsToggleConfirmation?: string,
+  trackpadMetricsConfirm?: string,
 ];
 
 const define = ([
@@ -233,6 +302,38 @@ const define = ([
   autoSwapVisualLayerDescription = "After a system language shortcut, swap the primary and secondary key labels to stay synchronized",
   secondaryLabelsQwertyOnly = "Second layer only on QWERTY",
   secondaryLabelsQwertyOnlyDescription = "Hide secondary symbols on every other Steam keyboard layout, including layouts added later",
+  pluginSettings = "Plugin settings",
+  developerMode = "Developer mode",
+  developerModeDescription = "Show diagnostic and experimental plugin tools",
+  trackpadMetrics = "Trackpad metrics",
+  trackpadMetricsDescription = "Keep a low-overhead 15-minute live history plus three append-only 15-minute journal windows",
+  trackpadMetricsPrivacy = "Stored only on this Steam Deck and never sent anywhere",
+  trackpadMetricsCaptureDescription = "The journal appends every three minutes and immediately on suspicious pressure; manual captures remain until you delete them",
+  trackpadMetricsLiveBuffer = "Live buffer",
+  trackpadMetricsSaveCapture = "Save current buffer",
+  trackpadMetricsClearBuffer = "Clear live buffer",
+  trackpadMetricsCaptures = "Saved captures",
+  trackpadMetricsLive = "Live",
+  trackpadMetricsNoData = "No trackpad samples yet",
+  trackpadMetricsDeleteCapture = "Delete capture",
+  trackpadMetricsManual = "Manual",
+  trackpadMetricsRunning = "Collecting",
+  trackpadMetricsStopped = "Stopped",
+  trackpadMetricsDevice = "Device",
+  trackpadMetricsRetention = "History",
+  trackpadMetricsSamples = "Samples",
+  trackpadMetricsPressure = "Pressure",
+  trackpadMetricsTouched = "Touch",
+  trackpadMetricsPressed = "Click",
+  trackpadMetricsLeft = "Left",
+  trackpadMetricsRight = "Right",
+  trackpadMetricsEnableDeveloperFirst = "Enable Developer mode to use trackpad diagnostics",
+  trackpadMetricsCaptureSaved = "The live buffer was pinned as a saved capture",
+  trackpadMetricsClearConfirmation = "The live RAM buffer will be cleared. Saved captures and append-only journal windows will not be affected.",
+  trackpadMetricsClearCancel = "Cancel",
+  trackpadMetricsJournal = "Automatic journal",
+  trackpadMetricsToggleConfirmation = "Confirm changing trackpad metrics collection. The confirmation button unlocks after five seconds.",
+  trackpadMetricsConfirm = "Confirm",
 ]: Values): Strings => ({
   keyboard,
   enabled,
@@ -310,8 +411,13 @@ const define = ([
   nestedDesktopTrackpadInertiaDescription: "Continues cursor and scroll movement after a fast swipe; disable to stop immediately when a trackpad is released",
   rustDeskPointerFix: "RustDesk pointer fix",
   rustDeskPointerFixDescription: "Prevents duplicate cursors and pointer teleportation in Nested Desktop; Add / Fix RustDesk installs the required system hook automatically",
+  rustDeskFocusOnInput: "Focus Nested Desktop on RustDesk input",
+  rustDeskFocusOnInputDescription: "⚠ Brings Nested Desktop to the foreground on RustDesk pointer or keyboard input. This bypasses Steam's PIN lock screen. Disabled by default; enabling it means you accept this risk",
   rustDeskScrollInertia: "RustDesk wheel inertia",
   rustDeskScrollInertiaDescription: "Adds a short natural glide after fast wheel scrolling; disabled by default and does not affect trackpad inertia",
+  controller: "Controller",
+  trackpadAutoRecovery: "Automatic trackpad recovery",
+  trackpadAutoRecoveryDescription: "Detects a swipe combined with a physical click and briefly reconnects the built-in controller only after both trackpads are released; limited to once every 30 seconds",
   nestedDesktopHotkeys: "Nested Desktop bindings",
   nestedDesktopHotkeysDescription: "Configure controls sent directly to Nested Desktop, including while a game is running in parallel",
   nestedDesktopHotkeysEnabled: "Controller bindings",
@@ -330,6 +436,38 @@ const define = ([
   automatic,
   diagnostics,
   diagnosticsDescription,
+  pluginSettings,
+  developerMode,
+  developerModeDescription,
+  trackpadMetrics,
+  trackpadMetricsDescription,
+  trackpadMetricsPrivacy,
+  trackpadMetricsCaptureDescription,
+  trackpadMetricsLiveBuffer,
+  trackpadMetricsSaveCapture,
+  trackpadMetricsClearBuffer,
+  trackpadMetricsCaptures,
+  trackpadMetricsLive,
+  trackpadMetricsNoData,
+  trackpadMetricsDeleteCapture,
+  trackpadMetricsManual,
+  trackpadMetricsRunning,
+  trackpadMetricsStopped,
+  trackpadMetricsDevice,
+  trackpadMetricsRetention,
+  trackpadMetricsSamples,
+  trackpadMetricsPressure,
+  trackpadMetricsTouched,
+  trackpadMetricsPressed,
+  trackpadMetricsLeft,
+  trackpadMetricsRight,
+  trackpadMetricsEnableDeveloperFirst,
+  trackpadMetricsCaptureSaved,
+  trackpadMetricsClearConfirmation,
+  trackpadMetricsClearCancel,
+  trackpadMetricsJournal,
+  trackpadMetricsToggleConfirmation,
+  trackpadMetricsConfirm,
 });
 
 export const english = define([
@@ -397,6 +535,33 @@ export const english = define([
   "After a system language shortcut, swap the primary and secondary key labels to stay synchronized",
   "Second layer only on QWERTY",
   "Hide secondary symbols on every other Steam keyboard layout, including layouts added later",
+  "Plugin settings",
+  "Developer mode",
+  "Show diagnostic and experimental plugin tools",
+  "Trackpad metrics",
+  "Keep a low-overhead 15-minute live history plus three append-only 15-minute journal windows",
+  "Stored only on this Steam Deck and never sent anywhere",
+  "The journal appends every three minutes and immediately on suspicious pressure; manual captures remain until you delete them",
+  "Live buffer",
+  "Save current buffer",
+  "Clear live buffer",
+  "Saved captures",
+  "Live",
+  "No trackpad samples yet",
+  "Delete capture",
+  "Manual",
+  "Collecting",
+  "Stopped",
+  "Device",
+  "History",
+  "Samples",
+  "Pressure",
+  "Touch",
+  "Click",
+  "Left",
+  "Right",
+  "Enable Developer mode to use trackpad diagnostics",
+  "The live buffer was pinned as a saved capture",
 ]);
 
 const russian = define([
@@ -464,6 +629,38 @@ const russian = define([
   "После системного переключения языка менять основные и вторые подписи местами для синхронизации",
   "Второй слой только на QWERTY",
   "Скрывать вторые символы на всех остальных раскладках клавиатуры Steam, включая добавленные позже",
+  "Настройки плагина",
+  "Режим разработчика",
+  "Показывать диагностические и экспериментальные инструменты плагина",
+  "Метрики трекпадов",
+  "Хранить 15 минут живой истории и три append-only окна журнала по 15 минут с низкой нагрузкой",
+  "Данные остаются только на этом Steam Deck и никуда не отправляются",
+  "Журнал дописывается каждые три минуты и сразу при подозрительном давлении; ручные снимки хранятся, пока вы их не удалите",
+  "Живой буфер",
+  "Сохранить текущий буфер",
+  "Очистить живой буфер",
+  "Сохранённые снимки",
+  "В реальном времени",
+  "Данных трекпада пока нет",
+  "Удалить снимок",
+  "Ручной",
+  "Сбор идёт",
+  "Остановлено",
+  "Устройство",
+  "История",
+  "События",
+  "Давление",
+  "Касание",
+  "Клик",
+  "Левый",
+  "Правый",
+  "Включите режим разработчика для диагностики трекпадов",
+  "Живой буфер закреплён как сохранённый снимок",
+  "Живой буфер в RAM будет очищен. Сохранённые снимки и append-only окна журнала не пострадают.",
+  "Отмена",
+  "Автоматический журнал",
+  "Подтвердите изменение сбора метрик трекпадов. Кнопка подтверждения станет доступна через пять секунд.",
+  "Подтвердить",
 ]);
 
 const german = define([

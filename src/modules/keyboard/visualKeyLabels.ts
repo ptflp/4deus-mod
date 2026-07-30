@@ -7,10 +7,18 @@ export const resolveVisualKeyLabels = (
   nativePrimary: string | undefined,
   secondary: string | undefined,
   swapped: boolean,
+  visibleNativeLabels: readonly string[] = [],
 ): VisualKeyLabels => {
+  const normalizedSecondary = secondary?.toLocaleLowerCase();
   if (
     !secondary
-    || secondary.toLocaleLowerCase() === nativePrimary?.toLocaleLowerCase()
+    || normalizedSecondary === nativePrimary?.toLocaleLowerCase()
+    || (
+      !swapped
+      && visibleNativeLabels.some(
+        (label) => label.toLocaleLowerCase() === normalizedSecondary,
+      )
+    )
   ) {
     return { primary: nativePrimary };
   }

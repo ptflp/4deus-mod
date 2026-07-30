@@ -15,6 +15,7 @@ import {
 import {
   getVariantLabel,
   isSecondaryLabelRow,
+  isVisualSwapRow,
 } from "../src/modules/keyboard/layoutLabels.ts";
 import {
   DECK_QUICK_KEY_GROUPS,
@@ -312,10 +313,15 @@ test("keyboard layouts keep AltGr separate from Shift", () => {
   assert.equal(getVariantLabel(altGrNumber, 2), "@");
 });
 
-test("secondary language labels exclude the number and symbol row", () => {
-  assert.equal(isSecondaryLabelRow(0), false);
+test("number labels remain visible but stay outside visual swapping", () => {
+  assert.equal(isSecondaryLabelRow(0), true);
   assert.equal(isSecondaryLabelRow(1), true);
   assert.equal(isSecondaryLabelRow(2), true);
   assert.equal(isSecondaryLabelRow(3), true);
   assert.equal(isSecondaryLabelRow(4), false);
+  assert.equal(isVisualSwapRow(0), false);
+  assert.equal(isVisualSwapRow(1), true);
+  assert.equal(isVisualSwapRow(2), true);
+  assert.equal(isVisualSwapRow(3), true);
+  assert.equal(isVisualSwapRow(4), false);
 });

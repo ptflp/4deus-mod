@@ -31,8 +31,25 @@ export const getVariantLabel = (
 
 export const isSingleCharacter = (
   label: string | undefined,
-): label is string =>
-  Boolean(label && !/\s/u.test(label) && Array.from(label).length === 1);
+): label is string => {
+  if (!label || /\s/u.test(label))
+    return false;
+  const characters = label[Symbol.iterator]();
+  return !characters.next().done && characters.next().done === true;
+};
 
 export const isSecondaryLabelRow = (row: number): boolean =>
+  row >= 0 && row <= 3;
+
+export const isVisualSwapRow = (row: number): boolean =>
   row >= 1 && row <= 3;
+
+export const selectSecondaryLabel = (
+  normal: string | undefined,
+  shifted: string | undefined,
+  row: number,
+  keyboardShifted: boolean,
+): string | undefined =>
+  row === 0 || keyboardShifted
+    ? shifted ?? normal
+    : normal;

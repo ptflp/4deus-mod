@@ -88,7 +88,7 @@ interface GamepadButtonDetail {
   [key: string]: unknown;
 }
 
-type HoldSource = "gamepad" | "touch";
+type HoldSource = "gamepad" | "pointer" | "touch";
 type LongPressAction = "help" | "language-menu" | "toggle-system-mode";
 
 interface HoldState {
@@ -96,6 +96,7 @@ interface HoldState {
   key: HTMLElement;
   longPress: boolean;
   longPressAction?: LongPressAction;
+  pointerId?: number;
   source: HoldSource;
   startedInSystemMode: boolean;
   timer?: number;
@@ -117,10 +118,32 @@ interface LanguageMenuTouch {
   key: HTMLElement;
 }
 
+interface ReactFiberNode {
+  return?: ReactFiberNode | null;
+  stateNode?: unknown;
+}
+
+interface SteamKeyboardController {
+  TypeKey(key: HTMLElement): void;
+}
+
 const consume = (event: Event): void => {
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
+};
+
+const touchListContains = (
+  touches: TouchList,
+  identifier: number | undefined,
+): boolean => {
+  if (identifier === undefined)
+    return true;
+  for (let index = 0; index < touches.length; index += 1) {
+    if (touches.item(index)?.identifier === identifier)
+      return true;
+  }
+  return false;
 };
 
 export class SystemKeyLayer {
@@ -190,6 +213,7 @@ export class SystemKeyLayer {
   private languageMenuTouch?: LanguageMenuTouch;
   private languageMenuGamepadKey?: HTMLElement;
   private keyboardHelpCancelActive = false;
+  private steamKeyboardController?: SteamKeyboardController;
   private inputQueue = Promise.resolve();
   private readonly heldBoundKeys = new Map<number, string>();
   private readonly activeBoundButtons = new Set<number>();
@@ -241,10 +265,12 @@ export class SystemKeyLayer {
       signal,
     });
     const capture = { capture: true, signal };
+    document.addEventListener("pointerdown", this.onPointerDown, capture);
+    document.addEventListener("pointerup", this.onPointerUp, capture);
+    document.addEventListener("pointercancel", this.onPointerCancel, capture);
     document.addEventListener("vgp_onbuttondown", this.onGamepadButtonDown, capture);
     document.addEventListener("vgp_onbuttonup", this.onGamepadButtonUp, capture);
     document.addEventListener("click", this.onClick, capture);
-    this.render();
   }
 
   unbind(): void {
@@ -262,6 +288,7 @@ export class SystemKeyLayer {
     this.holdHintView.unbind();
     this.languageSwitchMenu.unbind();
     this.keyboard = undefined;
+    this.steamKeyboardController = undefined;
     this.systemMode = false;
     this.functionLayer = false;
     this.deckButtonSecondLayerActive = false;
@@ -311,9 +338,7 @@ export class SystemKeyLayer {
     if (!deckButtonQuickActionsEnabled || !deckButtonSecondLayerEnabled)
       this.deckButtonSecondLayerActive = false;
     if (resetMode)
-      this.setSystemMode(enabled && defaultSystemMode);
-    else
-      this.render();
+      this.applySystemMode(enabled && defaultSystemMode);
   }
 
   refresh(): void {
@@ -406,6 +431,68 @@ export class SystemKeyLayer {
       return;
     consume(event);
     this.clearHold();
+  };
+
+  private readonly onPointerDown = (event: PointerEvent): void => {
+    if (
+      !this.enabled
+      || event.button !== 0
+      || (event.pointerType !== "mouse" && event.pointerType !== "")
+    ) {
+      return;
+    }
+    const key = this.getKey(event.target);
+    if (!key || key === this.passThroughKey)
+      return;
+    const longPressAction = this.getLongPressAction(key);
+    if (!longPressAction)
+      return;
+
+    consume(event);
+    this.beginHold(
+      key,
+      "pointer",
+      longPressAction,
+      event.pointerId,
+    );
+  };
+
+  private readonly onPointerUp = (event: PointerEvent): void => {
+    const hold = this.hold;
+    if (
+      !hold
+      || hold.source !== "pointer"
+      || hold.pointerId !== event.pointerId
+      || hold.key === this.passThroughKey
+    ) {
+      return;
+    }
+
+    consume(event);
+    this.clearHold();
+    if (!hold.longPress)
+      this.finishShortHold(
+        hold,
+        () => {
+          if (!this.typeNativeKey(hold.key))
+            this.replayClick(hold.key);
+        },
+      );
+    this.suppressClickForTick(hold.key);
+  };
+
+  private readonly onPointerCancel = (event: PointerEvent): void => {
+    const hold = this.hold;
+    if (
+      !hold
+      || hold.source !== "pointer"
+      || hold.pointerId !== event.pointerId
+    ) {
+      return;
+    }
+    consume(event);
+    this.clearHold();
+    this.suppressClickForTick(hold.key);
   };
 
   private readonly onGamepadButtonDown = (event: Event): void => {
@@ -657,10 +744,7 @@ export class SystemKeyLayer {
     event: TouchEvent,
     identifier: number | undefined,
   ): boolean {
-    return identifier === undefined
-      || Array.from(event.changedTouches).some(
-        (touch) => touch.identifier === identifier,
-      );
+    return touchListContains(event.changedTouches, identifier);
   }
 
   private handleLanguageMenuGamepadDown(
@@ -730,29 +814,33 @@ export class SystemKeyLayer {
     hold: HoldState,
     event: TouchEvent,
   ): void {
-    if (hold.longPressAction === "toggle-system-mode") {
-      if (hold.startedInSystemMode)
-        this.toggleControl();
-      else
-        this.replayShortTouch(hold.key, event);
-      return;
-    }
-    if (hold.longPressAction === "language-menu") {
-      this.activateLanguageSwitch(() => this.replayShortTouch(hold.key, event));
-      return;
-    }
-    if (hold.longPressAction === "help")
-      this.replayShortTouch(hold.key, event);
+    this.finishShortHold(
+      hold,
+      () => this.replayShortTouch(hold.key, event),
+    );
   }
 
   private finishShortGamepadHold(
     hold: HoldState,
     detail: GamepadButtonDetail,
   ): void {
-    const replay = (): void => this.replayGamepadPress(
-      hold.key,
-      hold.gamepadDetail ?? detail,
+    this.finishShortHold(
+      hold,
+      () => {
+        if (!this.typeNativeKey(hold.key)) {
+          this.replayGamepadPress(
+            hold.key,
+            hold.gamepadDetail ?? detail,
+          );
+        }
+      },
     );
+  }
+
+  private finishShortHold(
+    hold: HoldState,
+    replay: () => void,
+  ): void {
     if (hold.longPressAction === "toggle-system-mode") {
       if (hold.startedInSystemMode)
         this.toggleControl();
@@ -842,6 +930,47 @@ export class SystemKeyLayer {
     this.passThroughKey = undefined;
   }
 
+  private typeNativeKey(key: HTMLElement): boolean {
+    const controller = this.steamKeyboardController
+      ?? this.findSteamKeyboardController(key);
+    if (!controller)
+      return false;
+    try {
+      controller.TypeKey(key);
+      this.steamKeyboardController = controller;
+      return true;
+    } catch (error) {
+      this.steamKeyboardController = undefined;
+      console.warn(
+        "[4deus Mod] Failed to invoke Steam keyboard TypeKey",
+        error,
+      );
+      return false;
+    }
+  }
+
+  private findSteamKeyboardController(
+    key: HTMLElement,
+  ): SteamKeyboardController | undefined {
+    const fiberProperty = Object.getOwnPropertyNames(key).find(
+      (name) => name.startsWith("__reactFiber$"),
+    );
+    if (!fiberProperty)
+      return undefined;
+    let fiber: ReactFiberNode | null | undefined = (
+      key as unknown as Record<string, ReactFiberNode | undefined>
+    )[fiberProperty];
+    for (let depth = 0; fiber && depth < 32; depth += 1) {
+      const candidate = fiber.stateNode as Partial<
+        SteamKeyboardController
+      > | undefined;
+      if (typeof candidate?.TypeKey === "function")
+        return candidate as SteamKeyboardController;
+      fiber = fiber.return;
+    }
+    return undefined;
+  }
+
   private getChordModifier(key: HTMLElement): ChordModifier | undefined {
     if (!this.systemMode)
       return undefined;
@@ -887,9 +1016,7 @@ export class SystemKeyLayer {
     if (
       !hold
       || hold.source !== "touch"
-      || !Array.from(event.changedTouches).some(
-        (touch) => touch.identifier === hold.identifier,
-      )
+      || !touchListContains(event.changedTouches, hold.identifier)
     ) {
       return false;
     }
@@ -927,6 +1054,7 @@ export class SystemKeyLayer {
     key: HTMLElement,
     source: HoldSource,
     longPressAction: LongPressAction | undefined,
+    pointerId?: number,
   ): void {
     this.clearHold();
     key.classList.add(PRESSED_KEY_CLASS);
@@ -934,6 +1062,7 @@ export class SystemKeyLayer {
       key,
       longPress: false,
       longPressAction,
+      pointerId,
       source,
       startedInSystemMode: this.systemMode,
     };
@@ -987,7 +1116,7 @@ export class SystemKeyLayer {
     return undefined;
   }
 
-  private setSystemMode(active: boolean): void {
+  private applySystemMode(active: boolean): void {
     this.systemMode = active;
     this.functionLayer = false;
     if (!active) {
@@ -996,6 +1125,10 @@ export class SystemKeyLayer {
       this.clearModifierHold();
       this.shiftActive = false;
     }
+  }
+
+  private setSystemMode(active: boolean): void {
+    this.applySystemMode(active);
     this.render();
   }
 

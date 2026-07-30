@@ -23,13 +23,24 @@ export interface SystemToolsTranslation {
   nestedDesktopTrackpadInertiaDescription: string;
   rustDeskPointerFix: string;
   rustDeskPointerFixDescription: string;
+  rustDeskFocusOnInput: string;
+  rustDeskFocusOnInputDescription: string;
   rustDeskScrollInertia: string;
   rustDeskScrollInertiaDescription: string;
+  controller: string;
+  trackpadAutoRecovery: string;
+  trackpadAutoRecoveryDescription: string;
 }
 
 type BaseSystemToolsTranslation = Omit<
   SystemToolsTranslation,
-  "rustDeskScrollInertia" | "rustDeskScrollInertiaDescription"
+  | "rustDeskFocusOnInput"
+  | "rustDeskFocusOnInputDescription"
+  | "rustDeskScrollInertia"
+  | "rustDeskScrollInertiaDescription"
+  | "controller"
+  | "trackpadAutoRecovery"
+  | "trackpadAutoRecoveryDescription"
 >;
 
 type Values = [
@@ -445,132 +456,356 @@ Record<string, BaseSystemToolsTranslation> = {
   ]),
 };
 
-type RustDeskScrollTranslation = Pick<
+type RustDeskOptionsTranslation = Pick<
   SystemToolsTranslation,
-  "rustDeskScrollInertia" | "rustDeskScrollInertiaDescription"
+  | "rustDeskFocusOnInput"
+  | "rustDeskFocusOnInputDescription"
+  | "rustDeskScrollInertia"
+  | "rustDeskScrollInertiaDescription"
 >;
 
-const rustDeskScrollTranslations:
-Record<string, RustDeskScrollTranslation> = {
+const rustDeskOptionsTranslations:
+Record<string, RustDeskOptionsTranslation> = {
   arabic: {
+    rustDeskFocusOnInput: "الانتقال إلى Nested Desktop عند إدخال RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ يجلب Nested Desktop إلى المقدمة عند إدخال RustDesk. يتجاوز ذلك شاشة قفل Steam التي تطلب رمز PIN. معطّل افتراضيًا؛ تفعيله يعني قبولك لهذه المخاطرة",
     rustDeskScrollInertia: "قصور عجلة RustDesk",
     rustDeskScrollInertiaDescription: "يضيف انزلاقًا طبيعيًا قصيرًا بعد تدوير العجلة بسرعة؛ يكون معطّلًا افتراضيًا ولا يؤثر في قصور لوحة التتبع",
   },
   brazilian: {
+    rustDeskFocusOnInput: "Focar o Nested Desktop com entrada do RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Traz o Nested Desktop para a frente com a entrada do RustDesk. Isso ignora a tela de bloqueio do Steam com PIN. Desativado por padrão; ao ativar, você aceita esse risco",
     rustDeskScrollInertia: "Inércia da roda do RustDesk",
     rustDeskScrollInertiaDescription: "Adiciona um deslizamento natural curto após rolar rapidamente; vem desativada e não afeta a inércia dos trackpads",
   },
   bulgarian: {
+    rustDeskFocusOnInput: "Фокус върху Nested Desktop при вход от RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Извежда Nested Desktop на преден план при вход от RustDesk. Това заобикаля заключващия екран на Steam с PIN. Изключено по подразбиране; с включването приемате този риск",
     rustDeskScrollInertia: "Инерция на колелцето в RustDesk",
     rustDeskScrollInertiaDescription: "Добавя кратко естествено довършване след бързо превъртане; изключено е по подразбиране и не влияе на инерцията на тракпадите",
   },
   czech: {
+    rustDeskFocusOnInput: "Zaměřit Nested Desktop při vstupu z RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Přenese Nested Desktop do popředí při vstupu z RustDesk. Tím se obejde zamykací obrazovka Steamu s PINem. Ve výchozím stavu vypnuto; zapnutím přijímáte toto riziko",
     rustDeskScrollInertia: "Setrvačnost kolečka RustDesk",
     rustDeskScrollInertiaDescription: "Po rychlém rolování přidá krátký přirozený dojezd; ve výchozím stavu je vypnutá a neovlivňuje setrvačnost trackpadů",
   },
   danish: {
+    rustDeskFocusOnInput: "Fokusér Nested Desktop ved RustDesk-input",
+    rustDeskFocusOnInputDescription: "⚠ Bringer Nested Desktop frem ved RustDesk-input. Dette omgår Steams PIN-låseskærm. Slået fra som standard; ved at aktivere accepterer du denne risiko",
     rustDeskScrollInertia: "RustDesk-musehjulsinerti",
     rustDeskScrollInertiaDescription: "Tilføjer et kort naturligt efterløb efter hurtig rulning; er slået fra som standard og påvirker ikke trackpad-inerti",
   },
   dutch: {
+    rustDeskFocusOnInput: "Nested Desktop focussen bij RustDesk-invoer",
+    rustDeskFocusOnInputDescription: "⚠ Brengt Nested Desktop naar de voorgrond bij RustDesk-invoer. Dit omzeilt het Steam-vergrendelscherm met pincode. Standaard uit; door dit in te schakelen accepteer je dit risico",
     rustDeskScrollInertia: "RustDesk-wieltraagheid",
     rustDeskScrollInertiaDescription: "Voegt een korte natuurlijke uitloop toe na snel scrollen; staat standaard uit en beïnvloedt de trackpadtraagheid niet",
   },
   finnish: {
+    rustDeskFocusOnInput: "Kohdista Nested Desktop RustDesk-syötteellä",
+    rustDeskFocusOnInputDescription: "⚠ Tuo Nested Desktopin etualalle RustDesk-syötteellä. Tämä ohittaa Steamin PIN-lukitusnäytön. Oletuksena pois käytöstä; ottamalla käyttöön hyväksyt tämän riskin",
     rustDeskScrollInertia: "RustDesk-rullan vieritysinertia",
     rustDeskScrollInertiaDescription: "Lisää lyhyen luonnollisen jälkiliikkeen nopean vierityksen jälkeen; oletuksena pois käytöstä eikä vaikuta ohjauslevyjen inertiaan",
   },
   french: {
+    rustDeskFocusOnInput: "Activer Nested Desktop lors d’une entrée RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Place Nested Desktop au premier plan lors d’une entrée RustDesk. Cela contourne l’écran de verrouillage Steam avec code PIN. Désactivé par défaut ; l’activer signifie accepter ce risque",
     rustDeskScrollInertia: "Inertie de la molette RustDesk",
     rustDeskScrollInertiaDescription: "Ajoute une courte glisse naturelle après un défilement rapide ; désactivée par défaut et sans effet sur l’inertie des trackpads",
   },
   german: {
+    rustDeskFocusOnInput: "Nested Desktop bei RustDesk-Eingabe fokussieren",
+    rustDeskFocusOnInputDescription: "⚠ Holt Nested Desktop bei RustDesk-Eingaben in den Vordergrund. Dies umgeht den Steam-PIN-Sperrbildschirm. Standardmäßig deaktiviert; mit dem Aktivieren akzeptierst du dieses Risiko",
     rustDeskScrollInertia: "RustDesk-Mausradträgheit",
     rustDeskScrollInertiaDescription: "Fügt nach schnellem Scrollen einen kurzen natürlichen Nachlauf hinzu; standardmäßig deaktiviert und unabhängig von der Trackpad-Trägheit",
   },
   greek: {
+    rustDeskFocusOnInput: "Εστίαση Nested Desktop με είσοδο RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Φέρνει το Nested Desktop στο προσκήνιο με είσοδο RustDesk. Αυτό παρακάμπτει την οθόνη κλειδώματος PIN του Steam. Ανενεργό από προεπιλογή· ενεργοποιώντας το αποδέχεστε αυτόν τον κίνδυνο",
     rustDeskScrollInertia: "Αδράνεια τροχού RustDesk",
     rustDeskScrollInertiaDescription: "Προσθέτει μια σύντομη φυσική κύλιση μετά από γρήγορη χρήση του τροχού· είναι απενεργοποιημένη από προεπιλογή και δεν επηρεάζει την αδράνεια των trackpad",
   },
   hungarian: {
+    rustDeskFocusOnInput: "Nested Desktop fókusza RustDesk-bevitelkor",
+    rustDeskFocusOnInputDescription: "⚠ RustDesk-bevitelkor előtérbe hozza a Nested Desktopot. Ez megkerüli a Steam PIN-kódos zárolási képernyőjét. Alapértelmezetten kikapcsolva; bekapcsolásával elfogadod ezt a kockázatot",
     rustDeskScrollInertia: "RustDesk-görgő tehetetlensége",
     rustDeskScrollInertiaDescription: "Rövid természetes továbbgördülést ad a gyors görgetéshez; alapértelmezetten ki van kapcsolva, és nem befolyásolja az érintőpad tehetetlenségét",
   },
   indonesian: {
+    rustDeskFocusOnInput: "Fokuskan Nested Desktop saat ada input RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Membawa Nested Desktop ke depan saat ada input RustDesk. Ini melewati layar kunci PIN Steam. Nonaktif secara bawaan; dengan mengaktifkannya Anda menerima risiko ini",
     rustDeskScrollInertia: "Inersia roda RustDesk",
     rustDeskScrollInertiaDescription: "Menambahkan luncuran alami singkat setelah menggulir cepat; nonaktif secara bawaan dan tidak memengaruhi inersia trackpad",
   },
   italian: {
+    rustDeskFocusOnInput: "Attiva Nested Desktop con l’input RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Porta Nested Desktop in primo piano con l’input RustDesk. Questo aggira la schermata di blocco PIN di Steam. Disattivato per impostazione predefinita; attivandolo accetti questo rischio",
     rustDeskScrollInertia: "Inerzia della rotellina RustDesk",
     rustDeskScrollInertiaDescription: "Aggiunge un breve scorrimento naturale dopo una rotazione rapida; disattivata per impostazione predefinita e indipendente dall’inerzia dei trackpad",
   },
   japanese: {
+    rustDeskFocusOnInput: "RustDesk 入力で Nested Desktop に切り替える",
+    rustDeskFocusOnInputDescription: "⚠ RustDesk のポインターまたはキーボード入力で Nested Desktop を前面に表示します。Steam の PIN ロック画面を回避します。既定では無効です。有効にすると、このリスクを承認したものとみなされます",
     rustDeskScrollInertia: "RustDesk ホイールの慣性",
     rustDeskScrollInertiaDescription: "ホイールを素早く回した後に短く自然な余韻を加えます。既定では無効で、トラックパッドの慣性には影響しません",
   },
   koreana: {
+    rustDeskFocusOnInput: "RustDesk 입력 시 Nested Desktop 전환",
+    rustDeskFocusOnInputDescription: "⚠ RustDesk 포인터 또는 키보드 입력 시 Nested Desktop을 앞으로 가져옵니다. Steam PIN 잠금 화면을 우회합니다. 기본값은 꺼짐이며, 활성화하면 이 위험에 동의하는 것입니다",
     rustDeskScrollInertia: "RustDesk 휠 관성",
     rustDeskScrollInertiaDescription: "휠을 빠르게 스크롤한 뒤 짧고 자연스럽게 이어집니다. 기본값은 꺼짐이며 트랙패드 관성에는 영향을 주지 않습니다",
   },
   latam: {
+    rustDeskFocusOnInput: "Enfocar Nested Desktop con la entrada de RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Pone Nested Desktop en primer plano con la entrada de RustDesk. Esto omite la pantalla de bloqueo de Steam con PIN. Desactivado de forma predeterminada; al activarlo aceptas este riesgo",
     rustDeskScrollInertia: "Inercia de la rueda de RustDesk",
     rustDeskScrollInertiaDescription: "Añade un breve deslizamiento natural después de desplazar rápidamente; está desactivada de forma predeterminada y no afecta la inercia de los trackpads",
   },
   malay: {
+    rustDeskFocusOnInput: "Fokus Nested Desktop apabila ada input RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Membawa Nested Desktop ke hadapan apabila ada input RustDesk. Ini memintas skrin kunci PIN Steam. Dimatikan secara lalai; dengan mengaktifkannya anda menerima risiko ini",
     rustDeskScrollInertia: "Inersia roda RustDesk",
     rustDeskScrollInertiaDescription: "Menambah luncuran semula jadi yang singkat selepas tatal pantas; dimatikan secara lalai dan tidak menjejaskan inersia pad jejak",
   },
   norwegian: {
+    rustDeskFocusOnInput: "Fokuser Nested Desktop ved RustDesk-inndata",
+    rustDeskFocusOnInputDescription: "⚠ Henter Nested Desktop frem ved RustDesk-inndata. Dette omgår Steams PIN-låseskjerm. Av som standard; ved å aktivere godtar du denne risikoen",
     rustDeskScrollInertia: "RustDesk-rullehjulsinerti",
     rustDeskScrollInertiaDescription: "Legger til en kort naturlig etterrulling etter rask rulling; er av som standard og påvirker ikke styreplateinerti",
   },
   polish: {
+    rustDeskFocusOnInput: "Aktywuj Nested Desktop przy wejściu RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Przenosi Nested Desktop na pierwszy plan przy wejściu RustDesk. Omija to ekran blokady Steam z kodem PIN. Domyślnie wyłączone; włączając, akceptujesz to ryzyko",
     rustDeskScrollInertia: "Bezwładność kółka RustDesk",
     rustDeskScrollInertiaDescription: "Dodaje krótki naturalny wybieg po szybkim przewijaniu; domyślnie wyłączona i niezależna od bezwładności gładzików",
   },
   portuguese: {
+    rustDeskFocusOnInput: "Focar o Nested Desktop com entrada do RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Traz o Nested Desktop para a frente com entrada do RustDesk. Isto ignora o ecrã de bloqueio do Steam com PIN. Desativado por predefinição; ao ativar, aceita este risco",
     rustDeskScrollInertia: "Inércia da roda do RustDesk",
     rustDeskScrollInertiaDescription: "Adiciona um curto deslizamento natural após deslocamento rápido; está desativada por predefinição e não afeta a inércia dos trackpads",
   },
   romanian: {
+    rustDeskFocusOnInput: "Focalizează Nested Desktop la intrare RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Aduce Nested Desktop în prim-plan la intrare RustDesk. Aceasta ocolește ecranul de blocare Steam cu PIN. Dezactivat implicit; prin activare accepți acest risc",
     rustDeskScrollInertia: "Inerția rotiței RustDesk",
     rustDeskScrollInertiaDescription: "Adaugă o scurtă alunecare naturală după derularea rapidă; este dezactivată implicit și nu afectează inerția trackpadurilor",
   },
   russian: {
+    rustDeskFocusOnInput: "Переключаться на ввод RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Выводит Nested Desktop на передний план при вводе мышью или клавиатурой через RustDesk. Функция обходит экран блокировки Steam с PIN-кодом. По умолчанию выключена; включая её, вы принимаете этот риск",
     rustDeskScrollInertia: "Инерция колеса RustDesk",
     rustDeskScrollInertiaDescription: "Добавляет короткое естественное докатывание после быстрой прокрутки; по умолчанию выключено и не влияет на инерцию трекпадов",
   },
   schinese: {
+    rustDeskFocusOnInput: "收到 RustDesk 输入时切换到 Nested Desktop",
+    rustDeskFocusOnInputDescription: "⚠ 收到 RustDesk 指针或键盘输入时将 Nested Desktop 切换到前台。这会绕过 Steam PIN 锁屏。默认关闭；启用即表示您接受此风险",
     rustDeskScrollInertia: "RustDesk 滚轮惯性",
     rustDeskScrollInertiaDescription: "快速滚动后增加短暂自然的惯性滑动；默认关闭，且不会影响触控板惯性",
   },
   spanish: {
+    rustDeskFocusOnInput: "Enfocar Nested Desktop con la entrada de RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Pone Nested Desktop en primer plano con la entrada de RustDesk. Esto omite la pantalla de bloqueo de Steam con PIN. Desactivado de forma predeterminada; al activarlo aceptas este riesgo",
     rustDeskScrollInertia: "Inercia de la rueda de RustDesk",
     rustDeskScrollInertiaDescription: "Añade un breve deslizamiento natural tras desplazar rápidamente; está desactivada de forma predeterminada y no afecta a la inercia de los trackpads",
   },
   swedish: {
+    rustDeskFocusOnInput: "Fokusera Nested Desktop vid RustDesk-inmatning",
+    rustDeskFocusOnInputDescription: "⚠ Tar fram Nested Desktop vid RustDesk-inmatning. Detta kringgår Steams PIN-låsskärm. Avstängt som standard; genom att aktivera accepterar du denna risk",
     rustDeskScrollInertia: "RustDesk-rullhjulströghet",
     rustDeskScrollInertiaDescription: "Lägger till en kort naturlig efterrullning efter snabb rullning; är avstängd som standard och påverkar inte styrplattornas tröghet",
   },
   tchinese: {
+    rustDeskFocusOnInput: "收到 RustDesk 輸入時切換至 Nested Desktop",
+    rustDeskFocusOnInputDescription: "⚠ 收到 RustDesk 指標或鍵盤輸入時將 Nested Desktop 帶到前景。這會略過 Steam PIN 鎖定畫面。預設關閉；啟用即表示您接受此風險",
     rustDeskScrollInertia: "RustDesk 滾輪慣性",
     rustDeskScrollInertiaDescription: "快速捲動後加入短暫自然的慣性滑動；預設關閉，且不會影響觸控板慣性",
   },
   thai: {
+    rustDeskFocusOnInput: "สลับไปยัง Nested Desktop เมื่อมีอินพุต RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ นำ Nested Desktop มาไว้ด้านหน้าเมื่อมีอินพุต RustDesk การทำเช่นนี้จะข้ามหน้าจอล็อก PIN ของ Steam ปิดไว้ตามค่าเริ่มต้น การเปิดใช้หมายถึงคุณยอมรับความเสี่ยงนี้",
     rustDeskScrollInertia: "แรงเฉื่อยล้อเลื่อน RustDesk",
     rustDeskScrollInertiaDescription: "เพิ่มการไหลต่ออย่างเป็นธรรมชาติช่วงสั้นหลังเลื่อนเร็ว ปิดไว้ตามค่าเริ่มต้นและไม่กระทบแรงเฉื่อยของแทร็กแพด",
   },
   turkish: {
+    rustDeskFocusOnInput: "RustDesk girişinde Nested Desktop’a odaklan",
+    rustDeskFocusOnInputDescription: "⚠ RustDesk girişi olduğunda Nested Desktop’ı öne getirir. Bu, Steam PIN kilit ekranını atlar. Varsayılan olarak kapalıdır; etkinleştirerek bu riski kabul edersiniz",
     rustDeskScrollInertia: "RustDesk tekerlek ataleti",
     rustDeskScrollInertiaDescription: "Hızlı kaydırmadan sonra kısa ve doğal bir devam hareketi ekler; varsayılan olarak kapalıdır ve izleme dörtgeni ataletini etkilemez",
   },
   ukrainian: {
+    rustDeskFocusOnInput: "Фокусувати Nested Desktop при вводі RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Виводить Nested Desktop на передній план при введенні через RustDesk. Це обходить екран блокування Steam з PIN-кодом. Типово вимкнено; вмикаючи, ви приймаєте цей ризик",
     rustDeskScrollInertia: "Інерція колеса RustDesk",
     rustDeskScrollInertiaDescription: "Додає коротке природне докручування після швидкого прокручування; типово вимкнено й не впливає на інерцію трекпадів",
   },
   vietnamese: {
+    rustDeskFocusOnInput: "Chuyển sang Nested Desktop khi có đầu vào RustDesk",
+    rustDeskFocusOnInputDescription: "⚠ Đưa Nested Desktop lên trước khi có đầu vào RustDesk. Việc này bỏ qua màn hình khóa PIN của Steam. Mặc định tắt; khi bật, bạn chấp nhận rủi ro này",
     rustDeskScrollInertia: "Quán tính bánh xe RustDesk",
     rustDeskScrollInertiaDescription: "Thêm một đoạn trượt tự nhiên ngắn sau khi cuộn nhanh; mặc định tắt và không ảnh hưởng đến quán tính bàn di chuột",
+  },
+};
+
+type ControllerOptionsTranslation = Pick<
+  SystemToolsTranslation,
+  | "controller"
+  | "trackpadAutoRecovery"
+  | "trackpadAutoRecoveryDescription"
+>;
+
+const controllerOptionsTranslations:
+Record<string, ControllerOptionsTranslation> = {
+  arabic: {
+    controller: "وحدة التحكم",
+    trackpadAutoRecovery: "الاسترداد التلقائي للوحة التتبع",
+    trackpadAutoRecoveryDescription: "يكتشف السحب المقترن بنقرة فعلية ويعيد توصيل وحدة التحكم المدمجة لفترة وجيزة فقط بعد رفع اليد عن لوحتي التتبع؛ بحد أقصى مرة كل 30 ثانية",
+  },
+  brazilian: {
+    controller: "Controle",
+    trackpadAutoRecovery: "Recuperação automática do trackpad",
+    trackpadAutoRecoveryDescription: "Detecta um gesto combinado com clique físico e reconecta brevemente o controle integrado somente após soltar os dois trackpads; limitado a uma vez a cada 30 segundos",
+  },
+  bulgarian: {
+    controller: "Контролер",
+    trackpadAutoRecovery: "Автоматично възстановяване на тракпада",
+    trackpadAutoRecoveryDescription: "Разпознава плъзване с физическо щракване и за кратко свързва отново вградения контролер едва след отпускане на двата тракпада; най-много веднъж на 30 секунди",
+  },
+  czech: {
+    controller: "Ovladač",
+    trackpadAutoRecovery: "Automatické obnovení trackpadu",
+    trackpadAutoRecoveryDescription: "Rozpozná přejetí spojené s fyzickým kliknutím a krátce znovu připojí vestavěný ovladač až po uvolnění obou trackpadů; nejvýše jednou za 30 sekund",
+  },
+  danish: {
+    controller: "Controller",
+    trackpadAutoRecovery: "Automatisk gendannelse af pegefelt",
+    trackpadAutoRecoveryDescription: "Registrerer et strøg kombineret med et fysisk klik og genforbinder kortvarigt den indbyggede controller, når begge pegefelter er sluppet; højst én gang hvert 30. sekund",
+  },
+  dutch: {
+    controller: "Controller",
+    trackpadAutoRecovery: "Automatisch trackpadherstel",
+    trackpadAutoRecoveryDescription: "Detecteert een veeg in combinatie met een fysieke klik en verbindt de ingebouwde controller pas kort opnieuw nadat beide trackpads zijn losgelaten; maximaal eenmaal per 30 seconden",
+  },
+  finnish: {
+    controller: "Ohjain",
+    trackpadAutoRecovery: "Ohjauslevyn automaattinen palautus",
+    trackpadAutoRecoveryDescription: "Tunnistaa pyyhkäisyn ja fyysisen napsautuksen yhdistelmän sekä yhdistää sisäisen ohjaimen hetkeksi uudelleen vasta, kun molemmat ohjauslevyt on vapautettu; enintään kerran 30 sekunnissa",
+  },
+  french: {
+    controller: "Manette",
+    trackpadAutoRecovery: "Récupération automatique du pavé tactile",
+    trackpadAutoRecoveryDescription: "Détecte un balayage combiné à un clic physique et reconnecte brièvement la manette intégrée uniquement après le relâchement des deux pavés tactiles ; au maximum une fois toutes les 30 secondes",
+  },
+  german: {
+    controller: "Controller",
+    trackpadAutoRecovery: "Automatische Trackpad-Wiederherstellung",
+    trackpadAutoRecoveryDescription: "Erkennt ein Wischen mit physischem Klick und verbindet den integrierten Controller kurz neu, sobald beide Trackpads losgelassen wurden; höchstens einmal alle 30 Sekunden",
+  },
+  greek: {
+    controller: "Χειριστήριο",
+    trackpadAutoRecovery: "Αυτόματη επαναφορά trackpad",
+    trackpadAutoRecoveryDescription: "Εντοπίζει σάρωση μαζί με φυσικό κλικ και επανασυνδέει για λίγο το ενσωματωμένο χειριστήριο μόνο αφού απελευθερωθούν και τα δύο trackpad· το πολύ μία φορά ανά 30 δευτερόλεπτα",
+  },
+  hungarian: {
+    controller: "Vezérlő",
+    trackpadAutoRecovery: "Érintőpad automatikus helyreállítása",
+    trackpadAutoRecoveryDescription: "Észleli a fizikai kattintással egyidejű húzást, és csak mindkét érintőpad felengedése után csatlakoztatja röviden újra a beépített vezérlőt; legfeljebb 30 másodpercenként egyszer",
+  },
+  indonesian: {
+    controller: "Kontroler",
+    trackpadAutoRecovery: "Pemulihan trackpad otomatis",
+    trackpadAutoRecoveryDescription: "Mendeteksi usapan yang disertai klik fisik dan menyambungkan ulang kontroler bawaan secara singkat hanya setelah kedua trackpad dilepas; paling sering sekali setiap 30 detik",
+  },
+  italian: {
+    controller: "Controller",
+    trackpadAutoRecovery: "Ripristino automatico del trackpad",
+    trackpadAutoRecoveryDescription: "Rileva uno scorrimento combinato con un clic fisico e riconnette brevemente il controller integrato solo dopo il rilascio di entrambi i trackpad; al massimo una volta ogni 30 secondi",
+  },
+  japanese: {
+    controller: "コントローラー",
+    trackpadAutoRecovery: "トラックパッドの自動復旧",
+    trackpadAutoRecoveryDescription: "スワイプと物理クリックの同時操作を検出し、両方のトラックパッドから指が離れた後に内蔵コントローラーを一時的に再接続します。実行は30秒に1回までです",
+  },
+  koreana: {
+    controller: "컨트롤러",
+    trackpadAutoRecovery: "트랙패드 자동 복구",
+    trackpadAutoRecoveryDescription: "스와이프와 물리 클릭의 동시 입력을 감지하고 두 트랙패드에서 손을 뗀 뒤에만 내장 컨트롤러를 잠시 다시 연결합니다. 최대 30초에 한 번 실행됩니다",
+  },
+  latam: {
+    controller: "Control",
+    trackpadAutoRecovery: "Recuperación automática del trackpad",
+    trackpadAutoRecoveryDescription: "Detecta un deslizamiento combinado con un clic físico y vuelve a conectar brevemente el control integrado solo después de soltar ambos trackpads; como máximo una vez cada 30 segundos",
+  },
+  malay: {
+    controller: "Pengawal",
+    trackpadAutoRecovery: "Pemulihan pad jejak automatik",
+    trackpadAutoRecoveryDescription: "Mengesan leretan bersama klik fizikal dan menyambung semula pengawal terbina dalam buat seketika hanya selepas kedua-dua pad jejak dilepaskan; paling kerap sekali setiap 30 saat",
+  },
+  norwegian: {
+    controller: "Kontroller",
+    trackpadAutoRecovery: "Automatisk gjenoppretting av styreflate",
+    trackpadAutoRecoveryDescription: "Oppdager et sveip kombinert med et fysisk klikk og kobler den innebygde kontrolleren kort til på nytt først når begge styreflatene er sluppet; høyst én gang hvert 30. sekund",
+  },
+  polish: {
+    controller: "Kontroler",
+    trackpadAutoRecovery: "Automatyczne odzyskiwanie gładzika",
+    trackpadAutoRecoveryDescription: "Wykrywa przesunięcie połączone z fizycznym kliknięciem i na krótko ponownie podłącza wbudowany kontroler dopiero po zwolnieniu obu gładzików; najwyżej raz na 30 sekund",
+  },
+  portuguese: {
+    controller: "Comando",
+    trackpadAutoRecovery: "Recuperação automática do trackpad",
+    trackpadAutoRecoveryDescription: "Deteta um gesto combinado com clique físico e volta a ligar brevemente o comando integrado apenas depois de largar os dois trackpads; no máximo uma vez a cada 30 segundos",
+  },
+  romanian: {
+    controller: "Controler",
+    trackpadAutoRecovery: "Recuperarea automată a trackpadului",
+    trackpadAutoRecoveryDescription: "Detectează o glisare combinată cu un clic fizic și reconectează pentru scurt timp controlerul integrat numai după eliberarea ambelor trackpaduri; cel mult o dată la 30 de secunde",
+  },
+  russian: {
+    controller: "Контроллер",
+    trackpadAutoRecovery: "Автовосстановление трекпадов",
+    trackpadAutoRecoveryDescription: "Определяет свайп с одновременным физическим кликом и кратко переподключает встроенный контроллер только после отпускания обоих трекпадов; не чаще одного раза в 30 секунд",
+  },
+  schinese: {
+    controller: "控制器",
+    trackpadAutoRecovery: "触控板自动恢复",
+    trackpadAutoRecoveryDescription: "检测滑动与物理按压的组合操作，仅在双侧触控板均松开后短暂重连内置控制器；最多每30秒一次",
+  },
+  spanish: {
+    controller: "Mando",
+    trackpadAutoRecovery: "Recuperación automática del trackpad",
+    trackpadAutoRecoveryDescription: "Detecta un deslizamiento combinado con un clic físico y vuelve a conectar brevemente el mando integrado solo después de soltar ambos trackpads; como máximo una vez cada 30 segundos",
+  },
+  swedish: {
+    controller: "Handkontroll",
+    trackpadAutoRecovery: "Automatisk återställning av styrplatta",
+    trackpadAutoRecoveryDescription: "Upptäcker en svepning tillsammans med ett fysiskt klick och återansluter kort den inbyggda handkontrollen först när båda styrplattorna har släppts; högst en gång var 30:e sekund",
+  },
+  tchinese: {
+    controller: "控制器",
+    trackpadAutoRecovery: "觸控板自動復原",
+    trackpadAutoRecoveryDescription: "偵測滑動與實體按壓的組合操作，僅在兩側觸控板皆放開後短暫重新連接內建控制器；最多每30秒一次",
+  },
+  thai: {
+    controller: "คอนโทรลเลอร์",
+    trackpadAutoRecovery: "การกู้คืนแทร็กแพดอัตโนมัติ",
+    trackpadAutoRecoveryDescription: "ตรวจจับการปัดพร้อมการคลิกจริง และเชื่อมต่อคอนโทรลเลอร์ในตัวใหม่ชั่วครู่หลังปล่อยแทร็กแพดทั้งสองแล้วเท่านั้น โดยทำได้สูงสุดหนึ่งครั้งทุก 30 วินาที",
+  },
+  turkish: {
+    controller: "Denetleyici",
+    trackpadAutoRecovery: "Otomatik izleme dörtgeni kurtarma",
+    trackpadAutoRecoveryDescription: "Fiziksel tıklamayla birlikte yapılan kaydırmayı algılar ve yalnızca iki izleme dörtgeni de bırakıldıktan sonra yerleşik denetleyiciyi kısa süreliğine yeniden bağlar; en fazla 30 saniyede bir",
+  },
+  ukrainian: {
+    controller: "Контролер",
+    trackpadAutoRecovery: "Автовідновлення трекпадів",
+    trackpadAutoRecoveryDescription: "Виявляє свайп з одночасним фізичним натисканням і коротко перепідключає вбудований контролер лише після відпускання обох трекпадів; не частіше одного разу на 30 секунд",
+  },
+  vietnamese: {
+    controller: "Tay cầm",
+    trackpadAutoRecovery: "Tự động khôi phục bàn di chuột",
+    trackpadAutoRecoveryDescription: "Phát hiện thao tác vuốt kết hợp với nhấn vật lý và chỉ kết nối lại nhanh bộ điều khiển tích hợp sau khi cả hai bàn di chuột được thả; tối đa một lần mỗi 30 giây",
   },
 };
 
@@ -581,7 +816,8 @@ Record<string, SystemToolsTranslation> = Object.fromEntries(
       language,
       {
         ...strings,
-        ...rustDeskScrollTranslations[language],
+        ...rustDeskOptionsTranslations[language],
+        ...controllerOptionsTranslations[language],
       },
     ],
   ),

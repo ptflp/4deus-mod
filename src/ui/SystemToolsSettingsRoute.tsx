@@ -1,6 +1,7 @@
 import { SidebarNavigation } from "@decky/ui";
 
 import { useStrings } from "../core/localization";
+import { ControllerPanel } from "../modules/systemTools/ControllerPanel";
 import { NestedDesktopBindingsPanel } from "../modules/systemTools/NestedDesktopBindingsPanel";
 import { RustDeskPanel } from "../modules/systemTools/RustDeskPanel";
 import { SystemToolsPanel } from "../modules/systemTools/SystemToolsPanel";
@@ -29,6 +30,11 @@ export const SystemToolsSettingsRoute = ({
           identifier: "rustdesk",
           title: "RustDesk",
           content: <RustDeskPanel api={api} />,
+        },
+        {
+          identifier: "controller",
+          title: strings.controller,
+          content: <ControllerPanel api={api} />,
         },
         {
           identifier: "nested-desktop-hotkeys",

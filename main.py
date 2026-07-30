@@ -52,6 +52,22 @@ except Exception:
     )
 
 try:
+    from trackpad_metrics import (
+        TrackpadMetricsMonitor,
+        power_cycle_steam_deck_controller,
+        reconcile_steam_deck_controller_authorization,
+        reinitialize_steam_deck_trackpad_driver,
+    )
+except Exception:
+    TrackpadMetricsMonitor = None
+    power_cycle_steam_deck_controller = None
+    reconcile_steam_deck_controller_authorization = None
+    reinitialize_steam_deck_trackpad_driver = None
+    logger.exception(
+        "Trackpad metrics are unavailable; other features will remain active"
+    )
+
+try:
     from nested_desktop_mouse import (
         DEFAULT_NESTED_DESKTOP_BINDINGS,
         NESTED_DESKTOP_BINDING_ACTIONS,
@@ -228,6 +244,31 @@ class Plugin:
         self.nested_desktop_mouse_settings_path = (
             settings_directory / "nested-desktop-mouse.json"
         )
+        self.developer_settings_path = (
+            settings_directory / "developer-settings.json"
+        )
+        self.controller_settings_path = (
+            settings_directory / "controller-settings.json"
+        )
+        self.trackpad_auto_recovery_enabled = (
+            self._load_controller_settings()
+        )
+        (
+            self.developer_mode,
+            self.trackpad_metrics_enabled,
+        ) = self._load_developer_settings()
+        self.trackpad_metrics = (
+            TrackpadMetricsMonitor(
+                settings_directory / "trackpad-metrics-captures",
+                metrics_enabled=False,
+                recovery_enabled=False,
+                recovery_request_callback=(
+                    self._recover_trackpad_controller
+                ),
+            )
+            if TrackpadMetricsMonitor is not None
+            else None
+        )
         (
             self.nested_desktop_mouse_enabled,
             self.nested_desktop_mouse_inertia_enabled,
@@ -235,6 +276,7 @@ class Plugin:
             self.nested_desktop_bindings,
             self.rustdesk_pointer_fix_enabled,
             self.rustdesk_scroll_inertia_enabled,
+            self.rustdesk_focus_on_input_enabled,
         ) = self._load_nested_desktop_mouse_settings()
         self.event_loop = None
         self.nested_desktop_mouse = (
@@ -252,6 +294,9 @@ class Plugin:
                 ),
                 rustdesk_scroll_inertia_enabled=(
                     self.rustdesk_scroll_inertia_enabled
+                ),
+                rustdesk_focus_on_input_enabled=(
+                    self.rustdesk_focus_on_input_enabled
                 ),
                 run_as_user=self._worker_user(user_home),
                 action_callback=self._on_nested_desktop_action,
@@ -309,6 +354,14 @@ class Plugin:
 
     async def _main(self):
         self.event_loop = asyncio.get_running_loop()
+        reconciler = reconcile_steam_deck_controller_authorization
+        if reconciler is not None:
+            try:
+                await asyncio.to_thread(reconciler)
+            except Exception:
+                logger.exception(
+                    "Failed to reconcile controller authorization at startup"
+                )
         try:
             self.keyboard = VirtualKeyboard()
             logger.info("Created 4deus Mod uinput keyboard")
@@ -317,6 +370,7 @@ class Plugin:
         if self.rustdesk_pointer_fix_enabled:
             await self._stage_rustdesk_pointer_fix()
         await self._refresh_installed_steamos_wrapper()
+        self._sync_trackpad_metrics()
         if (
             self.nested_desktop_mouse is not None
             and (
@@ -328,6 +382,8 @@ class Plugin:
             self.nested_desktop_mouse.start()
 
     async def _unload(self):
+        if self.trackpad_metrics is not None:
+            await asyncio.to_thread(self.trackpad_metrics.stop)
         if self.nested_desktop_mouse is not None:
             await asyncio.to_thread(self.nested_desktop_mouse.stop)
         if self.keyboard is not None:
@@ -425,6 +481,399 @@ class Plugin:
         logger.info("Keyboard diagnostics: %s", payload[:4000])
         return True
 
+    async def get_developer_settings_status(self):
+        monitor = self.trackpad_metrics
+        metrics = (
+            monitor.status()
+            if monitor is not None
+            else {
+                "running": False,
+                "devicePath": "",
+                "sampleCount": 0,
+                "retainedSeconds": 0,
+                "capacitySeconds": 0,
+                "sampleRateHz": 0,
+                "latest": None,
+                "captures": [],
+                "error": "Trackpad metrics backend is unavailable",
+            }
+        )
+        return {
+            "developerMode": self.developer_mode,
+            "trackpadMetricsEnabled": self.trackpad_metrics_enabled,
+            "metrics": {
+                "available": monitor is not None,
+                **metrics,
+            },
+        }
+
+    async def set_developer_mode(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_developer_settings_status(),
+                "error": "Developer mode must be a boolean",
+            }
+        try:
+            await asyncio.to_thread(
+                self._save_developer_settings,
+                enabled,
+                self.trackpad_metrics_enabled,
+            )
+            self.developer_mode = enabled
+            await asyncio.to_thread(self._sync_trackpad_metrics)
+            logger.info(
+                "Developer mode %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_developer_settings_status()
+        except Exception as error:
+            logger.exception("Failed to change developer mode")
+            return {
+                **await self.get_developer_settings_status(),
+                "error": str(error),
+            }
+
+    async def set_trackpad_metrics_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_developer_settings_status(),
+                "error": "Trackpad metrics enabled must be a boolean",
+            }
+        if enabled and not self.developer_mode:
+            return {
+                **await self.get_developer_settings_status(),
+                "error": "Enable developer mode first",
+            }
+        try:
+            await asyncio.to_thread(
+                self._save_developer_settings,
+                self.developer_mode,
+                enabled,
+            )
+            self.trackpad_metrics_enabled = enabled
+            await asyncio.to_thread(self._sync_trackpad_metrics)
+            logger.info(
+                "Trackpad metrics collection %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_developer_settings_status()
+        except Exception as error:
+            logger.exception("Failed to change trackpad metrics collection")
+            return {
+                **await self.get_developer_settings_status(),
+                "error": str(error),
+            }
+
+    async def get_trackpad_metrics_window(
+        self,
+        capture_id: str = "",
+        max_samples: int = 600,
+    ):
+        monitor = self.trackpad_metrics
+        if monitor is None:
+            return {
+                "captureId": capture_id,
+                "sampleCount": 0,
+                "samples": [],
+                "error": "Trackpad metrics backend is unavailable",
+            }
+        if not isinstance(capture_id, str) or not isinstance(
+            max_samples,
+            int,
+        ):
+            return {
+                "captureId": "",
+                "sampleCount": 0,
+                "samples": [],
+                "error": "Invalid trackpad metrics window request",
+            }
+        try:
+            return await asyncio.to_thread(
+                monitor.window,
+                capture_id or None,
+                max_samples,
+            )
+        except Exception as error:
+            logger.exception("Failed to read trackpad metrics")
+            return {
+                "captureId": capture_id,
+                "sampleCount": 0,
+                "samples": [],
+                "error": str(error),
+            }
+
+    async def capture_trackpad_metrics(self):
+        monitor = self.trackpad_metrics
+        if monitor is None:
+            return {
+                **await self.get_developer_settings_status(),
+                "error": "Trackpad metrics backend is unavailable",
+            }
+        try:
+            await asyncio.to_thread(monitor.capture)
+            logger.info("Saved a manual trackpad metrics capture")
+            return await self.get_developer_settings_status()
+        except Exception as error:
+            logger.exception("Failed to save trackpad metrics")
+            return {
+                **await self.get_developer_settings_status(),
+                "error": str(error),
+            }
+
+    async def clear_trackpad_metrics_buffer(self):
+        monitor = self.trackpad_metrics
+        if monitor is not None:
+            await asyncio.to_thread(monitor.clear)
+        return await self.get_developer_settings_status()
+
+    async def delete_trackpad_metrics_capture(self, capture_id: str):
+        monitor = self.trackpad_metrics
+        if monitor is None:
+            return await self.get_developer_settings_status()
+        if not isinstance(capture_id, str):
+            return {
+                **await self.get_developer_settings_status(),
+                "error": "Invalid trackpad metrics capture ID",
+            }
+        try:
+            await asyncio.to_thread(monitor.delete_capture, capture_id)
+            return await self.get_developer_settings_status()
+        except Exception as error:
+            logger.exception("Failed to delete trackpad metrics capture")
+            return {
+                **await self.get_developer_settings_status(),
+                "error": str(error),
+            }
+
+    def _sync_trackpad_metrics(self):
+        monitor = self.trackpad_metrics
+        if monitor is None:
+            return
+        metrics_enabled = (
+            self.developer_mode and self.trackpad_metrics_enabled
+        )
+        configure = getattr(monitor, "configure", None)
+        if configure is not None:
+            configure(
+                metrics_enabled=metrics_enabled,
+                recovery_enabled=self.trackpad_auto_recovery_enabled,
+            )
+        elif metrics_enabled or self.trackpad_auto_recovery_enabled:
+            monitor.start()
+        else:
+            monitor.stop()
+
+    def _load_developer_settings(self) -> tuple[bool, bool]:
+        try:
+            payload = json.loads(
+                self.developer_settings_path.read_text(encoding="utf-8")
+            )
+            return (
+                payload.get("developerMode", False) is True,
+                payload.get("trackpadMetricsEnabled", False) is True,
+            )
+        except FileNotFoundError:
+            return False, False
+        except Exception:
+            logger.exception("Failed to read developer settings")
+            return False, False
+
+    def _save_developer_settings(
+        self,
+        developer_mode: bool,
+        trackpad_metrics_enabled: bool,
+    ):
+        path = self.developer_settings_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "developerMode": developer_mode,
+                    "trackpadMetricsEnabled": trackpad_metrics_enabled,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+
+    async def get_controller_status(self):
+        monitor = self.trackpad_metrics
+        recovery = (
+            monitor.recovery_status()
+            if monitor is not None
+            else {
+                "enabled": self.trackpad_auto_recovery_enabled,
+                "monitoring": False,
+                "armed": False,
+                "pending": False,
+                "lastAttemptAtMs": 0,
+                "lastSuccessAtMs": 0,
+                "successCount": 0,
+                "error": "Trackpad recovery backend is unavailable",
+            }
+        )
+        return {
+            "available": monitor is not None,
+            "autoRecoveryEnabled": self.trackpad_auto_recovery_enabled,
+            **recovery,
+        }
+
+    async def set_trackpad_auto_recovery_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_controller_status(),
+                "error": "Trackpad auto-recovery enabled must be a boolean",
+            }
+        try:
+            await asyncio.to_thread(
+                self._save_controller_settings,
+                enabled,
+            )
+            self.trackpad_auto_recovery_enabled = enabled
+            await asyncio.to_thread(self._sync_trackpad_metrics)
+            logger.info(
+                "Trackpad auto-recovery %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_controller_status()
+        except Exception as error:
+            logger.exception("Failed to change trackpad auto-recovery")
+            return {
+                **await self.get_controller_status(),
+                "error": str(error),
+            }
+
+    async def reinitialize_trackpad_controller(self):
+        try:
+            path = await asyncio.to_thread(
+                self._reinitialize_trackpad_controller,
+            )
+            return {
+                **await self.get_controller_status(),
+                "devicePath": str(path),
+            }
+        except Exception as error:
+            logger.exception("Failed to reinitialize the trackpad controller")
+            return {
+                **await self.get_controller_status(),
+                "error": str(error),
+            }
+
+    async def power_cycle_trackpad_controller(self, force: bool = False):
+        if not isinstance(force, bool):
+            return {
+                **await self.get_controller_status(),
+                "error": "Force must be a boolean",
+            }
+        try:
+            path = await asyncio.to_thread(
+                self._power_cycle_trackpad_controller,
+                force,
+            )
+            status = await self.get_controller_status()
+            status.pop("error", None)
+            return {**status, "devicePath": str(path)}
+        except Exception as error:
+            logger.exception("Failed to power-cycle the trackpad controller")
+            return {
+                **await self.get_controller_status(),
+                "error": str(error),
+            }
+
+    def _load_controller_settings(self) -> bool:
+        try:
+            payload = json.loads(
+                self.controller_settings_path.read_text(encoding="utf-8")
+            )
+            return payload.get("trackpadAutoRecoveryEnabled", True) is not False
+        except FileNotFoundError:
+            return True
+        except Exception:
+            logger.exception("Failed to read controller settings")
+            return True
+
+    def _save_controller_settings(self, enabled: bool):
+        path = self.controller_settings_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(
+                {"trackpadAutoRecoveryEnabled": enabled},
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+
+    def _recover_trackpad_controller(self, request_id: int) -> bool:
+        path = self._power_cycle_trackpad_controller()
+        logger.info(
+            "Trackpad recovery request %d power-cycled USB controller at %s",
+            request_id,
+            path,
+        )
+        return True
+
+    def _reinitialize_trackpad_controller(self) -> Path:
+        reinitializer = reinitialize_steam_deck_trackpad_driver
+        if reinitializer is None:
+            raise RuntimeError(
+                "Trackpad controller recovery backend is unavailable"
+            )
+        monitor = self.trackpad_metrics
+        if monitor is not None:
+            with monitor.lock:
+                sample = monitor.raw_latest
+            if sample is not None and (
+                sample.left_touched
+                or sample.left_pressed
+                or sample.left_pressure > 0
+                or sample.right_touched
+                or sample.right_pressed
+                or sample.right_pressure > 0
+            ):
+                raise RuntimeError(
+                    "Release both trackpads before reinitialization"
+                )
+        device_path = (
+            monitor.device_path
+            if monitor is not None
+            else None
+        )
+        return reinitializer(device_path=device_path)
+
+    def _power_cycle_trackpad_controller(
+        self,
+        force: bool = False,
+    ) -> Path:
+        power_cycler = power_cycle_steam_deck_controller
+        if power_cycler is None:
+            raise RuntimeError(
+                "Trackpad controller USB recovery backend is unavailable"
+            )
+        monitor = self.trackpad_metrics
+        device_path = None
+        if monitor is not None:
+            with monitor.lock:
+                sample = monitor.raw_latest
+                device_path = monitor.device_path
+            if not force and sample is not None and (
+                sample.left_touched
+                or sample.left_pressed
+                or sample.left_pressure > 0
+                or sample.right_touched
+                or sample.right_pressed
+                or sample.right_pressure > 0
+            ):
+                raise RuntimeError(
+                    "Release both trackpads before the USB power cycle"
+                )
+        return power_cycler(device_path=device_path)
+
     def _on_nested_desktop_action(self, action: str):
         if action not in {"HIDE_KEYBOARD", "SHOW_KEYBOARD"}:
             return
@@ -453,6 +902,9 @@ class Plugin:
             ),
             "rustDeskScrollInertiaEnabled": (
                 self.rustdesk_scroll_inertia_enabled
+            ),
+            "rustDeskFocusOnInputEnabled": (
+                self.rustdesk_focus_on_input_enabled
             ),
             "running": bridge.running() if bridge is not None else False,
             "suspended": self.nested_desktop_keyboard_visible,
@@ -628,6 +1080,48 @@ class Plugin:
                 "error": str(error),
             }
 
+    async def set_rustdesk_focus_on_input_enabled(
+        self,
+        enabled: bool,
+    ):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": (
+                    "RustDesk focus on input enabled must be a boolean"
+                ),
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                self.nested_desktop_mouse_enabled,
+                self.nested_desktop_mouse_inertia_enabled,
+                self.nested_desktop_bindings_enabled,
+                self.nested_desktop_bindings,
+                self.rustdesk_pointer_fix_enabled,
+                self.rustdesk_scroll_inertia_enabled,
+                enabled,
+            )
+            self.rustdesk_focus_on_input_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_rustdesk_focus_on_input_enabled,
+                    enabled,
+                )
+            logger.info(
+                "RustDesk focus on input %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception("Failed to change RustDesk focus on input")
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
     async def _stage_rustdesk_pointer_fix(self):
         try:
             await self._install_rustdesk_pointer_fix(restart=False)
@@ -776,7 +1270,7 @@ class Plugin:
 
     def _load_nested_desktop_mouse_settings(
         self,
-    ) -> tuple[bool, bool, bool, dict[str, str], bool, bool]:
+    ) -> tuple[bool, bool, bool, dict[str, str], bool, bool, bool]:
         try:
             payload = json.loads(
                 self.nested_desktop_mouse_settings_path.read_text(
@@ -790,6 +1284,7 @@ class Plugin:
                 normalize_nested_desktop_bindings(payload.get("bindings")),
                 payload.get("rustDeskPointerFixEnabled", True) is not False,
                 payload.get("rustDeskScrollInertiaEnabled", False) is True,
+                payload.get("rustDeskFocusOnInputEnabled", False) is True,
             )
         except FileNotFoundError:
             return (
@@ -798,6 +1293,7 @@ class Plugin:
                 True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
                 True,
+                False,
                 False,
             )
         except Exception:
@@ -811,6 +1307,7 @@ class Plugin:
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
                 True,
                 False,
+                False,
             )
 
     def _save_nested_desktop_mouse_settings(
@@ -821,10 +1318,15 @@ class Plugin:
         bindings: dict[str, str],
         rustdesk_pointer_fix_enabled: bool,
         rustdesk_scroll_inertia_enabled: bool | None = None,
+        rustdesk_focus_on_input_enabled: bool | None = None,
     ):
         if rustdesk_scroll_inertia_enabled is None:
             rustdesk_scroll_inertia_enabled = (
                 self.rustdesk_scroll_inertia_enabled
+            )
+        if rustdesk_focus_on_input_enabled is None:
+            rustdesk_focus_on_input_enabled = (
+                self.rustdesk_focus_on_input_enabled
             )
         path = self.nested_desktop_mouse_settings_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -841,6 +1343,9 @@ class Plugin:
                     ),
                     "rustDeskScrollInertiaEnabled": (
                         rustdesk_scroll_inertia_enabled
+                    ),
+                    "rustDeskFocusOnInputEnabled": (
+                        rustdesk_focus_on_input_enabled
                     ),
                 },
                 indent=2,
