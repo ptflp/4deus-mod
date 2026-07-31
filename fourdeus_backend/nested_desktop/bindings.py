@@ -76,7 +76,7 @@ def should_forward_pointer(
     session_app_id: int,
     focused_app: Sequence[int],
     focused_gfx_app: Sequence[int],
-    focusable_apps: Sequence[int],
+    proton_app_ids: Sequence[int],
     mouse_focus_display: Sequence[int],
 ) -> bool:
     if not should_forward_back_button(
@@ -87,7 +87,7 @@ def should_forward_pointer(
     ):
         return False
     ignored = {0, STEAM_UI_APP_ID, session_app_id}
-    return any(app_id not in ignored for app_id in focusable_apps)
+    return any(app_id not in ignored for app_id in proton_app_ids)
 
 def should_forward_back_button(
     session_app_id: int,

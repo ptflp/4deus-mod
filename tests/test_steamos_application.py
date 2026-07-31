@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -131,6 +133,16 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
         self.assertEqual(
             (grid / "777_logo.png").read_bytes(),
             b"logo.png",
+        )
+        self.assertEqual(
+            base64.b64decode(result["liveArtwork"]["grid"]),
+            b"grid.png",
+        )
+        self.assertEqual(
+            json.loads((grid / "777.json").read_text(encoding="utf-8"))[
+                "logoPosition"
+            ]["pinnedPosition"],
+            "BottomLeft",
         )
 
     def test_install_artwork_uses_most_recent_userdata_as_fallback(self):

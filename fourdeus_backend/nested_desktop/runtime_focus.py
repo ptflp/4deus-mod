@@ -12,6 +12,7 @@ from .constants import (
     FOCUS_SNAPSHOT_FALLBACK_INTERVAL, IDLE_INPUT_FRAME_INTERVAL,
     RUSTDESK_ACTIVE_CONNECTION_CHECK_INTERVAL,
     RUSTDESK_CONNECTION_CHECK_INTERVAL, RUSTDESK_CONNECTION_STALE_GRACE,
+    STEAM_UI_APP_ID,
 )
 from .discovery import (
     ensure_nested_wayland_alias, find_nested_desktop_session,
@@ -50,6 +51,8 @@ class RuntimeFocusMixin:
             self._set_cursor_overlay(False)
             self._close_cursor_overlay()
             self.cursor_overlay_failed_session_pid = None
+            self.proton_focusable_windows = ()
+            self.proton_focusable_app_ids = ()
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             self._set_touch_forwarding(False)
@@ -213,17 +216,63 @@ class RuntimeFocusMixin:
             and now < self.next_focus_snapshot_refresh
         ):
             return self.focus_snapshot
+        focusable_windows = tuple(
+            outer_x11.cardinals("GAMESCOPE_FOCUSABLE_WINDOWS")
+        )
         snapshot = (
             tuple(outer_x11.cardinals("GAMESCOPE_FOCUSED_APP")),
             tuple(outer_x11.cardinals("GAMESCOPE_FOCUSED_APP_GFX")),
             tuple(outer_x11.cardinals("GAMESCOPE_MOUSE_FOCUS_DISPLAY")),
-            tuple(outer_x11.cardinals("GAMESCOPE_FOCUSABLE_APPS")),
+            self._proton_apps_for_focusable_windows(focusable_windows),
         )
         self.focus_snapshot = snapshot
         self.next_focus_snapshot_refresh = (
             now + FOCUS_SNAPSHOT_FALLBACK_INTERVAL
         )
         return snapshot
+
+    def _proton_apps_for_focusable_windows(
+        self,
+        focusable_windows: tuple[int, ...],
+    ) -> tuple[int, ...]:
+        if focusable_windows == self.proton_focusable_windows:
+            return self.proton_focusable_app_ids
+        proton_app_ids = []
+        seen_app_ids = set()
+        session = self.session
+        ignored_app_ids = {
+            0,
+            STEAM_UI_APP_ID,
+            session.app_id if session is not None else 0,
+        }
+        for offset in range(0, len(focusable_windows) - 2, 3):
+            app_id = focusable_windows[offset + 1]
+            pid = focusable_windows[offset + 2]
+            if (
+                app_id in ignored_app_ids
+                or app_id in seen_app_ids
+                or pid <= 1
+            ):
+                continue
+            try:
+                uses_proton = self.proton_process_query(
+                    pid,
+                    self.proc_root,
+                )
+            except Exception:
+                LOGGER.debug(
+                    "Unable to classify AppID %s PID %s",
+                    app_id,
+                    pid,
+                    exc_info=True,
+                )
+                uses_proton = False
+            if uses_proton:
+                proton_app_ids.append(app_id)
+                seen_app_ids.add(app_id)
+        self.proton_focusable_windows = focusable_windows
+        self.proton_focusable_app_ids = tuple(proton_app_ids)
+        return self.proton_focusable_app_ids
 
     def _refresh_forwarding(self):
         inner_eis = self.inner_eis
@@ -255,7 +304,7 @@ class RuntimeFocusMixin:
                 focused_app,
                 focused_gfx_app,
                 mouse_focus_display,
-                focusable_apps,
+                proton_app_ids,
             ) = snapshot
             self.nested_desktop_focused = bool(
                 focused_app
@@ -267,7 +316,7 @@ class RuntimeFocusMixin:
                 app_id,
                 focused_app,
                 focused_gfx_app,
-                focusable_apps,
+                proton_app_ids,
                 mouse_focus_display,
             )
             remote_pointer_targeted = should_forward_back_button(
@@ -363,6 +412,8 @@ class RuntimeFocusMixin:
             and self.cursor_overlay_failed_session_pid == session.pid
         ):
             active = False
+        if not active:
+            self._set_gamescope_cursor_hidden(False)
         try:
             if active and overlay is None and session is not None:
                 overlay = self.cursor_overlay_factory(session)
@@ -380,6 +431,8 @@ class RuntimeFocusMixin:
                 self.cursor_overlay_failed_session_pid = session.pid
             self._close_cursor_overlay()
             active = False
+        if active:
+            self._set_gamescope_cursor_hidden(True)
         if active == self.cursor_overlay_active:
             return
         self.cursor_overlay_active = active
@@ -404,6 +457,7 @@ class RuntimeFocusMixin:
             self._close_cursor_overlay()
 
     def _close_cursor_overlay(self):
+        self._set_gamescope_cursor_hidden(False)
         overlay = self.cursor_overlay
         self.cursor_overlay = None
         self.cursor_overlay_active = False
@@ -414,6 +468,18 @@ class RuntimeFocusMixin:
         except Exception:
             LOGGER.debug(
                 "Failed to close the Nested Desktop cursor overlay",
+                exc_info=True,
+            )
+
+    def _set_gamescope_cursor_hidden(self, hidden: bool):
+        compositor = self.gamescope_cursor_compositor
+        if compositor is None:
+            return
+        try:
+            compositor.set_hidden(hidden)
+        except Exception:
+            LOGGER.warning(
+                "Unable to update the Gamescope cursor compositor",
                 exc_info=True,
             )
 

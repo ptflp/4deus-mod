@@ -193,7 +193,7 @@ class TouchscreenRuntimeTests(unittest.TestCase):
                     "GAMESCOPE_FOCUSED_APP": [2],
                     "GAMESCOPE_FOCUSED_APP_GFX": [2],
                     "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
-                    "GAMESCOPE_FOCUSABLE_APPS": [769, 2],
+                    "GAMESCOPE_FOCUSABLE_WINDOWS": [],
                 }[name]
 
         runtime = NestedDesktopMouseRuntime(

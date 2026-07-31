@@ -1,14 +1,19 @@
+import base64
 import json
+import os
 from pathlib import Path
+import runpy
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from app_bridge import AppBridgeManager, normalize_profile_id
 from steam_artwork import STEAM_ID64_BASE
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RUNNER = runpy.run_path(str(PROJECT_ROOT / "bin/4deus-app-bridge"))
 
 
 class AppBridgeTests(unittest.TestCase):
@@ -66,6 +71,20 @@ class AppBridgeTests(unittest.TestCase):
                 }
             )
 
+    def test_installed_runner_is_refreshed_without_creating_a_new_one(self):
+        self.assertFalse(self.manager.refresh_installed_runner())
+        self.manager.save_profile(
+            {
+                "name": "Example",
+                "executable": "/usr/bin/true",
+            }
+        )
+        self.manager.runner_path.write_text("outdated", encoding="utf-8")
+
+        self.assertTrue(self.manager.refresh_installed_runner())
+        self.assertTrue(self.manager._runner_is_current())
+        self.assertFalse(self.manager.refresh_installed_runner())
+
     def test_flatpak_commands_use_the_deck_user_data_directory(self):
         environment = self.manager._flatpak_environment()
 
@@ -115,6 +134,118 @@ class AppBridgeTests(unittest.TestCase):
             profile["waitForProcess"],
             "/app/extra/bin/parsecd",
         )
+        self.assertTrue(profile["sanitizeSteamOverlay"])
+
+    def test_chrome_profile_starts_the_flatpak_in_fullscreen(self):
+        with patch.object(
+            self.manager,
+            "_flatpak_installed",
+            return_value=True,
+        ):
+            prepared = self.manager.prepare_chrome()
+        profile = json.loads(
+            (self.manager.profile_dir / "chrome.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertEqual(prepared["name"], "Google Chrome")
+        self.assertEqual(prepared["aliases"], ["Chrome"])
+        self.assertNotIn("artworkId", prepared)
+        self.assertEqual(
+            profile["command"],
+            [
+                "/usr/bin/flatpak",
+                "run",
+                "--branch=stable",
+                "--arch=x86_64",
+                "--command=chrome",
+                "com.google.Chrome",
+                "--start-fullscreen",
+            ],
+        )
+        self.assertEqual(profile["workingDirectory"], str(self.home))
+        self.assertTrue(profile["clearSteamPreload"])
+        self.assertFalse(profile["sanitizeSteamOverlay"])
+        self.assertFalse(profile["forceX11"])
+
+    def test_terminal_profile_uses_konsole_without_steam_preloads(self):
+        executable = self.home / "usr/bin/konsole"
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+        manager = AppBridgeManager(
+            self.home,
+            PROJECT_ROOT,
+            terminal_executable=executable,
+        )
+
+        prepared = manager.prepare_terminal()
+        profile = json.loads(
+            (manager.profile_dir / "terminal.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertEqual(prepared["name"], "Terminal")
+        self.assertEqual(prepared["artworkId"], "terminal")
+        self.assertEqual(
+            prepared["icon"],
+            str(PROJECT_ROOT / "assets/app-bridge/terminal/icon.png"),
+        )
+        self.assertEqual(profile["command"], [str(executable)])
+        self.assertEqual(profile["workingDirectory"], str(self.home))
+        self.assertEqual(profile["waitForProcess"], str(executable))
+        self.assertTrue(profile["clearSteamPreload"])
+        self.assertFalse(profile["forceX11"])
+
+    def test_runner_removes_only_wrong_class_steam_overlay(self):
+        target = self.home / "target"
+        overlay_32 = self.home / "ubuntu12_32/gameoverlayrenderer.so"
+        overlay_64 = self.home / "ubuntu12_64/gameoverlayrenderer.so"
+        unrelated_32 = self.home / "other/preload.so"
+        for path, elf_class in (
+            (target, 2),
+            (overlay_32, 1),
+            (overlay_64, 2),
+            (unrelated_32, 1),
+        ):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"\x7fELF" + bytes([elf_class]))
+
+        preload = ":".join(
+            (str(overlay_32), str(overlay_64), str(unrelated_32))
+        )
+        with patch.dict(os.environ, {"LD_PRELOAD": preload}):
+            environment = RUNNER["build_environment"](
+                {
+                    "command": [str(target)],
+                    "sanitizeSteamOverlay": True,
+                }
+            )
+
+        self.assertEqual(
+            environment["LD_PRELOAD"],
+            f"{overlay_64}:{unrelated_32}",
+        )
+
+    def test_runner_full_cleanup_removes_preload_and_audit(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LD_PRELOAD": "/steam/gameoverlayrenderer.so",
+                "LD_AUDIT": "/steam/overlayaudit.so",
+            },
+        ):
+            environment = RUNNER["build_environment"](
+                {
+                    "command": ["/usr/bin/true"],
+                    "clearSteamPreload": True,
+                    "sanitizeSteamOverlay": True,
+                }
+            )
+
+        self.assertNotIn("LD_PRELOAD", environment)
+        self.assertNotIn("LD_AUDIT", environment)
 
     def test_rustdesk_profile_replaces_the_legacy_wrapper(self):
         application_directory = (
@@ -181,6 +312,43 @@ class AppBridgeTests(unittest.TestCase):
                         / source
                     ).read_bytes(),
                 )
+        self.assertEqual(
+            base64.b64decode(result["liveArtwork"]["hero"]),
+            (
+                PROJECT_ROOT
+                / "assets/app-bridge/parsec/hero.png"
+            ).read_bytes(),
+        )
+        self.assertEqual(
+            json.loads(result["liveLogoPosition"])["logoPosition"][
+                "pinnedPosition"
+            ],
+            "BottomLeft",
+        )
+        self.assertTrue((grid / "777.json").is_file())
+
+        custom_position = '{"nVersion":1,"custom":true}'
+        (grid / "777.json").write_text(
+            custom_position,
+            encoding="utf-8",
+        )
+        repaired = self.manager.install_artwork("parsec", 777)
+        self.assertIsNone(repaired["liveLogoPosition"])
+        self.assertEqual(
+            (grid / "777.json").read_text(encoding="utf-8"),
+            custom_position,
+        )
+
+        terminal = self.manager.install_artwork("terminal", 778)
+        self.assertEqual(terminal["artworkId"], "terminal")
+        self.assertEqual(terminal["installed"], 4)
+        self.assertEqual(
+            (grid / "778p.png").read_bytes(),
+            (
+                PROJECT_ROOT
+                / "assets/app-bridge/terminal/capsule.png"
+            ).read_bytes(),
+        )
 
     def test_artwork_is_limited_to_builtin_profiles(self):
         with self.assertRaisesRegex(ValueError, "not available"):

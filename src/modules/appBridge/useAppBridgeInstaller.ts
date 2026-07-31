@@ -2,6 +2,9 @@ import { useState } from "react";
 
 import type { Strings } from "../../core/localization";
 import type { SettingsStore } from "../../core/settings";
+import {
+  installSteamArtworkWithLiveRefresh,
+} from "../../core/steamArtwork";
 import { ensureAppBridgeShortcut } from "./steamShortcuts";
 import type {
   AppBridgeApi,
@@ -37,10 +40,12 @@ export const useAppBridgeInstaller = (
       prepared,
       shortcutIds[prepared.id],
     );
-    if (prepared.artworkId) {
-      const artwork = await api.installArtwork(prepared.artworkId, appId);
-      if (artwork.error)
-        throw new Error(artwork.error);
+    const artworkId = prepared.artworkId;
+    if (artworkId) {
+      await installSteamArtworkWithLiveRefresh(
+        appId,
+        () => api.installArtwork(artworkId, appId),
+      );
     }
     settings.updateAppBridge({
       shortcutAppIds: {

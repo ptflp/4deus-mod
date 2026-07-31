@@ -18,6 +18,7 @@ from .constants import (
     TOUCH_INERTIA_DEFAULT_MIN_DISTANCE,
     TOUCH_INERTIA_DEFAULT_START_SPEED,
 )
+from .gamescope import GamescopeCursorCompositor
 from .runtime import NestedDesktopMouseRuntime
 from .touch import TouchscreenInertiaConfig
 
@@ -96,6 +97,7 @@ def run_worker(
             if rustdesk_pointer_fix_enabled
             else None
         ),
+        gamescope_cursor_compositor=GamescopeCursorCompositor(),
     )
     runtime.run()
     return 0

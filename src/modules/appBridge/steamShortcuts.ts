@@ -28,18 +28,31 @@ const shortcutById = (appId: number | undefined): ShortcutOverview | undefined =
 export const findShortcutByName = (
   name: string,
   preferredAppId?: number,
+): ShortcutOverview | undefined => findShortcutByNames(
+  [name],
+  preferredAppId,
+);
+
+const shortcutNameMatches = (
+  shortcut: ShortcutOverview,
+  names: string[],
+): boolean => names.some((name) => shortcut.display_name.localeCompare(
+  name,
+  undefined,
+  { sensitivity: "accent" },
+) === 0);
+
+export const findShortcutByNames = (
+  names: string[],
+  preferredAppId?: number,
 ): ShortcutOverview | undefined => {
   const preferred = shortcutById(preferredAppId);
-  if (preferred?.display_name.localeCompare(name, undefined, {
-    sensitivity: "accent",
-  }) === 0) {
+  if (preferred && shortcutNameMatches(preferred, names))
     return preferred;
-  }
-  return window.appStore.allApps.find((app) =>
+  return window.appStore.allApps.find((app) => (
     app.app_type === NON_STEAM_APP_TYPE
-    && app.display_name.localeCompare(name, undefined, {
-      sensitivity: "accent",
-    }) === 0
+    && shortcutNameMatches(app, names)
+  )
   );
 };
 
@@ -123,7 +136,10 @@ export const ensureAppBridgeShortcut = async (
       ...profile,
       launchOptions: profile.id,
     },
-    findShortcutByName(profile.name, preferredAppId),
+    findShortcutByNames(
+      [profile.name, ...(profile.aliases ?? [])],
+      preferredAppId,
+    ),
   );
 };
 

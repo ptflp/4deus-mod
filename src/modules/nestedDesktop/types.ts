@@ -1,3 +1,4 @@
+import type { SteamArtworkPayload } from "../../core/steamArtwork";
 import type {
   NestedDesktopBindingAction,
   NestedDesktopBindings,
@@ -39,6 +40,8 @@ export interface SteamOsArtworkResult {
   error?: string;
   gridDirectory?: string;
   installed: number;
+  liveArtwork?: SteamArtworkPayload;
+  liveLogoPosition?: string;
   preserved: number;
 }
 

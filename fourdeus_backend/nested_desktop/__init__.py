@@ -13,9 +13,13 @@ from .cursor import (
 from .discovery import (
     ensure_nested_wayland_alias, find_nested_desktop_session,
     find_rustdesk_joystick, find_rustdesk_keyboard, find_steam_deck_hidraw,
-    find_steam_deck_touchscreen, remove_nested_wayland_alias,
+    find_steam_deck_touchscreen, process_uses_proton,
+    remove_nested_wayland_alias,
 )
 from .eis import EisConnection
+from .gamescope import (
+    GamescopeCursorCompositor, set_gamescope_cursor_composite,
+)
 from .models import (
     BindingUpdate, CursorSnapshot, JoystickEvent, LinuxInputEvent,
     NestedDesktopSession, PointerUpdate, TouchFrame, TouchUpdate,
@@ -72,6 +76,7 @@ __all__ = [
     'FOCUS_SNAPSHOT_FALLBACK_INTERVAL',
     'GAMESCOPE_FOCUS_EVENT_PROPERTIES',
     'GAMESCOPE_FOCUS_PROPERTIES',
+    'GamescopeCursorCompositor',
     'IDLE_INPUT_FRAME_INTERVAL',
     'INPUT_FRAME_INTERVAL',
     'InputBindingTranslator',
@@ -195,10 +200,12 @@ __all__ = [
     'parse_linux_input_events',
     'parse_trackpad_report',
     'prioritize_focus_app',
+    'process_uses_proton',
     'query_rustdesk_video_connection_count',
     'receive_rustdesk_ipc_frame',
     'remove_nested_wayland_alias',
     'run_worker',
+    'set_gamescope_cursor_composite',
     'should_forward_back_button',
     'should_forward_pointer',
 ]

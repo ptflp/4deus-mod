@@ -13,9 +13,20 @@ from steam_artwork import SteamArtworkInstaller
 
 
 PROFILE_VERSION = 1
+CHROME_APP_ID = "com.google.Chrome"
+CHROME_PROFILE_ID = "chrome"
 PARSEC_APP_ID = "com.parsecgaming.parsec"
 PARSEC_PROFILE_ID = "parsec"
 RUSTDESK_PROFILE_ID = "rustdesk"
+TERMINAL_EXECUTABLE = Path("/usr/bin/konsole")
+TERMINAL_PROFILE_ID = "terminal"
+TERMINAL_SYSTEM_ICON_PATHS = (
+    Path("/usr/share/icons/breeze/apps/64/utilities-terminal.svg"),
+    Path(
+        "/usr/share/icons/AdwaitaLegacy/48x48/legacy/"
+        "utilities-terminal.png"
+    ),
+)
 PROFILE_ID_PATTERN = re.compile(r"[^a-z0-9-]+")
 DESKTOP_FIELD_CODE_PATTERN = re.compile(r"^%[fFuUdDnNickvm]$")
 
@@ -44,7 +55,13 @@ def _desktop_command(raw: str) -> tuple[str, str] | None:
 
 
 class AppBridgeManager:
-    def __init__(self, home: Path, plugin_root: Path):
+    def __init__(
+        self,
+        home: Path,
+        plugin_root: Path,
+        *,
+        terminal_executable: Path = TERMINAL_EXECUTABLE,
+    ):
         self.home = Path(home)
         self.plugin_root = Path(plugin_root)
         self.data_dir = self.home / ".local/share/4deus-mod/app-bridge"
@@ -53,12 +70,17 @@ class AppBridgeManager:
         self.runner_path = self.home / ".local/bin/4deus-app-bridge"
         self.artwork_root = self.plugin_root / "assets/app-bridge"
         self.artwork_installer = SteamArtworkInstaller(self.home)
+        self.terminal_executable = Path(terminal_executable)
 
     def status(self) -> dict[str, Any]:
         rustdesk_executable = self._rustdesk_directory() / "rustdesk"
         return {
             "launcherInstalled": self._runner_is_current(),
             "launcherPath": str(self.runner_path),
+            "chromeInstalled": self._flatpak_installed(CHROME_APP_ID),
+            "chromeProfileInstalled": (
+                self.profile_dir / f"{CHROME_PROFILE_ID}.json"
+            ).is_file(),
             "parsecInstalled": self._flatpak_installed(PARSEC_APP_ID),
             "parsecProfileInstalled": (
                 self.profile_dir / f"{PARSEC_PROFILE_ID}.json"
@@ -66,6 +88,10 @@ class AppBridgeManager:
             "rustdeskInstalled": rustdesk_executable.is_file(),
             "rustdeskProfileInstalled": (
                 self.profile_dir / f"{RUSTDESK_PROFILE_ID}.json"
+            ).is_file(),
+            "terminalInstalled": self.terminal_executable.is_file(),
+            "terminalProfileInstalled": (
+                self.profile_dir / f"{TERMINAL_PROFILE_ID}.json"
             ).is_file(),
         }
 
@@ -108,11 +134,35 @@ class AppBridgeManager:
                 "icon": str(icon) if icon else "",
                 "waitForProcess": "/app/extra/bin/parsecd",
                 "clearSteamPreload": False,
+                "sanitizeSteamOverlay": True,
                 "forceX11": False,
                 "libraryPath": "",
             }
         )
         return {**prepared, "artworkId": PARSEC_PROFILE_ID}
+
+    def prepare_chrome(self) -> dict[str, Any]:
+        if not self._flatpak_installed(CHROME_APP_ID):
+            raise FileNotFoundError("Google Chrome installation was not found")
+        prepared = self.save_profile(
+            {
+                "id": CHROME_PROFILE_ID,
+                "name": "Google Chrome",
+                "executable": "/usr/bin/flatpak",
+                "arguments": (
+                    "run --branch=stable --arch=x86_64 --command=chrome "
+                    f"{CHROME_APP_ID} --start-fullscreen"
+                ),
+                "workingDirectory": str(self.home),
+                "icon": self._resolve_icon(CHROME_APP_ID),
+                "waitForProcess": "",
+                "clearSteamPreload": True,
+                "sanitizeSteamOverlay": False,
+                "forceX11": False,
+                "libraryPath": "",
+            }
+        )
+        return {**prepared, "aliases": ["Chrome"]}
 
     def prepare_rustdesk(self) -> dict[str, Any]:
         application_directory = self._rustdesk_directory()
@@ -140,12 +190,41 @@ class AppBridgeManager:
         )
         return {**prepared, "artworkId": RUSTDESK_PROFILE_ID}
 
+    def prepare_terminal(self) -> dict[str, Any]:
+        if not self.terminal_executable.is_file():
+            raise FileNotFoundError("Konsole installation was not found")
+        bundled_icon = (
+            self.artwork_root / TERMINAL_PROFILE_ID / "icon.png"
+        )
+        icon = self._first_existing(
+            [bundled_icon, *TERMINAL_SYSTEM_ICON_PATHS]
+        )
+        prepared = self.save_profile(
+            {
+                "id": TERMINAL_PROFILE_ID,
+                "name": "Terminal",
+                "executable": str(self.terminal_executable),
+                "arguments": "",
+                "workingDirectory": str(self.home),
+                "icon": str(icon) if icon else "",
+                "waitForProcess": str(self.terminal_executable),
+                "clearSteamPreload": True,
+                "forceX11": False,
+                "libraryPath": "",
+            }
+        )
+        return {**prepared, "artworkId": TERMINAL_PROFILE_ID}
+
     def install_artwork(
         self,
         artwork_id: str,
         app_id: int,
     ) -> dict[str, Any]:
-        if artwork_id not in (PARSEC_PROFILE_ID, RUSTDESK_PROFILE_ID):
+        if artwork_id not in (
+            PARSEC_PROFILE_ID,
+            RUSTDESK_PROFILE_ID,
+            TERMINAL_PROFILE_ID,
+        ):
             raise ValueError("Artwork is not available for this profile")
         asset_directory = self.artwork_root / artwork_id
         sources = {
@@ -190,6 +269,7 @@ class AppBridgeManager:
 
         working_directory = _clean_text(raw.get("workingDirectory"))
         icon = _clean_text(raw.get("icon"))
+        clear_steam_preload = bool(raw.get("clearSteamPreload"))
         profile = {
             "version": PROFILE_VERSION,
             "id": profile_id,
@@ -198,7 +278,11 @@ class AppBridgeManager:
             "workingDirectory": working_directory,
             "icon": icon,
             "waitForProcess": _clean_text(raw.get("waitForProcess"), 512),
-            "clearSteamPreload": bool(raw.get("clearSteamPreload")),
+            "clearSteamPreload": clear_steam_preload,
+            "sanitizeSteamOverlay": (
+                bool(raw.get("sanitizeSteamOverlay"))
+                and not clear_steam_preload
+            ),
             "forceX11": bool(raw.get("forceX11")),
             "libraryPath": _clean_text(raw.get("libraryPath")),
         }
@@ -232,6 +316,12 @@ class AppBridgeManager:
         shutil.copyfile(self.runner_source, temporary)
         temporary.chmod(0o755)
         os.replace(temporary, self.runner_path)
+
+    def refresh_installed_runner(self) -> bool:
+        if not self.runner_path.is_file() or self._runner_is_current():
+            return False
+        self._install_runner()
+        return True
 
     def _rustdesk_directory(self) -> Path:
         return self.home / "Applications/RustDesk/usr/share/rustdesk"

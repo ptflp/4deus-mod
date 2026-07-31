@@ -34,6 +34,15 @@ class SystemToolsEndpointsMixin:
             logger.exception("Failed to prepare Parsec App Bridge profile")
             return {"error": str(error)}
 
+    async def prepare_chrome_app_bridge(self):
+        if self.app_bridge is None:
+            return {"error": "App Bridge backend is unavailable"}
+        try:
+            return await asyncio.to_thread(self.app_bridge.prepare_chrome)
+        except Exception as error:
+            logger.exception("Failed to prepare Google Chrome App Bridge profile")
+            return {"error": str(error)}
+
     async def prepare_rustdesk_app_bridge(self):
         if self.app_bridge is None:
             return {"error": "App Bridge backend is unavailable"}
@@ -44,6 +53,15 @@ class SystemToolsEndpointsMixin:
             return prepared
         except Exception as error:
             logger.exception("Failed to prepare RustDesk App Bridge profile")
+            return {"error": str(error)}
+
+    async def prepare_terminal_app_bridge(self):
+        if self.app_bridge is None:
+            return {"error": "App Bridge backend is unavailable"}
+        try:
+            return self.app_bridge.prepare_terminal()
+        except Exception as error:
+            logger.exception("Failed to prepare Terminal App Bridge profile")
             return {"error": str(error)}
 
     async def install_app_bridge_artwork(

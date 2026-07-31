@@ -1,3 +1,5 @@
+import type { SteamArtworkPayload } from "../../core/steamArtwork";
+
 export interface AppBridgeApplication {
   arguments: string;
   executable: string;
@@ -22,6 +24,7 @@ export interface AppBridgeProfileDraft {
 }
 
 export interface PreparedAppBridgeProfile {
+  aliases?: string[];
   artworkId?: string;
   error?: string;
   icon: string;
@@ -36,16 +39,22 @@ export interface AppBridgeArtworkResult {
   error?: string;
   gridDirectory?: string;
   installed: number;
+  liveArtwork?: SteamArtworkPayload;
+  liveLogoPosition?: string;
   preserved: number;
 }
 
 export interface AppBridgeStatus {
+  chromeInstalled: boolean;
+  chromeProfileInstalled: boolean;
   launcherInstalled: boolean;
   launcherPath: string;
   parsecInstalled: boolean;
   parsecProfileInstalled: boolean;
   rustdeskInstalled: boolean;
   rustdeskProfileInstalled: boolean;
+  terminalInstalled: boolean;
+  terminalProfileInstalled: boolean;
 }
 
 export interface AppBridgeApi {
@@ -55,8 +64,10 @@ export interface AppBridgeApi {
     appId: number,
   ): Promise<AppBridgeArtworkResult>;
   listApplications(): Promise<AppBridgeApplication[]>;
+  prepareChrome(): Promise<PreparedAppBridgeProfile>;
   prepareParsec(): Promise<PreparedAppBridgeProfile>;
   prepareRustDesk(): Promise<PreparedAppBridgeProfile>;
+  prepareTerminal(): Promise<PreparedAppBridgeProfile>;
   saveProfile(
     profile: AppBridgeProfileDraft,
   ): Promise<PreparedAppBridgeProfile>;

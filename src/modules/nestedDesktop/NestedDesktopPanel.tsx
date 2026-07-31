@@ -8,6 +8,9 @@ import { useEffect, useState } from "react";
 import { useStrings, type Strings } from "../../core/localization";
 import type { SettingsStore } from "../../core/settings";
 import {
+  installSteamArtworkWithLiveRefresh,
+} from "../../core/steamArtwork";
+import {
   ensureSteamOsShortcut,
   findSteamOsShortcut,
 } from "../appBridge/steamShortcuts";
@@ -72,9 +75,10 @@ export const NestedDesktopPanel = ({
       if (profile.error)
         throw new Error(profile.error);
       const appId = await ensureSteamOsShortcut(profile);
-      const artwork = await api.installSteamOsApplicationArtwork(appId);
-      if (artwork.error)
-        throw new Error(artwork.error);
+      await installSteamArtworkWithLiveRefresh(
+        appId,
+        () => api.installSteamOsApplicationArtwork(appId),
+      );
       setSteamOsStatus(profile);
       setShortcutAppId(appId);
       setSteamOsMessage(strings.steamOsApplicationReady);

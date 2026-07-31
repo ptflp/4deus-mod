@@ -58,6 +58,76 @@ def _read_parent_pid(process_directory: Path) -> int | None:
                 return None
     return None
 
+def _command_uses_proton(arguments: Sequence[str]) -> bool:
+    for argument in arguments:
+        normalized = argument.replace("\\", "/").casefold()
+        executable = normalized.rsplit("/", 1)[-1]
+        if executable in (
+            "proton",
+            "wine",
+            "wine64",
+            "wine-preloader",
+            "wine64-preloader",
+            "wineserver",
+        ):
+            return True
+        if executable.startswith("proton-"):
+            return True
+    return False
+
+def _environment_uses_proton(environment: dict[str, str]) -> bool:
+    if any(
+        key == "WINEPREFIX" or key.startswith("PROTON_")
+        for key in environment
+    ):
+        return True
+    for key in (
+        "STEAM_COMPAT_TOOL_PATHS",
+        "STEAM_COMPAT_MOUNTS",
+    ):
+        value = environment.get(key, "").replace("\\", "/").casefold()
+        if any(
+            component == "proton" or component.startswith("proton ")
+            for component in value.split("/")
+        ):
+            return True
+    return False
+
+def process_uses_proton(
+    pid: int,
+    proc_root: Path = Path("/proc"),
+    maximum_depth: int = 32,
+) -> bool:
+    """Detect a live Proton/Wine payload through its process ancestry."""
+    current_pid = pid
+    visited: set[int] = set()
+    for _ in range(maximum_depth):
+        if current_pid <= 1 or current_pid in visited:
+            return False
+        visited.add(current_pid)
+        process_directory = proc_root / str(current_pid)
+        if _command_uses_proton(
+            _read_cmdline(process_directory / "cmdline")
+        ):
+            return True
+        if _environment_uses_proton(
+            _read_environ(process_directory / "environ")
+        ):
+            return True
+        try:
+            executable = (process_directory / "exe").readlink()
+        except (FileNotFoundError, PermissionError, OSError):
+            executable = None
+        if executable is not None and _command_uses_proton(
+            (str(executable),)
+        ):
+            return True
+        parent_pid = _read_parent_pid(process_directory)
+        if parent_pid is None or parent_pid == current_pid:
+            return False
+        current_pid = parent_pid
+    return False
+
 def _option_value(arguments: Sequence[str], name: str) -> str | None:
     for index, argument in enumerate(arguments):
         if argument == name and index + 1 < len(arguments):

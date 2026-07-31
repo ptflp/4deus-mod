@@ -20,8 +20,9 @@ from .constants import (
     RUSTDESK_FOCUS_REQUEST_COOLDOWN,
 )
 from .cursor import NestedDesktopCursorOverlay
-from .discovery import remove_nested_wayland_alias
+from .discovery import process_uses_proton, remove_nested_wayland_alias
 from .eis import EisConnection
+from .gamescope import GamescopeCursorCompositor
 from .models import NestedDesktopSession
 from .runtime_focus import RuntimeFocusMixin
 from .runtime_hid import RuntimeHidInputMixin
@@ -77,6 +78,12 @@ class NestedDesktopMouseRuntime(
         ) = None,
         cursor_overlay_factory: (
             Callable[[NestedDesktopSession], object] | None
+        ) = None,
+        proton_process_query: (
+            Callable[[int, Path], bool] | None
+        ) = None,
+        gamescope_cursor_compositor: (
+            GamescopeCursorCompositor | None
         ) = None,
     ):
         self.stop_event = stop_event
@@ -142,6 +149,14 @@ class NestedDesktopMouseRuntime(
         self.cursor_overlay = None
         self.cursor_overlay_active = False
         self.cursor_overlay_failed_session_pid: int | None = None
+        self.proton_process_query = (
+            proton_process_query or process_uses_proton
+        )
+        self.proton_focusable_windows: tuple[int, ...] = ()
+        self.proton_focusable_app_ids: tuple[int, ...] = ()
+        self.gamescope_cursor_compositor = (
+            gamescope_cursor_compositor
+        )
         self.translator = TrackpadTranslator(
             inertia_enabled=inertia_enabled,
         )
@@ -207,6 +222,8 @@ class NestedDesktopMouseRuntime(
         finally:
             self._set_cursor_overlay(False)
             self._close_cursor_overlay()
+            if self.gamescope_cursor_compositor is not None:
+                self.gamescope_cursor_compositor.close()
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             self._set_remote_forwarding(False)

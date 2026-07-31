@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1250" height="300" viewBox="0 0 1250 300">
+  <defs>
+    <linearGradient id="terminal-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34f5d0"/>
+      <stop offset="0.55" stop-color="#16cbea"/>
+      <stop offset="1" stop-color="#7168ff"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(18 24)">
+    <rect x="0" y="0" width="252" height="252" rx="48" fill="#03111f" fill-opacity="0.82" stroke="url(#terminal-gradient)" stroke-width="13"/>
+    <path d="M60 72l64 54-64 54" fill="none" stroke="#39f4ce" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M139 188h60" fill="none" stroke="#20cce9" stroke-width="22" stroke-linecap="round"/>
+  </g>
+  <text x="320" y="199" fill="#ffffff" font-family="Noto Sans Mono, monospace" font-size="150" font-weight="700" letter-spacing="8">TERMINAL</text>
+</svg>

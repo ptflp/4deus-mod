@@ -42,6 +42,10 @@ export interface Strings {
   addOrFixParsec: string;
   appBridgeRustDeskDescription: string;
   addOrFixRustDesk: string;
+  appBridgeTerminalDescription: string;
+  addOrFixTerminal: string;
+  appBridgeChromeDescription: string;
+  addOrFixChrome: string;
   appBridgeApplications: string;
   appBridgeSelectApplication: string;
   appBridgeLoadApplications: string;
@@ -250,6 +254,10 @@ type Values = [
   trackpadMetricsJournal?: string,
   trackpadMetricsToggleConfirmation?: string,
   trackpadMetricsConfirm?: string,
+  appBridgeTerminalDescription?: string,
+  addOrFixTerminal?: string,
+  appBridgeChromeDescription?: string,
+  addOrFixChrome?: string,
 ];
 
 const define = ([
@@ -349,6 +357,10 @@ const define = ([
   trackpadMetricsJournal = "Automatic journal",
   trackpadMetricsToggleConfirmation = "Confirm changing trackpad metrics collection. The confirmation button unlocks after five seconds.",
   trackpadMetricsConfirm = "Confirm",
+  appBridgeTerminalDescription = "Add a Gaming Mode terminal powered by Konsole with Steam runtime noise removed",
+  addOrFixTerminal = "Add / Fix Terminal",
+  appBridgeChromeDescription = "Add or repair Google Chrome and launch it directly in browser fullscreen",
+  addOrFixChrome = "Add / Fix Google Chrome",
 ]: Values): Strings => ({
   keyboard,
   enabled,
@@ -402,6 +414,10 @@ const define = ([
   appBridgeReady,
   appBridgeRustDeskDescription,
   addOrFixRustDesk,
+  appBridgeTerminalDescription,
+  addOrFixTerminal,
+  appBridgeChromeDescription,
+  addOrFixChrome,
   systemTools: "System Tools",
   systemToolsDescription: "Install and manage narrowly scoped system fixes",
   systemToolsStatus: "Status",

@@ -193,6 +193,15 @@ class Plugin(
             and self.rustdesk_pointer_fix_enabled
         ):
             await self._stage_rustdesk_pointer_fix()
+        if self.app_bridge is not None:
+            try:
+                refreshed = await asyncio.to_thread(
+                    self.app_bridge.refresh_installed_runner
+                )
+                if refreshed:
+                    logger.info("Refreshed the installed App Bridge runner")
+            except Exception:
+                logger.exception("Failed to refresh the App Bridge runner")
         if self.nested_desktop_module_enabled:
             await self._refresh_installed_steamos_wrapper()
         self._sync_trackpad_metrics()

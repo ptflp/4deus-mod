@@ -10,6 +10,9 @@ import time
 
 RUNNER_VERSION = 1
 PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+ELF_MAGIC = b"\x7fELF"
+ELF_CLASS_32 = 1
+ELF_CLASS_64 = 2
 
 
 def matching_processes(pattern: str) -> set[int]:
@@ -53,11 +56,62 @@ def load_profile(profile_id: str) -> dict:
     return profile
 
 
+def elf_class(path: Path) -> int | None:
+    try:
+        header = path.read_bytes()[:5]
+    except OSError:
+        return None
+    if len(header) != 5 or not header.startswith(ELF_MAGIC):
+        return None
+    return header[4] if header[4] in (ELF_CLASS_32, ELF_CLASS_64) else None
+
+
+def is_steam_overlay(path: Path) -> bool:
+    return (
+        path.name == "gameoverlayrenderer.so"
+        and path.parent.name in {"ubuntu12_32", "ubuntu12_64"}
+    )
+
+
+def sanitize_steam_overlay_preload(
+    environment: dict[str, str],
+    command: list[str],
+) -> None:
+    preload = environment.get("LD_PRELOAD")
+    target_class = elf_class(Path(command[0])) if command else None
+    if not preload or target_class is None:
+        return
+
+    compatible: list[str] = []
+    for value in re.split(r"[:\s]+", preload):
+        if not value:
+            continue
+        path = Path(value)
+        preload_class = elf_class(path)
+        if (
+            is_steam_overlay(path)
+            and preload_class is not None
+            and preload_class != target_class
+        ):
+            continue
+        compatible.append(value)
+
+    if compatible:
+        environment["LD_PRELOAD"] = ":".join(compatible)
+    else:
+        environment.pop("LD_PRELOAD", None)
+
+
 def build_environment(profile: dict) -> dict[str, str]:
     environment = os.environ.copy()
     if profile.get("clearSteamPreload"):
         environment.pop("LD_PRELOAD", None)
         environment.pop("LD_AUDIT", None)
+    elif profile.get("sanitizeSteamOverlay"):
+        sanitize_steam_overlay_preload(
+            environment,
+            profile.get("command", []),
+        )
     library_path = profile.get("libraryPath")
     if isinstance(library_path, str) and library_path:
         current = environment.get("LD_LIBRARY_PATH", "")

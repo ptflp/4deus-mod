@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 from pathlib import Path
 import re
@@ -15,6 +17,14 @@ ARTWORK_DESTINATIONS = {
     "grid": "{app_id}.png",
     "hero": "{app_id}_hero.png",
     "logo": "{app_id}_logo.png",
+}
+DEFAULT_LOGO_POSITION = {
+    "nVersion": 1,
+    "logoPosition": {
+        "pinnedPosition": "BottomLeft",
+        "nWidthPct": 50,
+        "nHeightPct": 50,
+    },
 }
 
 
@@ -64,12 +74,55 @@ class SteamArtworkInstaller:
             os.replace(temporary, destination)
             installed += 1
 
+        live_logo_position = self._ensure_logo_position(
+            grid_directory,
+            app_id,
+            sources.get("logo"),
+        )
         return {
             "gridDirectory": str(grid_directory),
             "installed": installed,
+            "liveArtwork": self._encode_sources(sources),
+            "liveLogoPosition": live_logo_position,
             "preserved": preserved,
             "replaced": replaced,
         }
+
+    @staticmethod
+    def _ensure_logo_position(
+        grid_directory: Path,
+        app_id: int,
+        logo: Path | None,
+    ) -> str | None:
+        if logo is None or not logo.is_file():
+            return None
+        destination = grid_directory / f"{app_id}.json"
+        if destination.exists():
+            return None
+        contents = json.dumps(DEFAULT_LOGO_POSITION, separators=(",", ":"))
+        temporary = destination.with_name(
+            f".{destination.name}.4deus-mod.tmp"
+        )
+        temporary.write_text(contents, encoding="utf-8")
+        temporary.chmod(0o644)
+        os.replace(temporary, destination)
+        return contents
+
+    @staticmethod
+    def _encode_sources(
+        sources: Mapping[str, Path | None],
+    ) -> dict[str, str]:
+        encoded: dict[str, str] = {}
+        for slot in ARTWORK_DESTINATIONS:
+            source = sources.get(slot)
+            if source is None or not source.is_file():
+                continue
+            try:
+                contents = source.read_bytes()
+            except OSError:
+                continue
+            encoded[slot] = base64.b64encode(contents).decode("ascii")
+        return encoded
 
     @staticmethod
     def _validate_app_id(app_id: int) -> None:

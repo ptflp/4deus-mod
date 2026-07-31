@@ -77,6 +77,34 @@ test("App Bridge honors a remembered shortcut ID", () => {
   assert.equal(findShortcutByName("Missing", 42), undefined);
 });
 
+test("App Bridge reuses an alternative Chrome shortcut name", async () => {
+  const { calls } = installWindowMock(false);
+  window.appStore.allApps.push({
+    appid: 88,
+    app_type: NON_STEAM_APP_TYPE,
+    display_name: "Chrome",
+  });
+
+  const appId = await ensureAppBridgeShortcut({
+    aliases: ["Chrome"],
+    icon: "/icons/chrome.svg",
+    id: "chrome",
+    launcherPath: "/home/deck/.local/bin/4deus-app-bridge",
+    name: "Google Chrome",
+    startDirectory: "/home/deck",
+  });
+
+  assert.equal(appId, 88);
+  assert.equal(calls.some(([method]) => method === "add"), false);
+  assert.deepEqual(calls, [
+    ["name", 88, "Google Chrome"],
+    ["exe", 88, "/home/deck/.local/bin/4deus-app-bridge"],
+    ["directory", 88, "/home/deck"],
+    ["options", 88, "chrome"],
+    ["icon", 88, "/icons/chrome.svg"],
+  ]);
+});
+
 test("App Bridge reapplies every field after creating a shortcut", async () => {
   const { calls } = installWindowMock(false);
   const profile = {

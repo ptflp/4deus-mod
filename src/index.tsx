@@ -77,11 +77,17 @@ export default definePlugin(() => {
     listApplications: callable<[], AppBridgeApplication[]>(
       "list_app_bridge_applications",
     ),
+    prepareChrome: callable<[], PreparedAppBridgeProfile>(
+      "prepare_chrome_app_bridge",
+    ),
     prepareParsec: callable<[], PreparedAppBridgeProfile>(
       "prepare_parsec_app_bridge",
     ),
     prepareRustDesk: callable<[], PreparedAppBridgeProfile>(
       "prepare_rustdesk_app_bridge",
+    ),
+    prepareTerminal: callable<[], PreparedAppBridgeProfile>(
+      "prepare_terminal_app_bridge",
     ),
     saveProfile: callable<
       [AppBridgeProfileDraft],

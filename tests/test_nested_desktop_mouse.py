@@ -20,6 +20,7 @@ from nested_desktop_mouse import (
     CursorSnapshot,
     DEFAULT_NESTED_DESKTOP_BINDINGS,
     EIS_KEY_CODES,
+    GamescopeCursorCompositor,
     IDLE_INPUT_FRAME_INTERVAL,
     INPUT_FRAME_INTERVAL,
     InputBindingTranslator,
@@ -52,6 +53,7 @@ from nested_desktop_mouse import (
     parse_joystick_events,
     parse_trackpad_report,
     prioritize_focus_app,
+    process_uses_proton,
     query_rustdesk_video_connection_count,
     receive_rustdesk_ipc_frame,
     remove_nested_wayland_alias,
@@ -952,6 +954,60 @@ class TrackpadTranslatorTests(unittest.TestCase):
 
 
 class GamescopeFocusTests(unittest.TestCase):
+    def test_gamescope_cursor_compositor_restores_stale_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "cursor-hidden"
+            marker.write_text("stale\n", encoding="utf-8")
+            commands = []
+
+            compositor = GamescopeCursorCompositor(
+                command=lambda value: commands.append(value) or True,
+                marker_path=marker,
+            )
+
+            self.assertEqual(commands, [1])
+            self.assertFalse(compositor.hidden)
+            self.assertFalse(marker.exists())
+
+    def test_gamescope_cursor_compositor_changes_only_on_transitions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "cursor-hidden"
+            commands = []
+            compositor = GamescopeCursorCompositor(
+                command=lambda value: commands.append(value) or True,
+                marker_path=marker,
+            )
+
+            compositor.set_hidden(True)
+            compositor.set_hidden(True)
+            self.assertTrue(marker.exists())
+            compositor.set_hidden(False)
+            compositor.set_hidden(False)
+
+            self.assertEqual(commands, [0, 1])
+            self.assertFalse(marker.exists())
+
+    def test_failed_hide_keeps_marker_for_emergency_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "cursor-hidden"
+            commands = []
+
+            def command(value):
+                commands.append(value)
+                return value == 1
+
+            compositor = GamescopeCursorCompositor(
+                command=command,
+                marker_path=marker,
+            )
+
+            self.assertFalse(compositor.set_hidden(True))
+            self.assertTrue(marker.exists())
+            self.assertTrue(compositor.set_hidden(False))
+
+            self.assertEqual(commands, [0, 1])
+            self.assertFalse(marker.exists())
+
     def test_focus_snapshot_reuses_values_until_an_event_or_fallback(self):
         class OuterX11:
             def __init__(self):
@@ -969,7 +1025,7 @@ class GamescopeFocusTests(unittest.TestCase):
                     "GAMESCOPE_FOCUSED_APP": [22],
                     "GAMESCOPE_FOCUSED_APP_GFX": [22],
                     "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":2"),
-                    "GAMESCOPE_FOCUSABLE_APPS": [769, 22],
+                    "GAMESCOPE_FOCUSABLE_WINDOWS": [],
                 }[name]
 
         runtime = NestedDesktopMouseRuntime(threading.Event())
@@ -1170,14 +1226,14 @@ class GamescopeFocusTests(unittest.TestCase):
             )
         )
 
-    def test_forwards_only_when_nested_desktop_is_frontmost_with_an_app(self):
+    def test_forwards_only_when_nested_desktop_is_frontmost_with_proton(self):
         nested_app = 3_058_091_282
         self.assertTrue(
             should_forward_pointer(
                 nested_app,
                 [nested_app],
                 [nested_app],
-                [769, nested_app, 632360],
+                [632360],
                 packed_display(":1"),
             )
         )
@@ -1186,7 +1242,7 @@ class GamescopeFocusTests(unittest.TestCase):
                 nested_app,
                 [nested_app],
                 [nested_app],
-                [769, nested_app],
+                [],
                 packed_display(":1"),
             )
         )
@@ -1195,7 +1251,7 @@ class GamescopeFocusTests(unittest.TestCase):
                 nested_app,
                 [632360],
                 [632360],
-                [769, nested_app, 632360],
+                [632360],
                 packed_display(":1"),
             )
         )
@@ -1204,7 +1260,7 @@ class GamescopeFocusTests(unittest.TestCase):
                 nested_app,
                 [nested_app],
                 [nested_app],
-                [769, nested_app, 632360],
+                [632360],
                 packed_display(":0"),
             )
         )
@@ -1451,13 +1507,14 @@ class RuntimeSuspensionTests(unittest.TestCase):
                     "GAMESCOPE_FOCUSED_APP": [2],
                     "GAMESCOPE_FOCUSED_APP_GFX": [2],
                     "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
-                    "GAMESCOPE_FOCUSABLE_APPS": [769, 2, 3],
+                    "GAMESCOPE_FOCUSABLE_WINDOWS": [30, 3, 300],
                 }[name]
 
         runtime = NestedDesktopMouseRuntime(
             threading.Event(),
             rustdesk_connection_query=lambda _path: 1,
             cursor_overlay_factory=CursorOverlay,
+            proton_process_query=lambda pid, _root: pid == 300,
         )
         inner_eis = AbsoluteEis()
         runtime.inner_eis = inner_eis
@@ -1517,13 +1574,14 @@ class RuntimeSuspensionTests(unittest.TestCase):
                     "GAMESCOPE_FOCUSED_APP": [2],
                     "GAMESCOPE_FOCUSED_APP_GFX": [2],
                     "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
-                    "GAMESCOPE_FOCUSABLE_APPS": [769, 2, 3],
+                    "GAMESCOPE_FOCUSABLE_WINDOWS": [30, 3, 300],
                 }[name]
 
         runtime = NestedDesktopMouseRuntime(
             threading.Event(),
             mouse_enabled=False,
             rustdesk_pointer_fix_enabled=False,
+            proton_process_query=lambda pid, _root: pid == 300,
         )
         inner_eis = InnerEis()
         runtime.inner_eis = inner_eis
@@ -1559,7 +1617,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
             [(EIS_KEY_CODES["KEY_ESC"], True)],
         )
 
-    def test_mouse_bindings_follow_parallel_pointer_detector(self):
+    def test_mouse_bridge_ignores_native_app_and_follows_proton_app(self):
         class InnerEis:
             ready = True
             keyboard_ready = True
@@ -1588,7 +1646,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
                 pass
 
         class OuterX11:
-            focusable_apps = [769, 2]
+            focusable_windows = [40, 4, 400]
 
             @classmethod
             def cardinals(cls, name):
@@ -1596,7 +1654,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
                     "GAMESCOPE_FOCUSED_APP": [2],
                     "GAMESCOPE_FOCUSED_APP_GFX": [2],
                     "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
-                    "GAMESCOPE_FOCUSABLE_APPS": cls.focusable_apps,
+                    "GAMESCOPE_FOCUSABLE_WINDOWS": cls.focusable_windows,
                 }[name]
 
         overlays = []
@@ -1621,10 +1679,19 @@ class RuntimeSuspensionTests(unittest.TestCase):
             def close(self):
                 self.closed += 1
 
+        cursor_commands = []
+        cursor_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(cursor_directory.cleanup)
+        cursor_compositor = GamescopeCursorCompositor(
+            command=lambda value: cursor_commands.append(value) or True,
+            marker_path=Path(cursor_directory.name) / "cursor-hidden",
+        )
         runtime = NestedDesktopMouseRuntime(
             threading.Event(),
             rustdesk_pointer_fix_enabled=False,
             cursor_overlay_factory=CursorOverlay,
+            proton_process_query=lambda pid, _root: pid == 300,
+            gamescope_cursor_compositor=cursor_compositor,
         )
         inner_eis = InnerEis()
         runtime.inner_eis = inner_eis
@@ -1647,7 +1714,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
         self.assertFalse(inner_eis.emulating)
         self.assertEqual(overlays, [])
 
-        OuterX11.focusable_apps = [769, 2, 3]
+        OuterX11.focusable_windows = [30, 3, 300]
         runtime._refresh_forwarding()
 
         self.assertTrue(runtime.binding_forwarding)
@@ -1661,7 +1728,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
         runtime._apply_cursor_overlay(update)
         self.assertEqual(overlays[0].updates, [update])
 
-        OuterX11.focusable_apps = [769, 2]
+        OuterX11.focusable_windows = []
         runtime._refresh_forwarding()
 
         self.assertTrue(runtime.binding_forwarding)
@@ -1671,6 +1738,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
         self.assertFalse(inner_eis.emulating)
         self.assertFalse(runtime.cursor_overlay_active)
         self.assertEqual(overlays[0].hidden, 1)
+        self.assertEqual(cursor_commands, [0, 1])
 
     def test_legacy_forced_software_cursor_skips_dynamic_overlay(self):
         created = []
@@ -1726,7 +1794,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
                     "GAMESCOPE_FOCUSED_APP": [2],
                     "GAMESCOPE_FOCUSED_APP_GFX": [2],
                     "GAMESCOPE_MOUSE_FOCUS_DISPLAY": packed_display(":1"),
-                    "GAMESCOPE_FOCUSABLE_APPS": [769, 2],
+                    "GAMESCOPE_FOCUSABLE_WINDOWS": [],
                 }[name]
 
         with tempfile.TemporaryDirectory() as directory:
@@ -2054,6 +2122,42 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(session.dbus_address, dbus_address)
         self.assertEqual(session.wayland_display, "wayland-7")
         self.assertTrue(session.software_cursor_forced)
+
+    def test_detects_proton_from_wine_environment(self):
+        self._process(
+            200,
+            1,
+            ["Z:\\games\\example.exe"],
+            {
+                "SteamAppId": "632360",
+                "WINEPREFIX": "/steamapps/compatdata/632360/pfx",
+            },
+        )
+
+        self.assertTrue(process_uses_proton(200, self.root / "proc"))
+
+    def test_detects_proton_launcher_in_parent_chain(self):
+        self._process(
+            210,
+            1,
+            ["/steamapps/common/Proton 10.0/proton", "waitforexitandrun"],
+        )
+        self._process(211, 210, ["/games/example.exe"])
+
+        self.assertTrue(process_uses_proton(211, self.root / "proc"))
+
+    def test_does_not_treat_native_linux_runtime_as_proton(self):
+        self._process(
+            220,
+            1,
+            ["/usr/lib/pressure-vessel-wrap", "--", "/usr/bin/konsole"],
+            {
+                "SteamAppId": "4048939261",
+                "STEAM_COMPAT_DATA_PATH": "/steamapps/compatdata/4048939261",
+            },
+        )
+
+        self.assertFalse(process_uses_proton(220, self.root / "proc"))
 
     def test_discovers_vendor_hid_interface_instead_of_mouse_interface(self):
         sys_class = self.root / "sys/class/hidraw"
