@@ -37,7 +37,13 @@ RECOVERY_ABNORMAL_PRESSURE = 6_000
 RECOVERY_SUSTAINED_PRESSURE_SECONDS = 0.75
 RECOVERY_RESULT_TIMEOUT_SECONDS = 15
 MONITOR_MAINTENANCE_INTERVAL_SECONDS = 0.25
-IDLE_REPORT_BATCH_INTERVAL_SECONDS = 0.02
+# Metrics are retained at 20 Hz, so polling an idle stream faster only
+# creates redundant monitor wakeups.
+IDLE_REPORT_BATCH_INTERVAL_SECONDS = 0.05
+# hidraw buffers 64 reports per reader. The Deck emits 250 reports/s,
+# leaving enough headroom to preserve every transition at 5 Hz while
+# automatic recovery is the monitor's only active consumer.
+RECOVERY_IDLE_REPORT_BATCH_INTERVAL_SECONDS = 0.2
 MAX_REPORT_BATCH_SIZE = 64
 CONTROLLER_RECONCILE_INTERVAL_SECONDS = 5
 JOURNAL_FLUSH_INTERVAL_SECONDS = 3 * 60

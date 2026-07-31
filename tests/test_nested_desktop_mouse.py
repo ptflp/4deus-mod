@@ -1021,7 +1021,7 @@ class GamescopeFocusTests(unittest.TestCase):
                     "refresh",
                     {
                         "force_image": False,
-                        "sync_position": False,
+                        "sync_position": True,
                     },
                 ),
                 ("map", 2, 3),
@@ -1029,6 +1029,18 @@ class GamescopeFocusTests(unittest.TestCase):
                 ("draw", overlay.rendered_snapshot),
             ],
         )
+
+    def test_visible_cursor_overlay_does_not_follow_stale_xfixes_position(self):
+        calls = []
+        overlay = NestedDesktopCursorOverlay.__new__(
+            NestedDesktopCursorOverlay
+        )
+        overlay.visible = True
+        overlay.refresh = lambda **options: calls.append(options)
+
+        overlay.show()
+
+        self.assertEqual(calls, [{"sync_position": False}])
 
     def test_decodes_gamescope_packed_display(self):
         self.assertEqual(decode_gamescope_display(packed_display(":1")), ":1")

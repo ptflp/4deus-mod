@@ -359,6 +359,43 @@ class TrackpadMetricsMonitorTests(unittest.TestCase):
                 reports,
             )
 
+    def test_recovery_only_monitor_uses_deep_idle_batching(self):
+        with tempfile.TemporaryDirectory() as directory:
+            monitor = self.make_monitor(
+                directory,
+                metrics_enabled=False,
+                recovery_enabled=True,
+            )
+            recovery_interval = (
+                trackpad_metrics.RECOVERY_IDLE_REPORT_BATCH_INTERVAL_SECONDS
+            )
+
+            self.assertEqual(
+                monitor._idle_report_batch_interval(),
+                recovery_interval,
+            )
+            self.assertEqual(
+                monitor._idle_report_batch_interval(),
+                0.2,
+            )
+
+    def test_metrics_monitor_keeps_configured_sample_cadence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            monitor = self.make_monitor(
+                directory,
+                metrics_enabled=True,
+                recovery_enabled=True,
+            )
+
+            self.assertEqual(
+                monitor._idle_report_batch_interval(),
+                trackpad_metrics.IDLE_REPORT_BATCH_INTERVAL_SECONDS,
+            )
+            self.assertEqual(
+                monitor._idle_report_batch_interval(),
+                monitor.sample_interval,
+            )
+
     def test_idle_reader_collapses_repeated_control_state(self):
         with tempfile.TemporaryDirectory() as directory:
             monitor = self.make_monitor(directory)

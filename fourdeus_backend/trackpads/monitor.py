@@ -19,6 +19,7 @@ from .constants import (
     MAX_REPORT_BATCH_SIZE,
     MIN_REPORT_SIZE,
     MONITOR_MAINTENANCE_INTERVAL_SECONDS,
+    RECOVERY_IDLE_REPORT_BATCH_INTERVAL_SECONDS,
     REPORT_HEADER,
 )
 from .controller import (
@@ -406,7 +407,7 @@ class TrackpadMetricsMonitor(
                     if (
                         batch_idle_reports
                         and self.stop_event.wait(
-                            IDLE_REPORT_BATCH_INTERVAL_SECONDS
+                            self._idle_report_batch_interval()
                         )
                     ):
                         break
@@ -465,6 +466,11 @@ class TrackpadMetricsMonitor(
 
     def _should_batch_idle_reports(self) -> bool:
         return _sample_trackpads_safely_released(self.raw_latest)
+
+    def _idle_report_batch_interval(self) -> float:
+        if self.metrics_enabled:
+            return IDLE_REPORT_BATCH_INTERVAL_SECONDS
+        return RECOVERY_IDLE_REPORT_BATCH_INTERVAL_SECONDS
 
     def _read_reports(self, descriptor: int, *, drain: bool = False):
         pending_report: bytes | None = None

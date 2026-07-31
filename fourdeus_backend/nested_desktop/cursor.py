@@ -554,11 +554,16 @@ class NestedDesktopCursorOverlay:
 
     def show(self):
         if self.visible:
+            # XFixes can lag behind EIS while pointer forwarding is active.
+            # Keep following the injected updates instead of snapping back to
+            # a stale compositor position on every image refresh.
             self.refresh(sync_position=False)
             return
+        # The pointer may have moved while the overlay was hidden. Rebase once
+        # when it becomes visible, before local relative tracking resumes.
         self.refresh(
             force_image=self.cursor_serial is None,
-            sync_position=not self.position_primed,
+            sync_position=True,
         )
         self.x11.XMapRaised(self.display, self.window)
         self.x11.XFlush(self.display)
