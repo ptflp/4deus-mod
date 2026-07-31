@@ -24,18 +24,6 @@ export const AppBridgePopularPanel = ({
   return (
     <PanelSection title={strings.appBridgeQuickSetup}>
       <PanelSectionRow>
-        <div>{strings.appBridgeChromeDescription}</div>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <DialogButton
-          disabled={installer.busy}
-          onClick={() => void installer.install(() => api.prepareChrome())}
-          style={{ width: "100%" }}
-        >
-          {strings.addOrFixChrome}
-        </DialogButton>
-      </PanelSectionRow>
-      <PanelSectionRow>
         <div>{strings.appBridgeParsecDescription}</div>
       </PanelSectionRow>
       <PanelSectionRow>
@@ -45,6 +33,18 @@ export const AppBridgePopularPanel = ({
           style={{ width: "100%" }}
         >
           {strings.addOrFixParsec}
+        </DialogButton>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <div>{strings.appBridgeChromeDescription}</div>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <DialogButton
+          disabled={installer.busy}
+          onClick={() => void installer.install(() => api.prepareChrome())}
+          style={{ width: "100%" }}
+        >
+          {strings.addOrFixChrome}
         </DialogButton>
       </PanelSectionRow>
       <PanelSectionRow>

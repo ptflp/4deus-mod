@@ -6,9 +6,16 @@ from .bindings import (
     prioritize_focus_app, should_forward_back_button, should_forward_pointer,
 )
 from .cli import main, run_worker
+from .clipboard import (
+    CLIPBOARD_IMAGE_MIME_TYPES, CLIPBOARD_MAX_BYTES,
+    CLIPBOARD_TEXT_MAX_BYTES, ClipboardContent,
+    X11ClipboardEndpoint,
+)
+from .clipboard_bridge import NestedDesktopClipboardBridge
 from .constants import *  # noqa: F403
 from .cursor import (
     NestedDesktopCursorOverlay, cursor_alpha_mask, outlined_cursor_snapshot,
+    scaled_cursor_snapshot,
 )
 from .discovery import (
     ensure_nested_wayland_alias, find_nested_desktop_session,
@@ -18,12 +25,17 @@ from .discovery import (
 )
 from .eis import EisConnection
 from .gamescope import (
-    GamescopeCursorCompositor, set_gamescope_cursor_composite,
+    GamescopeCursorCompositor, GamescopePointerInterceptor,
+    set_gamescope_cursor_composite,
 )
 from .models import (
     BindingUpdate, CursorSnapshot, JoystickEvent, LinuxInputEvent,
     NestedDesktopSession, PointerUpdate, TouchFrame, TouchUpdate,
     TrackpadState,
+)
+from .pointer_capture import (
+    CapturedPointerUpdate, GamescopePointerCapture,
+    GamescopePointerTranslator,
 )
 from .runtime import LOGGER, NestedDesktopMouseRuntime
 from .rustdesk import (
@@ -52,7 +64,13 @@ __all__ = [
     'BTN_RIGHT',
     'BUTTON_SOURCE_MASKS',
     'BindingUpdate',
+    'CLIPBOARD_MAX_BYTES',
+    'CLIPBOARD_IMAGE_MIME_TYPES',
+    'CLIPBOARD_TEXT_MAX_BYTES',
+    'ClipboardContent',
+    'CapturedPointerUpdate',
     'CURSOR_IMAGE_REFRESH_INTERVAL',
+    'CURSOR_RENDER_MAX_DIMENSION',
     'CURSOR_OUTLINE_PIXEL',
     'CURSOR_OUTLINE_RADIUS',
     'CursorSnapshot',
@@ -76,7 +94,12 @@ __all__ = [
     'FOCUS_SNAPSHOT_FALLBACK_INTERVAL',
     'GAMESCOPE_FOCUS_EVENT_PROPERTIES',
     'GAMESCOPE_FOCUS_PROPERTIES',
+    'GAMESCOPE_POINTER_HID_SUPPRESSION_GRACE',
+    'GAMESCOPE_POINTER_RELAY_DELAY',
     'GamescopeCursorCompositor',
+    'GamescopePointerCapture',
+    'GamescopePointerInterceptor',
+    'GamescopePointerTranslator',
     'IDLE_INPUT_FRAME_INTERVAL',
     'INPUT_FRAME_INTERVAL',
     'InputBindingTranslator',
@@ -119,6 +142,7 @@ __all__ = [
     'NESTED_DESKTOP_BINDING_ACTIONS',
     'NESTED_DESKTOP_BINDING_SOURCES',
     'NestedDesktopCursorOverlay',
+    'NestedDesktopClipboardBridge',
     'NestedDesktopMouseRuntime',
     'NestedDesktopMouseSupervisor',
     'NestedDesktopSession',
@@ -181,6 +205,7 @@ __all__ = [
     'TrackpadState',
     'TrackpadTranslator',
     'X11Connection',
+    'X11ClipboardEndpoint',
     'X11_EVENT_LONGS',
     'X11_PROPERTY_CHANGE_MASK',
     'X11_PROPERTY_NOTIFY',
@@ -196,6 +221,7 @@ __all__ = [
     'main',
     'normalize_nested_desktop_bindings',
     'outlined_cursor_snapshot',
+    'scaled_cursor_snapshot',
     'parse_joystick_events',
     'parse_linux_input_events',
     'parse_trackpad_report',

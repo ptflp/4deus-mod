@@ -144,6 +144,7 @@ class AppBridgeManager:
     def prepare_chrome(self) -> dict[str, Any]:
         if not self._flatpak_installed(CHROME_APP_ID):
             raise FileNotFoundError("Google Chrome installation was not found")
+        bundled_icon = self.artwork_root / CHROME_PROFILE_ID / "icon.png"
         prepared = self.save_profile(
             {
                 "id": CHROME_PROFILE_ID,
@@ -151,10 +152,14 @@ class AppBridgeManager:
                 "executable": "/usr/bin/flatpak",
                 "arguments": (
                     "run --branch=stable --arch=x86_64 --command=chrome "
-                    f"{CHROME_APP_ID} --start-fullscreen"
+                    f"{CHROME_APP_ID} --start-maximized"
                 ),
                 "workingDirectory": str(self.home),
-                "icon": self._resolve_icon(CHROME_APP_ID),
+                "icon": (
+                    str(bundled_icon)
+                    if bundled_icon.is_file()
+                    else self._resolve_icon(CHROME_APP_ID)
+                ),
                 "waitForProcess": "",
                 "clearSteamPreload": True,
                 "sanitizeSteamOverlay": False,
@@ -162,7 +167,11 @@ class AppBridgeManager:
                 "libraryPath": "",
             }
         )
-        return {**prepared, "aliases": ["Chrome"]}
+        return {
+            **prepared,
+            "aliases": ["Chrome"],
+            "artworkId": CHROME_PROFILE_ID,
+        }
 
     def prepare_rustdesk(self) -> dict[str, Any]:
         application_directory = self._rustdesk_directory()
@@ -221,6 +230,7 @@ class AppBridgeManager:
         app_id: int,
     ) -> dict[str, Any]:
         if artwork_id not in (
+            CHROME_PROFILE_ID,
             PARSEC_PROFILE_ID,
             RUSTDESK_PROFILE_ID,
             TERMINAL_PROFILE_ID,

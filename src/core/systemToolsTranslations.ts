@@ -24,6 +24,12 @@ export interface SystemToolsTranslation extends TouchInertiaTranslation {
   steamOsApplicationReady: string;
   nestedDesktopMouseBridge: string;
   nestedDesktopMouseBridgeDescription: string;
+  nestedDesktopGamescopePointerRelay: string;
+  nestedDesktopGamescopePointerRelayDescription: string;
+  nestedDesktopClipboard: string;
+  nestedDesktopClipboardDescription: string;
+  nestedDesktopClipboardFiles: string;
+  nestedDesktopClipboardFilesDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
   nestedDesktopTouchscreen: string;
@@ -47,6 +53,12 @@ type BaseSystemToolsTranslation = Omit<
   | "rustDeskScrollInertiaDescription"
   | "nestedDesktopTouchscreen"
   | "nestedDesktopTouchscreenDescription"
+  | "nestedDesktopClipboard"
+  | "nestedDesktopClipboardDescription"
+  | "nestedDesktopClipboardFiles"
+  | "nestedDesktopClipboardFilesDescription"
+  | "nestedDesktopGamescopePointerRelay"
+  | "nestedDesktopGamescopePointerRelayDescription"
   | "controller"
   | "trackpadAutoRecovery"
   | "trackpadAutoRecoveryDescription"
@@ -949,6 +961,60 @@ Record<string, ControllerOptionsTranslation> = {
   },
 };
 
+type ClipboardOptionsTranslation = Pick<
+  SystemToolsTranslation,
+  | "nestedDesktopClipboard"
+  | "nestedDesktopClipboardDescription"
+  | "nestedDesktopClipboardFiles"
+  | "nestedDesktopClipboardFilesDescription"
+>;
+
+const englishClipboardOptions: ClipboardOptionsTranslation = {
+  nestedDesktopClipboard: "Shared clipboard",
+  nestedDesktopClipboardDescription: "Synchronizes newly copied text, images, and enabled file references between Gamescope and Nested Desktop; disabled by default",
+  nestedDesktopClipboardFiles: "Files and folders",
+  nestedDesktopClipboardFilesDescription: "Shares copied local files and folders by path. Paste always copies; originals are never moved",
+};
+
+const clipboardOptionsTranslations:
+Record<string, ClipboardOptionsTranslation> = Object.fromEntries(
+  Object.keys(baseSystemToolsTranslations).map((language) => [
+    language,
+    language === "russian"
+      ? {
+        nestedDesktopClipboard: "Общий буфер обмена",
+        nestedDesktopClipboardDescription: "Синхронизирует новый текст, изображения и включённые ссылки на файлы между Gamescope и Nested Desktop; по умолчанию выключено",
+        nestedDesktopClipboardFiles: "Файлы и папки",
+        nestedDesktopClipboardFilesDescription: "Передаёт пути скопированных локальных файлов и папок. Вставка всегда копирует — оригиналы никогда не перемещаются",
+      }
+      : englishClipboardOptions,
+  ]),
+) as Record<string, ClipboardOptionsTranslation>;
+
+type GamescopePointerRelayTranslation = Pick<
+  SystemToolsTranslation,
+  | "nestedDesktopGamescopePointerRelay"
+  | "nestedDesktopGamescopePointerRelayDescription"
+>;
+
+const englishGamescopePointerRelay: GamescopePointerRelayTranslation = {
+  nestedDesktopGamescopePointerRelay: "Redirect Gamescope pointer input",
+  nestedDesktopGamescopePointerRelayDescription: "Keeps Gamescope mouse, trackpad, clicks, and scrolling in Nested Desktop while a game runs in parallel",
+};
+
+const gamescopePointerRelayTranslations:
+Record<string, GamescopePointerRelayTranslation> = Object.fromEntries(
+  Object.keys(baseSystemToolsTranslations).map((language) => [
+    language,
+    language === "russian"
+      ? {
+        nestedDesktopGamescopePointerRelay: "Перенаправлять ввод Gamescope",
+        nestedDesktopGamescopePointerRelayDescription: "Оставляет мышь, трекпады, клики и прокрутку Gamescope в Nested Desktop, когда игра запущена параллельно",
+      }
+      : englishGamescopePointerRelay,
+  ]),
+) as Record<string, GamescopePointerRelayTranslation>;
+
 export const systemToolsTranslations:
 Record<string, SystemToolsTranslation> = Object.fromEntries(
   Object.entries(baseSystemToolsTranslations).map(
@@ -957,6 +1023,8 @@ Record<string, SystemToolsTranslation> = Object.fromEntries(
       {
         ...strings,
         ...touchscreenOptionsTranslations[language],
+        ...clipboardOptionsTranslations[language],
+        ...gamescopePointerRelayTranslations[language],
         ...touchInertiaTranslations[language],
         ...rustDeskOptionsTranslations[language],
         ...controllerOptionsTranslations[language],

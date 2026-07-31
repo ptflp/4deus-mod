@@ -68,6 +68,9 @@ export default definePlugin(() => {
   const setNestedDesktopKeyboardVisible = callable<[boolean], boolean>(
     "set_nested_desktop_keyboard_visible",
   );
+  const readNestedDesktopClipboardText = callable<[], string | null>(
+    "read_nested_desktop_clipboard_text",
+  );
   const appBridgeApi = {
     getStatus: callable<[], AppBridgeStatus>("get_app_bridge_status"),
     installArtwork: callable<
@@ -127,6 +130,18 @@ export default definePlugin(() => {
       [boolean],
       NestedDesktopMouseStatus
     >("set_nested_desktop_mouse_enabled"),
+    setNestedDesktopGamescopePointerRelayEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_gamescope_pointer_relay_enabled"),
+    setNestedDesktopClipboardEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_clipboard_enabled"),
+    setNestedDesktopClipboardFilesEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_clipboard_files_enabled"),
     setNestedDesktopMouseInertiaEnabled: callable<
       [boolean],
       NestedDesktopMouseStatus
@@ -213,6 +228,7 @@ export default definePlugin(() => {
     setSystemKeyState,
     logKeyboardDiagnostics,
     setNestedDesktopKeyboardVisible,
+    readNestedDesktopClipboardText,
   );
   const modules = new ModuleRegistry(settings, {
     ...controllerApi,

@@ -136,7 +136,7 @@ class AppBridgeTests(unittest.TestCase):
         )
         self.assertTrue(profile["sanitizeSteamOverlay"])
 
-    def test_chrome_profile_starts_the_flatpak_in_fullscreen(self):
+    def test_chrome_profile_starts_flatpak_maximized(self):
         with patch.object(
             self.manager,
             "_flatpak_installed",
@@ -151,7 +151,7 @@ class AppBridgeTests(unittest.TestCase):
 
         self.assertEqual(prepared["name"], "Google Chrome")
         self.assertEqual(prepared["aliases"], ["Chrome"])
-        self.assertNotIn("artworkId", prepared)
+        self.assertEqual(prepared["artworkId"], "chrome")
         self.assertEqual(
             profile["command"],
             [
@@ -161,7 +161,7 @@ class AppBridgeTests(unittest.TestCase):
                 "--arch=x86_64",
                 "--command=chrome",
                 "com.google.Chrome",
-                "--start-fullscreen",
+                "--start-maximized",
             ],
         )
         self.assertEqual(profile["workingDirectory"], str(self.home))
@@ -347,6 +347,17 @@ class AppBridgeTests(unittest.TestCase):
             (
                 PROJECT_ROOT
                 / "assets/app-bridge/terminal/capsule.png"
+            ).read_bytes(),
+        )
+
+        chrome = self.manager.install_artwork("chrome", 779)
+        self.assertEqual(chrome["artworkId"], "chrome")
+        self.assertEqual(chrome["installed"], 4)
+        self.assertEqual(
+            (grid / "779p.png").read_bytes(),
+            (
+                PROJECT_ROOT
+                / "assets/app-bridge/chrome/capsule.png"
             ).read_bytes(),
         )
 

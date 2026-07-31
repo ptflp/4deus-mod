@@ -18,7 +18,10 @@ from .constants import (
     TOUCH_INERTIA_DEFAULT_MIN_DISTANCE,
     TOUCH_INERTIA_DEFAULT_START_SPEED,
 )
-from .gamescope import GamescopeCursorCompositor
+from .clipboard_bridge import NestedDesktopClipboardBridge
+from .gamescope import (
+    GamescopeCursorCompositor, GamescopePointerInterceptor,
+)
 from .runtime import NestedDesktopMouseRuntime
 from .touch import TouchscreenInertiaConfig
 
@@ -45,6 +48,7 @@ def _configure_parent_death_signal():
 
 def run_worker(
     mouse_enabled: bool = True,
+    gamescope_pointer_relay_enabled: bool = True,
     inertia_enabled: bool = True,
     bindings_enabled: bool = True,
     bindings: Mapping[str, object] | None = None,
@@ -57,6 +61,8 @@ def run_worker(
     rustdesk_pointer_fix_enabled: bool = True,
     rustdesk_scroll_inertia_enabled: bool = False,
     rustdesk_focus_on_input_enabled: bool = False,
+    clipboard_enabled: bool = False,
+    clipboard_files_enabled: bool = True,
     suspended: bool = False,
     control_fd: int | None = None,
 ) -> int:
@@ -75,6 +81,9 @@ def run_worker(
     runtime = NestedDesktopMouseRuntime(
         stop_event,
         mouse_enabled=mouse_enabled,
+        gamescope_pointer_relay_enabled=(
+            gamescope_pointer_relay_enabled
+        ),
         inertia_enabled=inertia_enabled,
         bindings_enabled=bindings_enabled,
         bindings=bindings,
@@ -98,6 +107,14 @@ def run_worker(
             else None
         ),
         gamescope_cursor_compositor=GamescopeCursorCompositor(),
+        gamescope_pointer_interceptor=GamescopePointerInterceptor(),
+        clipboard_bridge=(
+            NestedDesktopClipboardBridge(
+                files_enabled=clipboard_files_enabled,
+            )
+            if clipboard_enabled
+            else None
+        ),
     )
     runtime.run()
     return 0
@@ -107,6 +124,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--no-mouse-bridge", action="store_true")
+    parser.add_argument(
+        "--no-gamescope-pointer-relay",
+        action="store_true",
+    )
     parser.add_argument("--no-inertia", action="store_true")
     parser.add_argument("--no-bindings", action="store_true")
     parser.add_argument("--no-touchscreen", action="store_true")
@@ -133,6 +154,8 @@ def main() -> int:
         "--rustdesk-focus-on-input",
         action="store_true",
     )
+    parser.add_argument("--clipboard-sharing", action="store_true")
+    parser.add_argument("--no-clipboard-files", action="store_true")
     parser.add_argument("--suspended", action="store_true")
     parser.add_argument("--bindings-json", default="{}")
     arguments = parser.parse_args()
@@ -146,6 +169,9 @@ def main() -> int:
         parser.error("--bindings-json must contain an object")
     return run_worker(
         mouse_enabled=not arguments.no_mouse_bridge,
+        gamescope_pointer_relay_enabled=(
+            not arguments.no_gamescope_pointer_relay
+        ),
         inertia_enabled=not arguments.no_inertia,
         bindings_enabled=not arguments.no_bindings,
         bindings=bindings,
@@ -182,6 +208,8 @@ def main() -> int:
         rustdesk_focus_on_input_enabled=(
             arguments.rustdesk_focus_on_input
         ),
+        clipboard_enabled=arguments.clipboard_sharing,
+        clipboard_files_enabled=not arguments.no_clipboard_files,
         suspended=arguments.suspended,
         control_fd=sys.stdin.fileno(),
     )

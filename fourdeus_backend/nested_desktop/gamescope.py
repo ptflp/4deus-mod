@@ -9,12 +9,18 @@ import subprocess
 import time
 from typing import Callable, Mapping
 
+from .models import PointerUpdate
+from .pointer_capture import (
+    CapturedPointerUpdate, GamescopePointerCapture,
+)
+
 
 LOGGER = logging.getLogger("4deus-nested-mouse")
 
 GAMESCOPE_CURSOR_VISIBLE = 1
 GAMESCOPE_CURSOR_HIDDEN = 0
 GAMESCOPE_CURSOR_RETRY_INTERVAL = 2.0
+GAMESCOPE_POINTER_GRAB_RETRY_INTERVAL = 2.0
 
 
 def set_gamescope_cursor_composite(
@@ -162,3 +168,140 @@ class GamescopeCursorCompositor:
 
     def close(self):
         self.set_hidden(False)
+
+
+class GamescopePointerInterceptor:
+    """Consume the hidden Gamescope pointer while Nested Desktop owns it."""
+
+    def __init__(
+        self,
+        connection_factory: Callable[[str], object] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        retry_interval: float = GAMESCOPE_POINTER_GRAB_RETRY_INTERVAL,
+    ):
+        self.connection_factory = (
+            connection_factory or GamescopePointerCapture
+        )
+        self.clock = clock
+        self.retry_interval = retry_interval
+        self.connection = None
+        self.display_name: str | None = None
+        self.retry_after = 0.0
+        self.pending_release_updates: list[PointerUpdate] = []
+
+    def set_active(
+        self,
+        active: bool,
+        display_name: str | None = None,
+    ) -> bool:
+        active = bool(active and display_name)
+        if (
+            active
+            and self.connection is not None
+            and display_name == self.display_name
+        ):
+            return True
+        if not active:
+            self.close()
+            return True
+        now = self.clock()
+        if now < self.retry_after:
+            return False
+        self.close()
+        connection = None
+        try:
+            connection = self.connection_factory(str(display_name))
+            if not connection.grab_pointer():
+                raise RuntimeError("pointer is already grabbed")
+        except Exception as error:
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+            self.retry_after = now + self.retry_interval
+            LOGGER.warning(
+                "Unable to intercept Gamescope pointer on %s: %s",
+                display_name,
+                error,
+            )
+            return False
+        self.connection = connection
+        self.display_name = str(display_name)
+        self.retry_after = 0.0
+        LOGGER.info(
+            "Gamescope master pointer redirected from %s",
+            display_name,
+        )
+        return True
+
+    def fileno(self) -> int:
+        connection = self.connection
+        if connection is None:
+            return -1
+        fileno = getattr(connection, "fileno", None)
+        if not callable(fileno):
+            return -1
+        try:
+            return int(fileno())
+        except Exception:
+            return -1
+
+    def dispatch(self) -> tuple[CapturedPointerUpdate, ...]:
+        connection = self.connection
+        if connection is None:
+            return ()
+        dispatch = getattr(connection, "dispatch", None)
+        if not callable(dispatch):
+            return ()
+        try:
+            return tuple(dispatch())
+        except Exception:
+            LOGGER.warning(
+                "Lost the Gamescope master pointer capture",
+                exc_info=True,
+            )
+            self.close()
+            return ()
+
+    def take_release_updates(self) -> tuple[PointerUpdate, ...]:
+        updates = tuple(self.pending_release_updates)
+        self.pending_release_updates.clear()
+        return updates
+
+    def close(self):
+        connection = self.connection
+        display_name = self.display_name
+        self.connection = None
+        self.display_name = None
+        if connection is None:
+            return
+        release_update = getattr(connection, "release_update", None)
+        if callable(release_update):
+            try:
+                update = release_update()
+                if not update.empty:
+                    self.pending_release_updates.append(update)
+            except Exception:
+                LOGGER.debug(
+                    "Unable to release captured Gamescope buttons",
+                    exc_info=True,
+                )
+        try:
+            connection.ungrab_pointer()
+        except Exception:
+            LOGGER.debug(
+                "Unable to release the Gamescope pointer grab",
+                exc_info=True,
+            )
+        try:
+            connection.close()
+        except Exception:
+            LOGGER.debug(
+                "Unable to close the Gamescope pointer display",
+                exc_info=True,
+            )
+        LOGGER.info(
+            "Gamescope master pointer restored on %s",
+            display_name,
+        )

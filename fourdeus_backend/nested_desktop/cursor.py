@@ -9,7 +9,7 @@ from typing import Sequence
 
 from .constants import (
     CURSOR_IMAGE_REFRESH_INTERVAL, CURSOR_OUTLINE_PIXEL,
-    CURSOR_OUTLINE_RADIUS,
+    CURSOR_OUTLINE_RADIUS, CURSOR_RENDER_MAX_DIMENSION,
 )
 from .models import CursorSnapshot, NestedDesktopSession, PointerUpdate
 from .x11 import X11Connection
@@ -130,6 +130,38 @@ def outlined_cursor_snapshot(
         yhot=snapshot.yhot + radius,
         serial=snapshot.serial,
         pixels=tuple(pixels),
+    )
+
+
+def scaled_cursor_snapshot(
+    snapshot: CursorSnapshot,
+    max_dimension: int = CURSOR_RENDER_MAX_DIMENSION,
+) -> CursorSnapshot:
+    """Downscale oversized cursors while preserving the exact hotspot."""
+    largest = max(snapshot.width, snapshot.height)
+    if largest <= max_dimension or max_dimension <= 0:
+        return snapshot
+    scale = max_dimension / largest
+    width = max(1, round(snapshot.width * scale))
+    height = max(1, round(snapshot.height * scale))
+    pixels = tuple(
+        snapshot.pixels[
+            min(snapshot.height - 1, (y * snapshot.height) // height)
+            * snapshot.width
+            + min(snapshot.width - 1, (x * snapshot.width) // width)
+        ]
+        for y in range(height)
+        for x in range(width)
+    )
+    return CursorSnapshot(
+        x=snapshot.x,
+        y=snapshot.y,
+        width=width,
+        height=height,
+        xhot=min(width - 1, round(snapshot.xhot * scale)),
+        yhot=min(height - 1, round(snapshot.yhot * scale)),
+        serial=snapshot.serial,
+        pixels=pixels,
     )
 
 class NestedDesktopCursorOverlay:
@@ -268,6 +300,18 @@ class NestedDesktopCursorOverlay:
             ctypes.c_int,
             ctypes.c_int,
         ]
+        self.x11.XWarpPointer.argtypes = [
+            pointer,
+            window,
+            window,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint,
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.c_int,
+        ]
+        self.x11.XWarpPointer.restype = ctypes.c_int
         self.x11.XResizeWindow.argtypes = [
             pointer,
             window,
@@ -482,23 +526,41 @@ class NestedDesktopCursorOverlay:
         self.cursor_yhot = snapshot.yhot
         self.rendered_snapshot = snapshot
 
-    def _move(self):
+    def _move(self, *, flush: bool = True) -> bool:
         if not self.window:
-            return
+            return False
         position = (
             round(self.pointer_x) - self.cursor_xhot,
             round(self.pointer_y) - self.cursor_yhot,
         )
         if position == self.window_position:
-            return
+            return False
         self.x11.XMoveWindow(
             self.display,
             self.window,
             position[0],
             position[1],
         )
-        self.x11.XFlush(self.display)
         self.window_position = position
+        if flush:
+            self.x11.XFlush(self.display)
+        return True
+
+    def _warp_pointer(self, *, flush: bool = True):
+        """Keep KWin's click position under the software cursor hotspot."""
+        self.x11.XWarpPointer(
+            self.display,
+            0,
+            self.root,
+            0,
+            0,
+            0,
+            0,
+            round(self.pointer_x),
+            round(self.pointer_y),
+        )
+        if flush:
+            self.x11.XFlush(self.display)
 
     def refresh(
         self,
@@ -523,29 +585,22 @@ class NestedDesktopCursorOverlay:
             has_visible_pixels = any(
                 (pixel >> 24) & 0xFF for pixel in snapshot.pixels
             )
+            rendered = outlined_cursor_snapshot(
+                scaled_cursor_snapshot(snapshot)
+            )
             if (
                 has_visible_pixels
                 and (
                     force_image
                     or snapshot.serial != self.cursor_serial
-                    or (
-                        snapshot.width + (CURSOR_OUTLINE_RADIUS * 2)
-                        != self.cursor_width
-                    )
-                    or (
-                        snapshot.height + (CURSOR_OUTLINE_RADIUS * 2)
-                        != self.cursor_height
-                    )
+                    or rendered.width != self.cursor_width
+                    or rendered.height != self.cursor_height
                 )
             ):
-                self._draw(outlined_cursor_snapshot(snapshot))
+                self._draw(rendered)
             elif has_visible_pixels:
-                self.cursor_xhot = (
-                    snapshot.xhot + CURSOR_OUTLINE_RADIUS
-                )
-                self.cursor_yhot = (
-                    snapshot.yhot + CURSOR_OUTLINE_RADIUS
-                )
+                self.cursor_xhot = rendered.xhot
+                self.cursor_yhot = rendered.yhot
             elif self.cursor_serial is None:
                 raise RuntimeError(
                     "Nested Desktop returned an empty cursor image"
@@ -565,9 +620,9 @@ class NestedDesktopCursorOverlay:
 
     def show(self):
         if self.visible:
-            # XFixes can lag behind EIS while pointer forwarding is active.
-            # Keep following the injected updates instead of snapping back to
-            # a stale compositor position on every image refresh.
+            # Track active motion locally because XFixes can be one frame
+            # behind EIS. The underlying pointer is kept aligned in apply(),
+            # so image refreshes never need to snap the visible cursor.
             self.refresh(sync_position=False)
             return
         # The pointer may have moved while the overlay was hidden. Rebase once
@@ -595,6 +650,7 @@ class NestedDesktopCursorOverlay:
     def apply(self, update: PointerUpdate):
         if not self.visible:
             return
+        relative_motion = bool(update.dx or update.dy)
         moved = False
         if update.absolute_x is not None:
             self.pointer_x = update.absolute_x
@@ -618,7 +674,16 @@ class NestedDesktopCursorOverlay:
             0.0,
             min(float(self.screen_height - 1), self.pointer_y),
         )
-        self._move()
+        if relative_motion:
+            # KWin can apply acceleration to the injected relative motion.
+            # Make the software cursor authoritative instead of periodically
+            # snapping it to KWin (which was visible as a teleport near the
+            # display edges).
+            self._warp_pointer(flush=False)
+            self._move(flush=False)
+            self.x11.XFlush(self.display)
+        else:
+            self._move()
 
     def close(self):
         display = getattr(self, "display", None)

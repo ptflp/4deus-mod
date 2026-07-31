@@ -14,9 +14,12 @@ from ..dependencies import (
     logger,
     normalize_nested_desktop_bindings,
 )
+from .nested_desktop_clipboard import (
+    NestedDesktopClipboardEndpointsMixin,
+)
 
 
-class NestedDesktopEndpointsMixin:
+class NestedDesktopEndpointsMixin(NestedDesktopClipboardEndpointsMixin):
     def _on_nested_desktop_action(self, action: str):
         if action not in {"HIDE_KEYBOARD", "SHOW_KEYBOARD"}:
             return
@@ -41,7 +44,14 @@ class NestedDesktopEndpointsMixin:
             "available": bridge is not None,
             "bindings": dict(self.nested_desktop_bindings),
             "bindingsEnabled": self.nested_desktop_bindings_enabled,
+            "clipboardEnabled": self.nested_desktop_clipboard_enabled,
+            "clipboardFilesEnabled": (
+                self.nested_desktop_clipboard_files_enabled
+            ),
             "enabled": self.nested_desktop_mouse_enabled,
+            "gamescopePointerRelayEnabled": (
+                self.nested_desktop_gamescope_pointer_relay_enabled
+            ),
             "moduleEnabled": self.nested_desktop_module_enabled,
             "inertiaEnabled": (
                 self.nested_desktop_mouse_inertia_enabled
@@ -144,6 +154,42 @@ class NestedDesktopEndpointsMixin:
         except Exception as error:
             logger.exception(
                 "Failed to change the Nested Desktop mouse bridge"
+            )
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    async def set_nested_desktop_gamescope_pointer_relay_enabled(
+        self,
+        enabled: bool,
+    ):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "Gamescope pointer relay must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                gamescope_pointer_relay_enabled=enabled,
+            )
+            self.nested_desktop_gamescope_pointer_relay_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_gamescope_pointer_relay_enabled,
+                    enabled,
+                )
+            logger.info(
+                "Nested Desktop Gamescope pointer relay %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception(
+                "Failed to change the Gamescope pointer relay"
             )
             return {
                 **await self.get_nested_desktop_mouse_status(),
@@ -543,7 +589,10 @@ class NestedDesktopEndpointsMixin:
         bool,
         bool,
         bool,
+        bool,
         dict[str, str],
+        bool,
+        bool,
         bool,
         bool,
         bool,
@@ -560,9 +609,15 @@ class NestedDesktopEndpointsMixin:
             return (
                 payload.get("moduleEnabled", True) is not False,
                 payload.get("enabled", True) is not False,
+                payload.get(
+                    "gamescopePointerRelayEnabled",
+                    True,
+                ) is not False,
                 payload.get("inertiaEnabled", True) is not False,
                 payload.get("bindingsEnabled", True) is not False,
                 normalize_nested_desktop_bindings(payload.get("bindings")),
+                payload.get("clipboardEnabled", False) is True,
+                payload.get("clipboardFilesEnabled", True) is not False,
                 payload.get("rustDeskPointerFixEnabled", True) is not False,
                 payload.get("rustDeskScrollInertiaEnabled", False) is True,
                 payload.get("rustDeskFocusOnInputEnabled", False) is True,
@@ -578,7 +633,10 @@ class NestedDesktopEndpointsMixin:
                 True,
                 True,
                 True,
+                True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
+                False,
+                True,
                 True,
                 False,
                 False,
@@ -595,7 +653,10 @@ class NestedDesktopEndpointsMixin:
                 True,
                 True,
                 True,
+                True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
+                False,
+                True,
                 True,
                 False,
                 False,
@@ -609,9 +670,12 @@ class NestedDesktopEndpointsMixin:
         *,
         module_enabled: bool | None = None,
         mouse_enabled: bool | None = None,
+        gamescope_pointer_relay_enabled: bool | None = None,
         inertia_enabled: bool | None = None,
         bindings_enabled: bool | None = None,
         bindings: dict[str, str] | None = None,
+        clipboard_enabled: bool | None = None,
+        clipboard_files_enabled: bool | None = None,
         rustdesk_pointer_fix_enabled: bool | None = None,
         rustdesk_scroll_inertia_enabled: bool | None = None,
         rustdesk_focus_on_input_enabled: bool | None = None,
@@ -623,12 +687,22 @@ class NestedDesktopEndpointsMixin:
             module_enabled = self.nested_desktop_module_enabled
         if mouse_enabled is None:
             mouse_enabled = self.nested_desktop_mouse_enabled
+        if gamescope_pointer_relay_enabled is None:
+            gamescope_pointer_relay_enabled = (
+                self.nested_desktop_gamescope_pointer_relay_enabled
+            )
         if inertia_enabled is None:
             inertia_enabled = self.nested_desktop_mouse_inertia_enabled
         if bindings_enabled is None:
             bindings_enabled = self.nested_desktop_bindings_enabled
         if bindings is None:
             bindings = self.nested_desktop_bindings
+        if clipboard_enabled is None:
+            clipboard_enabled = self.nested_desktop_clipboard_enabled
+        if clipboard_files_enabled is None:
+            clipboard_files_enabled = (
+                self.nested_desktop_clipboard_files_enabled
+            )
         if rustdesk_pointer_fix_enabled is None:
             rustdesk_pointer_fix_enabled = (
                 self.rustdesk_pointer_fix_enabled
@@ -659,9 +733,14 @@ class NestedDesktopEndpointsMixin:
                 {
                     "moduleEnabled": module_enabled,
                     "enabled": mouse_enabled,
+                    "gamescopePointerRelayEnabled": (
+                        gamescope_pointer_relay_enabled
+                    ),
                     "inertiaEnabled": inertia_enabled,
                     "bindingsEnabled": bindings_enabled,
                     "bindings": normalize_nested_desktop_bindings(bindings),
+                    "clipboardEnabled": clipboard_enabled,
+                    "clipboardFilesEnabled": clipboard_files_enabled,
                     "rustDeskPointerFixEnabled": (
                         rustdesk_pointer_fix_enabled
                     ),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -11,12 +12,17 @@ import select
 import shutil
 import subprocess
 import threading
+import time
 from typing import Callable, Mapping
 
 from .bindings import normalize_nested_desktop_bindings
 from .constants import ACTION_HIDE_KEYBOARD, ACTION_SHOW_KEYBOARD
 from .discovery import find_steam_deck_touchscreen
 from .touch import TouchscreenInertiaConfig
+
+
+CLIPBOARD_RESPONSE_PREFIX = "clipboard-text:"
+CLIPBOARD_RESPONSE_TIMEOUT = 0.75
 
 
 class NestedDesktopMouseSupervisor:
@@ -26,9 +32,12 @@ class NestedDesktopMouseSupervisor:
         logger: logging.Logger,
         module_enabled: bool = True,
         mouse_enabled: bool = True,
+        gamescope_pointer_relay_enabled: bool = True,
         inertia_enabled: bool = True,
         bindings_enabled: bool = True,
         bindings: Mapping[str, object] | None = None,
+        clipboard_enabled: bool = False,
+        clipboard_files_enabled: bool = True,
         touchscreen_enabled: bool = True,
         touchscreen_inertia_enabled: bool = True,
         touchscreen_inertia_config: (
@@ -44,9 +53,14 @@ class NestedDesktopMouseSupervisor:
         self.logger = logger
         self.module_enabled = module_enabled
         self.mouse_enabled = mouse_enabled
+        self.gamescope_pointer_relay_enabled = (
+            gamescope_pointer_relay_enabled
+        )
         self.inertia_enabled = inertia_enabled
         self.bindings_enabled = bindings_enabled
         self.bindings = normalize_nested_desktop_bindings(bindings)
+        self.clipboard_enabled = clipboard_enabled
+        self.clipboard_files_enabled = clipboard_files_enabled
         self.touchscreen_enabled = touchscreen_enabled
         self.touchscreen_inertia_enabled = touchscreen_inertia_enabled
         self.touchscreen_inertia_config = (
@@ -66,6 +80,10 @@ class NestedDesktopMouseSupervisor:
         self.thread: threading.Thread | None = None
         self.process: subprocess.Popen | None = None
         self.process_lock = threading.Lock()
+        self.clipboard_condition = threading.Condition()
+        self.clipboard_request_sequence = 0
+        self.pending_clipboard_requests: set[int] = set()
+        self.clipboard_responses: dict[int, str | None] = {}
 
     def start(self):
         if not self.module_enabled:
@@ -119,6 +137,64 @@ class NestedDesktopMouseSupervisor:
         if enabled == self.mouse_enabled:
             return
         self._restart_with(lambda: setattr(self, "mouse_enabled", enabled))
+
+    def set_gamescope_pointer_relay_enabled(self, enabled: bool):
+        if enabled == self.gamescope_pointer_relay_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(
+                self,
+                "gamescope_pointer_relay_enabled",
+                enabled,
+            )
+        )
+
+    def set_clipboard_enabled(self, enabled: bool):
+        if enabled == self.clipboard_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(self, "clipboard_enabled", enabled)
+        )
+
+    def set_clipboard_files_enabled(self, enabled: bool):
+        if enabled == self.clipboard_files_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(self, "clipboard_files_enabled", enabled)
+        )
+
+    def read_clipboard_text(self) -> str | None:
+        if not self.module_enabled or not self.clipboard_enabled:
+            return None
+        with self.clipboard_condition:
+            self.clipboard_request_sequence += 1
+            request_id = self.clipboard_request_sequence
+            self.pending_clipboard_requests.add(request_id)
+        with self.process_lock:
+            process = self.process
+            written = bool(
+                process is not None
+                and process.poll() is None
+                and self._write_control_command(
+                    process,
+                    f"clipboard-read:{request_id}\n".encode("ascii"),
+                )
+            )
+        if not written:
+            with self.clipboard_condition:
+                self.pending_clipboard_requests.discard(request_id)
+            return None
+
+        deadline = time.monotonic() + CLIPBOARD_RESPONSE_TIMEOUT
+        with self.clipboard_condition:
+            while request_id not in self.clipboard_responses:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self.pending_clipboard_requests.discard(request_id)
+                    return None
+                self.clipboard_condition.wait(remaining)
+            self.pending_clipboard_requests.discard(request_id)
+            return self.clipboard_responses.pop(request_id)
 
     def set_touchscreen_enabled(self, enabled: bool):
         if enabled == self.touchscreen_enabled:
@@ -223,17 +299,60 @@ class NestedDesktopMouseSupervisor:
         process: subprocess.Popen,
         suspended: bool,
     ):
+        self._write_control_command(
+            process,
+            b"suspend\n" if suspended else b"resume\n",
+        )
+
+    def _write_control_command(
+        self,
+        process: subprocess.Popen,
+        command: bytes,
+    ) -> bool:
         stream = process.stdin
         if stream is None:
-            return
+            return False
         try:
-            stream.write(b"suspend\n" if suspended else b"resume\n")
+            stream.write(command)
             stream.flush()
+            return True
         except (BrokenPipeError, OSError, ValueError):
             if process.poll() is None:
                 self.logger.warning(
                     "Failed to update Nested Desktop bridge suspension"
                 )
+            return False
+
+    def _handle_worker_output(self, action: str):
+        if not action.startswith(CLIPBOARD_RESPONSE_PREFIX):
+            self._dispatch_action(action)
+            return
+        try:
+            _, request, available, payload = action.split(":", 3)
+            request_id = int(request)
+            text = (
+                base64.b64decode(payload, validate=True).decode("utf-8")
+                if available == "1"
+                else None
+            )
+            if available not in {"0", "1"}:
+                raise ValueError("invalid availability flag")
+        except (UnicodeDecodeError, ValueError):
+            self.logger.warning(
+                "Ignoring malformed Nested Desktop clipboard response"
+            )
+            return
+        with self.clipboard_condition:
+            if request_id not in self.pending_clipboard_requests:
+                return
+            self.clipboard_responses[request_id] = text
+            self.clipboard_condition.notify_all()
+
+    def _fail_pending_clipboard_requests(self):
+        with self.clipboard_condition:
+            for request_id in self.pending_clipboard_requests:
+                self.clipboard_responses[request_id] = None
+            self.clipboard_condition.notify_all()
 
     def _restart_with(self, apply: Callable[[], None]):
         was_started = bool(
@@ -246,6 +365,8 @@ class NestedDesktopMouseSupervisor:
             self.module_enabled
             and (
                 self.mouse_enabled
+                or self.gamescope_pointer_relay_enabled
+                or self.clipboard_enabled
                 or self.touchscreen_enabled
                 or self.bindings_enabled
                 or self.rustdesk_pointer_fix_enabled
@@ -316,6 +437,12 @@ class NestedDesktopMouseSupervisor:
                     command.append("--no-inertia")
                 if not self.mouse_enabled:
                     command.append("--no-mouse-bridge")
+                if not self.gamescope_pointer_relay_enabled:
+                    command.append("--no-gamescope-pointer-relay")
+                if self.clipboard_enabled:
+                    command.append("--clipboard-sharing")
+                    if not self.clipboard_files_enabled:
+                        command.append("--no-clipboard-files")
                 if not self.bindings_enabled:
                     command.append("--no-bindings")
                 touchscreen_fd = None
@@ -422,7 +549,7 @@ class NestedDesktopMouseSupervisor:
                 for line in lines:
                     action = line.decode("utf-8", errors="replace").strip()
                     if action:
-                        self._dispatch_action(action)
+                        self._handle_worker_output(action)
             if self.stop_event.is_set():
                 if process.poll() is None:
                     process.terminate()
@@ -449,3 +576,4 @@ class NestedDesktopMouseSupervisor:
 
         with self.process_lock:
             self.process = None
+        self._fail_pending_clipboard_requests()

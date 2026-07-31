@@ -4,6 +4,7 @@ export interface VirtualKeyboardManager {
   };
   m_bDismissOnEnter?: boolean;
   HandleVirtualKeyDown?: (key: string) => void;
+  SendClientPasteCommand?: () => void;
   SetDismissOnEnterKey?: (dismiss: boolean) => void;
   SetVirtualKeyboardHidden?: () => void;
 }
@@ -31,6 +32,7 @@ export interface KeyboardChordEvent {
 }
 
 export interface SteamInputKeyboardEvents {
+  ControllerKeyboardSendText?: (text: string) => void;
   RegisterForUserKeyboardMessages?: (
     callback: (event: KeyboardChordEvent) => void,
   ) => {

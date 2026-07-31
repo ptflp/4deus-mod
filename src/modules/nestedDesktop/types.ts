@@ -55,8 +55,11 @@ export interface NestedDesktopMouseStatus {
   available: boolean;
   bindings: NestedDesktopBindings;
   bindingsEnabled: boolean;
+  clipboardEnabled: boolean;
+  clipboardFilesEnabled: boolean;
   enabled: boolean;
   error?: string;
+  gamescopePointerRelayEnabled: boolean;
   inertiaEnabled: boolean;
   moduleEnabled: boolean;
   rustDeskFocusOnInputEnabled: boolean;
@@ -81,6 +84,15 @@ export interface NestedDesktopApi {
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
   setNestedDesktopMouseEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopGamescopePointerRelayEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopClipboardEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopClipboardFilesEnabled(
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
   setNestedDesktopMouseInertiaEnabled(

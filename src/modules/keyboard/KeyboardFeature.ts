@@ -36,6 +36,7 @@ const BRING_TO_FRONT_AND_FORCE_OS = 1;
 
 export type KeyboardDiagnosticSender = (payload: string) => Promise<boolean>;
 export type KeyboardVisibilitySender = (visible: boolean) => Promise<boolean>;
+export type SharedClipboardReader = () => Promise<string | null>;
 
 interface DiagnosticError {
   message: string;
@@ -70,6 +71,9 @@ export class KeyboardFeature implements ModModule {
   private readonly systemKeyLayer: SystemKeyLayer;
   private dismissOnEnterManager?: WindowInstance["VirtualKeyboardManager"];
   private originalDismissOnEnter?: boolean;
+  private pasteManager?: WindowInstance["VirtualKeyboardManager"];
+  private originalClientPaste?: () => void;
+  private routedClientPaste?: () => void;
   private settingsUnsubscribe?: () => void;
   private appliedKeyboardSettings?: ModSettings["keyboard"];
   private windowTimer?: number;
@@ -89,6 +93,7 @@ export class KeyboardFeature implements ModModule {
     setSystemKeyState: SystemKeyStateSender,
     private readonly sendDiagnostics: KeyboardDiagnosticSender,
     private readonly sendKeyboardVisibility: KeyboardVisibilitySender,
+    private readonly readSharedClipboard: SharedClipboardReader,
   ) {
     this.systemKeyLayer = new SystemKeyLayer(
       sendSystemKey,
@@ -140,6 +145,7 @@ export class KeyboardFeature implements ModModule {
     this.settingsUnsubscribe = undefined;
     this.appliedKeyboardSettings = undefined;
     this.restoreDismissOnEnter();
+    this.restorePasteRouting();
     if (this.windowTimer !== undefined)
       window.clearInterval(this.windowTimer);
     this.windowTimer = undefined;
@@ -172,6 +178,7 @@ export class KeyboardFeature implements ModModule {
         this.keyboardElement?.ownerDocument === document
         && this.keyboardElement.isConnected
       ) {
+        this.syncPasteRouting();
         this.syncKeyboardVisibility();
       } else {
         this.syncKeyboardElement();
@@ -182,6 +189,7 @@ export class KeyboardFeature implements ModModule {
     this.unbindDocument(false);
     this.activeWindow = activeWindow;
     this.activeDocument = document;
+    this.syncPasteRouting();
     if (!document) {
       this.syncKeyboardVisibility();
       return;
@@ -201,6 +209,7 @@ export class KeyboardFeature implements ModModule {
     this.systemKeyLayer.unbind();
     this.keyboardElement = undefined;
     this.restoreDismissOnEnter();
+    this.restorePasteRouting();
     if (this.refreshFrame !== undefined)
       window.cancelAnimationFrame(this.refreshFrame);
     this.refreshFrame = undefined;
@@ -604,6 +613,64 @@ export class KeyboardFeature implements ModModule {
     }
     this.dismissOnEnterManager = undefined;
     this.originalDismissOnEnter = undefined;
+  }
+
+  private syncPasteRouting(): void {
+    const manager = this.activeWindow?.VirtualKeyboardManager;
+    if (
+      manager === this.pasteManager
+      && manager?.SendClientPasteCommand === this.routedClientPaste
+    ) {
+      return;
+    }
+    this.restorePasteRouting();
+    const original = manager?.SendClientPasteCommand;
+    if (!manager || typeof original !== "function")
+      return;
+
+    const fallback = original.bind(manager);
+    const routed = () => {
+      void this.routePaste(fallback);
+    };
+    manager.SendClientPasteCommand = routed;
+    this.pasteManager = manager;
+    this.originalClientPaste = original;
+    this.routedClientPaste = routed;
+  }
+
+  private restorePasteRouting(): void {
+    const manager = this.pasteManager;
+    if (
+      manager
+      && manager.SendClientPasteCommand === this.routedClientPaste
+    ) {
+      manager.SendClientPasteCommand = this.originalClientPaste;
+    }
+    this.pasteManager = undefined;
+    this.originalClientPaste = undefined;
+    this.routedClientPaste = undefined;
+  }
+
+  private async routePaste(fallback: () => void): Promise<void> {
+    try {
+      const text = await this.readSharedClipboard();
+      const input = (
+        window.SteamClient.Input as unknown as SteamInputKeyboardEvents
+      );
+      if (
+        text !== null
+        && typeof input.ControllerKeyboardSendText === "function"
+      ) {
+        input.ControllerKeyboardSendText(text);
+        return;
+      }
+    } catch (error) {
+      console.warn(
+        "[4deus Mod/Keyboard] Shared clipboard paste failed",
+        error,
+      );
+    }
+    fallback();
   }
 
   private promoteKeyboard(): void {

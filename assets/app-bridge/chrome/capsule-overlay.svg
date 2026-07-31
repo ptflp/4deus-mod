@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
+  <defs>
+    <linearGradient id="bottom-fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#020713" stop-opacity="0"/>
+      <stop offset="0.48" stop-color="#020713" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#020713" stop-opacity="0.92"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="390" width="600" height="510" fill="url(#bottom-fade)"/>
+  <image href="icon.svg" x="246" y="672" width="108" height="108"/>
+  <text x="300" y="825" text-anchor="middle" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="68" font-weight="700" letter-spacing="4">CHROME</text>
+  <text x="300" y="864" text-anchor="middle" fill="#ffffff" fill-opacity="0.7" font-family="Noto Sans, sans-serif" font-size="22" font-weight="600" letter-spacing="10">GOOGLE</text>
+</svg>

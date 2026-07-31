@@ -1,10 +1,13 @@
 from pathlib import Path
+import base64
 import json
 import os
 import socket
 import struct
 import tempfile
 import threading
+import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock
 
@@ -17,10 +20,15 @@ from nested_desktop_mouse import (
     ACTION_SHOW_KEYBOARD,
     BindingUpdate,
     BUTTON_SOURCE_MASKS,
+    CapturedPointerUpdate,
+    ClipboardContent,
     CursorSnapshot,
     DEFAULT_NESTED_DESKTOP_BINDINGS,
     EIS_KEY_CODES,
     GamescopeCursorCompositor,
+    GamescopePointerInterceptor,
+    GamescopePointerTranslator,
+    GAMESCOPE_POINTER_RELAY_DELAY,
     IDLE_INPUT_FRAME_INTERVAL,
     INPUT_FRAME_INTERVAL,
     InputBindingTranslator,
@@ -29,6 +37,7 @@ from nested_desktop_mouse import (
     JoystickEvent,
     LinuxInputEvent,
     NestedDesktopCursorOverlay,
+    NestedDesktopClipboardBridge,
     NestedDesktopSession,
     PointerUpdate,
     RIGHT_PAD_TOUCHED,
@@ -36,6 +45,7 @@ from nested_desktop_mouse import (
     RIGHT_TRIGGER,
     TrackpadState,
     TrackpadTranslator,
+    X11ClipboardEndpoint,
     NestedDesktopMouseRuntime,
     NestedDesktopMouseSupervisor,
     RustDeskMouseTranslator,
@@ -57,8 +67,14 @@ from nested_desktop_mouse import (
     query_rustdesk_video_connection_count,
     receive_rustdesk_ipc_frame,
     remove_nested_wayland_alias,
+    scaled_cursor_snapshot,
     should_forward_back_button,
     should_forward_pointer,
+)
+from fourdeus_backend.nested_desktop.clipboard_content import (
+    encode_file_uri_list,
+    encode_gnome_copied_files,
+    parse_file_uri_list,
 )
 
 
@@ -80,6 +96,349 @@ class NestedDesktopSupervisorTests(unittest.TestCase):
 
         self.assertTrue(supervisor.module_enabled)
         supervisor.start.assert_called_once_with()
+
+    def test_clipboard_alone_starts_the_worker(self):
+        supervisor = NestedDesktopMouseSupervisor(
+            plugin_root=Path("/tmp/4deus-test"),
+            logger=MagicMock(),
+            mouse_enabled=False,
+            bindings_enabled=False,
+            touchscreen_enabled=False,
+            rustdesk_pointer_fix_enabled=False,
+            rustdesk_focus_on_input_enabled=False,
+            clipboard_enabled=False,
+        )
+        supervisor.start = MagicMock()
+
+        supervisor.set_clipboard_enabled(True)
+
+        self.assertTrue(supervisor.clipboard_enabled)
+        supervisor.start.assert_called_once_with()
+
+    def test_decodes_clipboard_response_without_logging_its_text(self):
+        supervisor = NestedDesktopMouseSupervisor(
+            plugin_root=Path("/tmp/4deus-test"),
+            logger=MagicMock(),
+            clipboard_enabled=True,
+        )
+        with supervisor.clipboard_condition:
+            supervisor.pending_clipboard_requests.add(7)
+
+        encoded = base64.b64encode("общий".encode("utf-8")).decode("ascii")
+        supervisor._handle_worker_output(
+            f"clipboard-text:7:1:{encoded}"
+        )
+
+        self.assertEqual(supervisor.clipboard_responses[7], "общий")
+
+
+class NestedDesktopClipboardTests(unittest.TestCase):
+    def test_prefers_png_and_utf8_when_an_owner_offers_both(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.image_atoms = {
+            "image/png": 20,
+            "image/jpeg": 21,
+            "image/webp": 22,
+            "image/bmp": 23,
+        }
+        endpoint.preferred_file_targets = (30, 31)
+        endpoint.preferred_text_targets = (10, 11)
+
+        selected = endpoint._supported_targets((11, 21, 10, 20))
+
+        self.assertEqual(list(selected), [20, 10])
+
+    def test_prefers_file_image_and_text_without_reading_file_bytes(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.image_atoms = {
+            "image/png": 20,
+            "image/jpeg": 21,
+            "image/webp": 22,
+            "image/bmp": 23,
+        }
+        endpoint.preferred_file_targets = (30, 31)
+        endpoint.preferred_text_targets = (10, 11)
+
+        selected = endpoint._supported_targets((11, 30, 20, 10))
+
+        self.assertEqual(list(selected), [30, 20, 10])
+
+    def test_file_uri_lists_accept_only_local_copyable_paths(self):
+        parsed = parse_file_uri_list(
+            b"cut\n"
+            b"# copied by a file manager\r\n"
+            b"file:///tmp/one%20file\r\n"
+            b"file://localhost/tmp/two\r\n"
+            b"https://example.com/not-local\r\n"
+            b"file://remote-host/tmp/not-local\r\n"
+        )
+
+        self.assertEqual(
+            parsed,
+            ("file:///tmp/one%20file", "file:///tmp/two"),
+        )
+        self.assertEqual(
+            encode_file_uri_list(parsed),
+            b"file:///tmp/one%20file\r\nfile:///tmp/two\r\n",
+        )
+        self.assertEqual(
+            encode_gnome_copied_files(parsed),
+            b"copy\nfile:///tmp/one%20file\nfile:///tmp/two\n",
+        )
+
+    def test_serves_file_manager_cut_state_as_copy_only(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.display = 1
+        endpoint.selection = 2
+        endpoint.targets = 3
+        endpoint.uri_list = 4
+        endpoint.gnome_copied_files = 5
+        endpoint.kde_cut_selection = 6
+        endpoint.file_targets = {4, 5}
+        endpoint.supported_text_targets = set()
+        endpoint.image_atoms = {}
+        endpoint.x11 = MagicMock()
+        endpoint.content = ClipboardContent(
+            file_uris=("file:///tmp/copied",),
+        )
+        endpoint._write_property_bytes = MagicMock()
+        request = SimpleNamespace(
+            requestor=7,
+            selection=2,
+            target=6,
+            property=8,
+            time=9,
+        )
+
+        endpoint._respond_to_request(request)
+
+        endpoint._write_property_bytes.assert_called_once_with(
+            7,
+            8,
+            6,
+            b"0",
+        )
+
+    def test_large_image_limit_does_not_discard_valid_text(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.max_text_bytes = 16
+        endpoint.max_bytes = 8
+        endpoint.image_atoms = {"image/png": 20}
+
+        with self.assertLogs("4deus-nested-mouse", level="WARNING"):
+            normalized = endpoint._normalize_content(
+                ClipboardContent(
+                    text="kept",
+                    image_mime="image/png",
+                    image=b"123456789",
+                )
+            )
+
+        self.assertEqual(normalized, ClipboardContent(text="kept"))
+
+    def test_serves_large_payload_in_x11_safe_property_chunks(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.x11 = MagicMock()
+        endpoint.display = 1
+        endpoint.property_chunk_bytes = 4
+
+        endpoint._write_property_bytes(2, 3, 4, b"abcdefghij")
+
+        calls = endpoint.x11.XChangeProperty.call_args_list
+        self.assertEqual(len(calls), 3)
+        self.assertEqual([call.args[5] for call in calls], [0, 2, 2])
+        self.assertEqual([call.args[7] for call in calls], [4, 4, 2])
+
+    def test_receives_incremental_image_chunks_before_publishing(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.pending_target = 20
+        endpoint.window = 1
+        endpoint.property = 2
+        endpoint.incremental_buffer = bytearray()
+        endpoint.incremental_discard = False
+        endpoint.max_bytes = 64
+        endpoint.max_text_bytes = 16
+        endpoint.targets = 5
+        endpoint.file_targets = set()
+        endpoint.image_mimes_by_atom = {20: "image/png"}
+        endpoint.clock = MagicMock(return_value=1.0)
+        endpoint.x11 = MagicMock()
+        endpoint.display = 3
+        endpoint._read_property = MagicMock(side_effect=(
+            SimpleNamespace(format=8, type_atom=20, bytes_value=b"PNG-"),
+            SimpleNamespace(format=8, type_atom=20, bytes_value=b""),
+        ))
+        endpoint._consume_target = MagicMock(return_value=[])
+        notification = SimpleNamespace(
+            window=1,
+            atom=2,
+            state=0,
+        )
+
+        endpoint._handle_incremental_property(notification)
+        endpoint._handle_incremental_property(notification)
+
+        endpoint._consume_target.assert_called_once()
+        target, value = endpoint._consume_target.call_args.args
+        self.assertEqual(target, 20)
+        self.assertEqual(value.bytes_value, b"PNG-")
+
+    def test_forwards_new_text_in_both_directions(self):
+        endpoints = []
+
+        class Endpoint:
+            def __init__(self, display_name, xauthority):
+                self.display_name = display_name
+                self.xauthority = xauthority
+                self.updates = []
+                self.received = []
+                self.closed = 0
+                self.initialized = True
+                self.text = None
+                endpoints.append(self)
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                self.text = value.text
+                return True
+
+            def close(self):
+                self.closed += 1
+
+        bridge = NestedDesktopClipboardBridge(
+            endpoint_factory=Endpoint,
+        )
+        session = NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+
+        bridge.set_session(session)
+        endpoints[0].updates.append(ClipboardContent(text="outer"))
+        bridge.dispatch()
+        endpoints[1].updates.append(ClipboardContent(text="inner"))
+        bridge.dispatch()
+
+        self.assertEqual(
+            endpoints[0].received,
+            [ClipboardContent(text="inner")],
+        )
+        self.assertEqual(
+            endpoints[1].received,
+            [ClipboardContent(text="outer")],
+        )
+        self.assertEqual(bridge.current_text(), "inner")
+        bridge.close()
+        self.assertEqual([endpoint.closed for endpoint in endpoints], [1, 1])
+
+    def test_file_sharing_can_be_disabled_without_blocking_text(self):
+        endpoints = []
+
+        class Endpoint:
+            def __init__(self, _display_name, _xauthority):
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                endpoints.append(self)
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                return True
+
+            def close(self):
+                pass
+
+        bridge = NestedDesktopClipboardBridge(
+            endpoint_factory=Endpoint,
+            files_enabled=False,
+        )
+        bridge.set_session(NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        ))
+        endpoints[0].updates.append(ClipboardContent(
+            text="still shared",
+            file_uris=("file:///tmp/not-shared",),
+        ))
+
+        bridge.dispatch()
+
+        self.assertEqual(
+            endpoints[1].received,
+            [ClipboardContent(text="still shared")],
+        )
+        bridge.close()
+
+    def test_forwards_an_image_and_its_text_representation_together(self):
+        endpoints = []
+
+        class Endpoint:
+            def __init__(self, _display_name, _xauthority):
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                endpoints.append(self)
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                self.text = value.text
+                return True
+
+            @staticmethod
+            def close():
+                return None
+
+        bridge = NestedDesktopClipboardBridge(endpoint_factory=Endpoint)
+        bridge.set_session(
+            NestedDesktopSession(
+                pid=1,
+                app_id=2,
+                display=":2",
+                xauthority=Path("/tmp/xauth"),
+                dbus_address="unix:path=/tmp/dbus",
+            )
+        )
+        copied = ClipboardContent(
+            text="https://example.test/image.png",
+            image_mime="image/png",
+            image=b"\x89PNG\r\n\x1a\nimage-data",
+        )
+
+        endpoints[0].updates.append(copied)
+        bridge.dispatch()
+
+        self.assertEqual(endpoints[1].received, [copied])
+        self.assertEqual(
+            endpoints[1].received[0].formats,
+            ("text/plain", "image/png"),
+        )
+        self.assertEqual(
+            endpoints[1].received[0].byte_count,
+            len(copied.text.encode("utf-8")) + len(copied.image),
+        )
 
 
 def trackpad_state(
@@ -954,6 +1313,196 @@ class TrackpadTranslatorTests(unittest.TestCase):
 
 
 class GamescopeFocusTests(unittest.TestCase):
+    def test_gamescope_pointer_translator_keeps_fractional_motion(self):
+        translator = GamescopePointerTranslator()
+
+        first = translator.motion({0: 0.4, 1: -0.6})
+        second = translator.motion({0: 0.7, 1: -0.6})
+        scroll = translator.motion({2: 0.5, 3: -1.0})
+
+        self.assertEqual(first, PointerUpdate())
+        self.assertEqual(second, PointerUpdate(dx=1, dy=-1))
+        self.assertEqual(
+            scroll,
+            PointerUpdate(
+                scroll_discrete_x=60,
+                scroll_discrete_y=-120,
+            ),
+        )
+
+    def test_gamescope_pointer_translator_releases_held_buttons(self):
+        translator = GamescopePointerTranslator()
+
+        self.assertEqual(
+            translator.button(1, True),
+            PointerUpdate(left_button=True),
+        )
+        self.assertEqual(
+            translator.button(3, True),
+            PointerUpdate(right_button=True),
+        )
+        self.assertEqual(
+            translator.release(),
+            PointerUpdate(left_button=False, right_button=False),
+        )
+
+    def test_gamescope_pointer_interceptor_grabs_only_on_transitions(self):
+        connections = []
+
+        class Connection:
+            def __init__(self, display_name):
+                self.display_name = display_name
+                self.grabs = 0
+                self.ungrabs = 0
+                self.closed = 0
+                self.updates = (
+                    CapturedPointerUpdate(
+                        1.0,
+                        PointerUpdate(left_button=True),
+                    ),
+                )
+                connections.append(self)
+
+            def grab_pointer(self):
+                self.grabs += 1
+                return True
+
+            def ungrab_pointer(self):
+                self.ungrabs += 1
+
+            @staticmethod
+            def fileno():
+                return 7
+
+            def dispatch(self):
+                updates = self.updates
+                self.updates = ()
+                return updates
+
+            @staticmethod
+            def release_update():
+                return PointerUpdate(left_button=False)
+
+            def close(self):
+                self.closed += 1
+
+        interceptor = GamescopePointerInterceptor(
+            connection_factory=Connection,
+        )
+
+        self.assertTrue(interceptor.set_active(True, ":1"))
+        self.assertTrue(interceptor.set_active(True, ":1"))
+        self.assertEqual(interceptor.fileno(), 7)
+        self.assertEqual(
+            interceptor.dispatch(),
+            (
+                CapturedPointerUpdate(
+                    1.0,
+                    PointerUpdate(left_button=True),
+                ),
+            ),
+        )
+        self.assertTrue(interceptor.set_active(False))
+
+        self.assertEqual(len(connections), 1)
+        self.assertEqual(connections[0].display_name, ":1")
+        self.assertEqual(connections[0].grabs, 1)
+        self.assertEqual(connections[0].ungrabs, 1)
+        self.assertEqual(connections[0].closed, 1)
+        self.assertEqual(
+            interceptor.take_release_updates(),
+            (PointerUpdate(left_button=False),),
+        )
+
+    def test_gamescope_pointer_relay_delays_and_forwards_external_input(self):
+        class Interceptor:
+            display_name = None
+
+            def __init__(self):
+                self.active = False
+                self.updates = []
+
+            def set_active(self, active, display_name=None):
+                self.active = active
+                self.display_name = display_name if active else None
+                return True
+
+            def fileno(self):
+                return 7 if self.active else -1
+
+            def dispatch(self):
+                updates = tuple(self.updates)
+                self.updates.clear()
+                return updates
+
+            @staticmethod
+            def take_release_updates():
+                return ()
+
+        class InnerEis:
+            ready = True
+
+            def __init__(self):
+                self.emulating = False
+                self.updates = []
+
+            def set_emulating(self, active):
+                self.emulating = active
+                return True
+
+            def inject(self, update):
+                self.updates.append(update)
+
+        interceptor = Interceptor()
+        inner_eis = InnerEis()
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            gamescope_pointer_interceptor=interceptor,
+        )
+        runtime.inner_eis = inner_eis
+        runtime._set_gamescope_pointer_intercepted(True, ":1")
+        interceptor.updates.append(
+            CapturedPointerUpdate(
+                time.monotonic() - GAMESCOPE_POINTER_RELAY_DELAY - 0.01,
+                PointerUpdate(dx=3, dy=-2),
+            )
+        )
+
+        runtime._read_gamescope_pointer_events()
+        runtime._flush_gamescope_pointer_updates()
+
+        self.assertTrue(runtime.gamescope_pointer_forwarding)
+        self.assertEqual(inner_eis.updates, [PointerUpdate(dx=3, dy=-2)])
+
+    def test_direct_hid_activity_suppresses_captured_duplicate(self):
+        class InnerEis:
+            ready = True
+            emulating = True
+
+            def __init__(self):
+                self.updates = []
+
+            def inject(self, update):
+                self.updates.append(update)
+
+        runtime = NestedDesktopMouseRuntime(threading.Event())
+        runtime.inner_eis = InnerEis()
+        runtime.gamescope_pointer_forwarding = True
+        received_at = (
+            time.monotonic() - GAMESCOPE_POINTER_RELAY_DELAY - 0.01
+        )
+        runtime.gamescope_pointer_updates.append(
+            CapturedPointerUpdate(
+                received_at,
+                PointerUpdate(left_button=True),
+            )
+        )
+        runtime._mark_gamescope_pointer_hid_activity(received_at)
+
+        runtime._flush_gamescope_pointer_updates()
+
+        self.assertEqual(runtime.inner_eis.updates, [])
+
     def test_gamescope_cursor_compositor_restores_stale_marker(self):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / "cursor-hidden"
@@ -1094,6 +1643,27 @@ class GamescopeFocusTests(unittest.TestCase):
         self.assertEqual(outlined.pixels[10], 0xFFFFFFFF)
         self.assertEqual(outlined.pixels[3], 0)
 
+    def test_oversized_cursor_is_scaled_with_its_hotspot(self):
+        snapshot = CursorSnapshot(
+            x=123,
+            y=456,
+            width=4,
+            height=2,
+            xhot=2,
+            yhot=1,
+            serial=7,
+            pixels=tuple(range(8)),
+        )
+
+        scaled = scaled_cursor_snapshot(snapshot, max_dimension=2)
+
+        self.assertEqual(
+            (scaled.width, scaled.height, scaled.xhot, scaled.yhot),
+            (2, 1, 1, 0),
+        )
+        self.assertEqual(scaled.pixels, (0, 2))
+        self.assertEqual((scaled.x, scaled.y, scaled.serial), (123, 456, 7))
+
     def test_cursor_overlay_repaints_after_first_map(self):
         calls = []
 
@@ -1195,6 +1765,27 @@ class GamescopeFocusTests(unittest.TestCase):
         overlay.show()
 
         self.assertEqual(calls, [{"sync_position": False}])
+
+    def test_relative_cursor_motion_warps_kwin_without_visual_rebase(self):
+        overlay = NestedDesktopCursorOverlay.__new__(
+            NestedDesktopCursorOverlay
+        )
+        overlay.visible = True
+        overlay.pointer_x = 100.0
+        overlay.pointer_y = 200.0
+        overlay.screen_width = 1280
+        overlay.screen_height = 800
+        overlay.display = 1
+        overlay.x11 = MagicMock()
+        overlay._warp_pointer = MagicMock()
+        overlay._move = MagicMock()
+
+        overlay.apply(PointerUpdate(dx=5.0, dy=-3.0))
+
+        self.assertEqual((overlay.pointer_x, overlay.pointer_y), (105, 197))
+        overlay._warp_pointer.assert_called_once_with(flush=False)
+        overlay._move.assert_called_once_with(flush=False)
+        overlay.x11.XFlush.assert_called_once_with(1)
 
     def test_decodes_gamescope_packed_display(self):
         self.assertEqual(decode_gamescope_display(packed_display(":1")), ":1")
@@ -1328,6 +1919,46 @@ class RuntimeSuspensionTests(unittest.TestCase):
         finally:
             os.close(write_fd)
             os.close(read_fd)
+
+    def test_control_channel_returns_shared_clipboard_text(self):
+        class Clipboard:
+            def __init__(self):
+                self.dispatches = 0
+
+            def dispatch(self):
+                self.dispatches += 1
+
+            @staticmethod
+            def current_text():
+                return "shared ✓"
+
+        read_fd, write_fd = os.pipe()
+        actions = []
+        clipboard = Clipboard()
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            action_callback=actions.append,
+            clipboard_bridge=clipboard,
+            control_fd=read_fd,
+        )
+        try:
+            os.write(write_fd, b"clipboard-read:42\n")
+            runtime._read_control_commands()
+        finally:
+            os.close(write_fd)
+            os.close(read_fd)
+
+        prefix, request_id, available, payload = actions[0].split(":", 3)
+        self.assertEqual((prefix, request_id, available), (
+            "clipboard-text",
+            "42",
+            "1",
+        ))
+        self.assertEqual(
+            base64.b64decode(payload).decode("utf-8"),
+            "shared ✓",
+        )
+        self.assertEqual(clipboard.dispatches, 1)
 
     def test_remote_activity_requests_one_keyboard_dismiss_per_open(self):
         actions = []

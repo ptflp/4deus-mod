@@ -90,6 +90,21 @@ class RuntimeHidInputMixin:
                 if self.forwarding
                 else PointerUpdate()
             )
+            if (
+                (
+                    self.forwarding
+                    and (
+                        state.left_touched
+                        or state.right_touched
+                        or not update.empty
+                    )
+                )
+                or (
+                    self.binding_pointer_forwarding
+                    and not binding_update.pointer.empty
+                )
+            ):
+                self._mark_gamescope_pointer_hid_activity(frame_started)
             if self.inner_eis is not None:
                 try:
                     self.inner_eis.inject(update)

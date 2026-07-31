@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1250" height="300" viewBox="0 0 1250 300">
+  <image href="icon.svg" x="18" y="24" width="252" height="252"/>
+  <text x="322" y="103" fill="#ffffff" fill-opacity="0.78" font-family="Noto Sans, sans-serif" font-size="62" font-weight="600" letter-spacing="15">GOOGLE</text>
+  <text x="312" y="238" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="150" font-weight="700" letter-spacing="2">CHROME</text>
+</svg>

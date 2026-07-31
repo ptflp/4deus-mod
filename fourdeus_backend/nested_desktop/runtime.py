@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+from collections import deque
 import logging
 import os
 from pathlib import Path
@@ -19,12 +21,16 @@ from .constants import (
     IDLE_INPUT_FRAME_INTERVAL, LEGACY_RUSTDESK_POINTER_SYNC_MARKER,
     RUSTDESK_FOCUS_REQUEST_COOLDOWN,
 )
+from .clipboard_bridge import NestedDesktopClipboardBridge
 from .cursor import NestedDesktopCursorOverlay
 from .discovery import process_uses_proton, remove_nested_wayland_alias
 from .eis import EisConnection
-from .gamescope import GamescopeCursorCompositor
+from .gamescope import (
+    GamescopeCursorCompositor, GamescopePointerInterceptor,
+)
 from .models import NestedDesktopSession
 from .runtime_focus import RuntimeFocusMixin
+from .runtime_cursor import RuntimeCursorMixin
 from .runtime_hid import RuntimeHidInputMixin
 from .runtime_remote import RuntimeRemoteInputMixin
 from .runtime_touch import RuntimeTouchInputMixin
@@ -39,9 +45,12 @@ from .touch import (
 
 
 LOGGER = logging.getLogger("4deus-nested-mouse")
+CLIPBOARD_READ_COMMAND = b"clipboard-read:"
+CLIPBOARD_TEXT_RESPONSE = "clipboard-text"
 
 
 class NestedDesktopMouseRuntime(
+    RuntimeCursorMixin,
     RuntimeFocusMixin,
     RuntimeRemoteInputMixin,
     RuntimeHidInputMixin,
@@ -56,6 +65,7 @@ class NestedDesktopMouseRuntime(
         sys_class_input: Path = Path("/sys/class/input"),
         input_dev_root: Path = Path("/dev/input"),
         mouse_enabled: bool = True,
+        gamescope_pointer_relay_enabled: bool = True,
         inertia_enabled: bool = True,
         bindings_enabled: bool = True,
         bindings: Mapping[str, object] | None = None,
@@ -85,6 +95,10 @@ class NestedDesktopMouseRuntime(
         gamescope_cursor_compositor: (
             GamescopeCursorCompositor | None
         ) = None,
+        gamescope_pointer_interceptor: (
+            GamescopePointerInterceptor | None
+        ) = None,
+        clipboard_bridge: NestedDesktopClipboardBridge | None = None,
     ):
         self.stop_event = stop_event
         self.proc_root = proc_root
@@ -157,6 +171,16 @@ class NestedDesktopMouseRuntime(
         self.gamescope_cursor_compositor = (
             gamescope_cursor_compositor
         )
+        self.gamescope_pointer_interceptor = (
+            gamescope_pointer_interceptor
+        )
+        self.gamescope_pointer_relay_enabled = (
+            gamescope_pointer_relay_enabled
+        )
+        self.gamescope_pointer_forwarding = False
+        self.gamescope_pointer_updates = deque()
+        self.gamescope_pointer_hid_suppression_until = 0.0
+        self.clipboard_bridge = clipboard_bridge
         self.translator = TrackpadTranslator(
             inertia_enabled=inertia_enabled,
         )
@@ -209,6 +233,8 @@ class NestedDesktopMouseRuntime(
                     next_discovery = now + DISCOVERY_INTERVAL
                 if now >= next_focus_check:
                     self._refresh_forwarding()
+                    if self.clipboard_bridge is not None:
+                        self.clipboard_bridge.dispatch()
                     next_focus_check = now + FOCUS_CHECK_INTERVAL
                 next_deadline = min(next_discovery, next_focus_check)
                 timeout = max(
@@ -224,6 +250,10 @@ class NestedDesktopMouseRuntime(
             self._close_cursor_overlay()
             if self.gamescope_cursor_compositor is not None:
                 self.gamescope_cursor_compositor.close()
+            if self.gamescope_pointer_interceptor is not None:
+                self.gamescope_pointer_interceptor.close()
+            if self.clipboard_bridge is not None:
+                self.clipboard_bridge.close()
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             self._set_remote_forwarding(False)
@@ -249,6 +279,7 @@ class NestedDesktopMouseRuntime(
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
             self._set_touch_forwarding(False)
+            self._set_gamescope_pointer_intercepted(False)
         self.next_input_frame = 0.0
         self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
         LOGGER.info(
@@ -347,6 +378,10 @@ class NestedDesktopMouseRuntime(
                     self.set_suspended(True)
                 elif command == b"resume":
                     self.set_suspended(False)
+                elif command.startswith(CLIPBOARD_READ_COMMAND):
+                    self._respond_with_clipboard_text(
+                        command[len(CLIPBOARD_READ_COMMAND):]
+                    )
                 elif command:
                     LOGGER.warning(
                         "Ignoring unknown bridge control command %r",
@@ -360,6 +395,40 @@ class NestedDesktopMouseRuntime(
             self.control_fd = None
             self.control_buffer = b""
 
+    def _respond_with_clipboard_text(self, raw_request_id: bytes):
+        callback = self.action_callback
+        if callback is None:
+            return
+        try:
+            request_id = int(raw_request_id)
+            if request_id < 0:
+                raise ValueError("negative request ID")
+        except ValueError:
+            LOGGER.warning(
+                "Ignoring invalid clipboard request ID %r",
+                raw_request_id,
+            )
+            return
+
+        text = None
+        bridge = self.clipboard_bridge
+        if bridge is not None:
+            try:
+                bridge.dispatch()
+                text = bridge.current_text()
+            except Exception:
+                LOGGER.exception("Failed to read the shared clipboard")
+        available = text is not None
+        encoded = (
+            base64.b64encode(text.encode("utf-8")).decode("ascii")
+            if available
+            else ""
+        )
+        callback(
+            f"{CLIPBOARD_TEXT_RESPONSE}:{request_id}:"
+            f"{int(available)}:{encoded}"
+        )
+
     def _read_auxiliary_events(
         self,
         timeout: float,
@@ -371,6 +440,7 @@ class NestedDesktopMouseRuntime(
             timeout = self.rustdesk_scroll_inertia.timeout(now, timeout)
         if self.touch_forwarding:
             timeout = self.touchscreen_inertia.timeout(now, timeout)
+        timeout = self._gamescope_pointer_timeout(now, timeout)
         control_fd = self.control_fd
         rustdesk_fd = self.rustdesk_fd if include_remote else None
         rustdesk_keyboard_fd = (
@@ -386,6 +456,7 @@ class NestedDesktopMouseRuntime(
             if include_remote
             else None
         )
+        gamescope_pointer_fd = self._gamescope_pointer_fileno()
         descriptors = [
             descriptor
             for descriptor in (
@@ -394,6 +465,7 @@ class NestedDesktopMouseRuntime(
                 rustdesk_keyboard_fd,
                 touchscreen_fd,
                 relay,
+                gamescope_pointer_fd,
             )
             if descriptor is not None
         ]
@@ -402,6 +474,7 @@ class NestedDesktopMouseRuntime(
             if include_remote:
                 self._tick_rustdesk_scroll_inertia()
             self._tick_touchscreen_inertia()
+            self._flush_gamescope_pointer_updates()
             return
         try:
             readable, _, _ = select.select(
@@ -427,6 +500,8 @@ class NestedDesktopMouseRuntime(
             if touchscreen_fd is not None:
                 self._set_touch_forwarding(False)
                 self._close_touchscreen()
+            if gamescope_pointer_fd is not None:
+                self._set_gamescope_pointer_intercepted(False)
             return
 
         if control_fd is not None and control_fd in readable:
@@ -456,9 +531,15 @@ class NestedDesktopMouseRuntime(
             and relay in readable
         ):
             self._read_rustdesk_relay_events()
+        if (
+            gamescope_pointer_fd is not None
+            and gamescope_pointer_fd in readable
+        ):
+            self._read_gamescope_pointer_events()
         if include_remote:
             self._tick_rustdesk_scroll_inertia()
         self._tick_touchscreen_inertia()
+        self._flush_gamescope_pointer_updates()
 
     def _tick_rustdesk_scroll_inertia(self):
         inner_eis = self.inner_eis
@@ -493,7 +574,11 @@ class NestedDesktopMouseRuntime(
         self._set_remote_relaying(False)
         self.binding_forwarding = False
         self.binding_pointer_forwarding = False
+        self.gamescope_pointer_forwarding = False
+        self.gamescope_pointer_updates.clear()
+        self.gamescope_pointer_hid_suppression_until = 0.0
         self.touch_forwarding = False
         self._set_cursor_overlay(False)
+        self._set_gamescope_pointer_intercepted(False)
         self.next_input_frame = 0.0
         self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL

@@ -16,6 +16,7 @@ import { DeveloperModePanel } from "../modules/developer/DeveloperModePanel";
 import { TrackpadMetricsPanel } from "../modules/developer/TrackpadMetricsPanel";
 import type { DeveloperApi } from "../modules/developer/types";
 import { KeyboardPanel } from "../modules/keyboard/KeyboardPanel";
+import { ClipboardPanel } from "../modules/nestedDesktop/ClipboardPanel";
 import {
   KeyboardShortcutsPanel,
 } from "../modules/keyboard/KeyboardShortcutsPanel";
@@ -96,6 +97,11 @@ export const ModSettingsRoute = ({
             settings={settings}
           />
         ),
+      },
+      {
+        identifier: "nested-desktop-clipboard",
+        title: strings.nestedDesktopClipboard,
+        content: <ClipboardPanel api={nestedDesktopApi} />,
       },
       {
         identifier: "nested-desktop-hotkeys",

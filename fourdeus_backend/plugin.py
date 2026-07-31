@@ -81,9 +81,12 @@ class Plugin(
         (
             self.nested_desktop_module_enabled,
             self.nested_desktop_mouse_enabled,
+            self.nested_desktop_gamescope_pointer_relay_enabled,
             self.nested_desktop_mouse_inertia_enabled,
             self.nested_desktop_bindings_enabled,
             self.nested_desktop_bindings,
+            self.nested_desktop_clipboard_enabled,
+            self.nested_desktop_clipboard_files_enabled,
             self.rustdesk_pointer_fix_enabled,
             self.rustdesk_scroll_inertia_enabled,
             self.rustdesk_focus_on_input_enabled,
@@ -98,11 +101,20 @@ class Plugin(
                 logger=logger,
                 module_enabled=self.nested_desktop_module_enabled,
                 mouse_enabled=self.nested_desktop_mouse_enabled,
+                gamescope_pointer_relay_enabled=(
+                    self.nested_desktop_gamescope_pointer_relay_enabled
+                ),
                 inertia_enabled=(
                     self.nested_desktop_mouse_inertia_enabled
                 ),
                 bindings_enabled=self.nested_desktop_bindings_enabled,
                 bindings=self.nested_desktop_bindings,
+                clipboard_enabled=(
+                    self.nested_desktop_clipboard_enabled
+                ),
+                clipboard_files_enabled=(
+                    self.nested_desktop_clipboard_files_enabled
+                ),
                 touchscreen_enabled=self.nested_desktop_touch_enabled,
                 touchscreen_inertia_enabled=(
                     self.nested_desktop_touch_inertia_enabled
@@ -210,6 +222,8 @@ class Plugin(
             and self.nested_desktop_module_enabled
             and (
                 self.nested_desktop_mouse_enabled
+                or self.nested_desktop_gamescope_pointer_relay_enabled
+                or self.nested_desktop_clipboard_enabled
                 or self.nested_desktop_touch_enabled
                 or self.nested_desktop_bindings_enabled
                 or self.rustdesk_pointer_fix_enabled

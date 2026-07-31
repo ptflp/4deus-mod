@@ -27,6 +27,10 @@ class _XPropertyEvent(ctypes.Structure):
     ]
 
 class X11Connection:
+    GRAB_SUCCESS = 0
+    GRAB_MODE_ASYNC = 1
+    CURRENT_TIME = 0
+
     def __init__(
         self,
         display_name: str,
@@ -102,6 +106,23 @@ class X11Connection:
             ctypes.c_long,
         ]
         self.x11.XSelectInput.restype = ctypes.c_int
+        self.x11.XGrabPointer.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_int,
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+        ]
+        self.x11.XGrabPointer.restype = ctypes.c_int
+        self.x11.XUngrabPointer.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+        ]
+        self.x11.XUngrabPointer.restype = ctypes.c_int
         self.x11.XPending.argtypes = [ctypes.c_void_p]
         self.x11.XPending.restype = ctypes.c_int
         self.x11.XNextEvent.argtypes = [
@@ -238,6 +259,29 @@ class X11Connection:
                 )
             )
         return changed
+
+    def grab_pointer(self) -> bool:
+        """Exclusively consume pointer delivery without blocking keyboard."""
+        status = self.x11.XGrabPointer(
+            self.display,
+            self.root,
+            0,
+            0,
+            self.GRAB_MODE_ASYNC,
+            self.GRAB_MODE_ASYNC,
+            0,
+            0,
+            self.CURRENT_TIME,
+        )
+        self.x11.XFlush(self.display)
+        return status == self.GRAB_SUCCESS
+
+    def ungrab_pointer(self):
+        self.x11.XUngrabPointer(
+            self.display,
+            self.CURRENT_TIME,
+        )
+        self.x11.XFlush(self.display)
 
     def close(self):
         display = getattr(self, "display", None)

@@ -79,6 +79,12 @@ export interface Strings {
   steamOsApplicationReady: string;
   nestedDesktopMouseBridge: string;
   nestedDesktopMouseBridgeDescription: string;
+  nestedDesktopGamescopePointerRelay: string;
+  nestedDesktopGamescopePointerRelayDescription: string;
+  nestedDesktopClipboard: string;
+  nestedDesktopClipboardDescription: string;
+  nestedDesktopClipboardFiles: string;
+  nestedDesktopClipboardFilesDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
   nestedDesktopTouchscreen: string;
@@ -359,7 +365,7 @@ const define = ([
   trackpadMetricsConfirm = "Confirm",
   appBridgeTerminalDescription = "Add a Gaming Mode terminal powered by Konsole with Steam runtime noise removed",
   addOrFixTerminal = "Add / Fix Terminal",
-  appBridgeChromeDescription = "Add or repair Google Chrome and launch it directly in browser fullscreen",
+  appBridgeChromeDescription = "Add or repair Google Chrome with premium Steam artwork",
   addOrFixChrome = "Add / Fix Google Chrome",
 ]: Values): Strings => ({
   keyboard,
@@ -438,6 +444,12 @@ const define = ([
   steamOsApplicationReady: "SteamOS application is ready",
   nestedDesktopMouseBridge: "Nested Desktop mouse over games",
   nestedDesktopMouseBridgeDescription: "Restores the right-trackpad cursor and click in Nested Desktop while another Game Mode app is running",
+  nestedDesktopGamescopePointerRelay: "Redirect Gamescope pointer input",
+  nestedDesktopGamescopePointerRelayDescription: "Keeps Gamescope mouse, trackpad, clicks, and scrolling in Nested Desktop while a game runs in parallel",
+  nestedDesktopClipboard: "Shared clipboard",
+  nestedDesktopClipboardDescription: "Synchronizes newly copied text, images, and enabled file references between Gamescope and Nested Desktop; disabled by default",
+  nestedDesktopClipboardFiles: "Files and folders",
+  nestedDesktopClipboardFilesDescription: "Shares copied local files and folders by path. Paste always copies; originals are never moved",
   nestedDesktopTrackpadInertia: "Trackpad inertia",
   nestedDesktopTrackpadInertiaDescription: "Continues cursor and scroll movement after a fast swipe; disable to stop immediately when a trackpad is released",
   nestedDesktopTouchscreen: "Touchscreen in Nested Desktop",

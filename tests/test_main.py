@@ -47,6 +47,9 @@ class RecordingMouseBridge:
         self.module_enabled_values = []
         self.inertia_values = []
         self.mouse_enabled_values = []
+        self.gamescope_pointer_relay_values = []
+        self.clipboard_values = []
+        self.clipboard_files_values = []
         self.binding_values = []
         self.rustdesk_pointer_fix_values = []
         self.rustdesk_scroll_inertia_values = []
@@ -79,6 +82,15 @@ class RecordingMouseBridge:
 
     def set_mouse_enabled(self, enabled):
         self.mouse_enabled_values.append(enabled)
+
+    def set_gamescope_pointer_relay_enabled(self, enabled):
+        self.gamescope_pointer_relay_values.append(enabled)
+
+    def set_clipboard_enabled(self, enabled):
+        self.clipboard_values.append(enabled)
+
+    def set_clipboard_files_enabled(self, enabled):
+        self.clipboard_files_values.append(enabled)
 
     def set_bindings(self, enabled, bindings):
         self.binding_values.append((enabled, dict(bindings)))
@@ -424,9 +436,12 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "moduleEnabled": True,
                     "enabled": False,
+                    "gamescopePointerRelayEnabled": True,
                     "inertiaEnabled": True,
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    "clipboardEnabled": False,
+                    "clipboardFilesEnabled": True,
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
                     "rustDeskFocusOnInputEnabled": False,
@@ -446,7 +461,10 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     False,
                     True,
                     True,
+                    True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    False,
+                    True,
                     True,
                     False,
                     False,
@@ -470,9 +488,12 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "moduleEnabled": True,
                     "enabled": True,
+                    "gamescopePointerRelayEnabled": True,
                     "inertiaEnabled": True,
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    "clipboardEnabled": False,
+                    "clipboardFilesEnabled": True,
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
                     "rustDeskFocusOnInputEnabled": False,
@@ -492,7 +513,10 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     True,
                     True,
+                    True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    False,
+                    True,
                     True,
                     False,
                     False,
@@ -521,6 +545,82 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bridge.started, 0)
             self.assertEqual(bridge.stopped, 0)
 
+    async def test_clipboard_defaults_off_and_can_be_enabled(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        self.assertFalse(plugin.nested_desktop_clipboard_enabled)
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_nested_desktop_clipboard_enabled(True)
+
+            self.assertTrue(result["clipboardEnabled"])
+            self.assertEqual(bridge.clipboard_values, [True])
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["clipboardEnabled"])
+
+    async def test_clipboard_files_default_on_and_can_be_disabled(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        self.assertTrue(plugin.nested_desktop_clipboard_files_enabled)
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = (
+                await plugin
+                .set_nested_desktop_clipboard_files_enabled(False)
+            )
+
+            self.assertFalse(result["clipboardFilesEnabled"])
+            self.assertEqual(bridge.clipboard_files_values, [False])
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["clipboardFilesEnabled"])
+
+    async def test_reads_shared_clipboard_for_the_steam_keyboard(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        bridge.read_clipboard_text = MagicMock(return_value="shared text")
+        plugin.nested_desktop_mouse = bridge
+        plugin.nested_desktop_clipboard_enabled = True
+
+        text = await plugin.read_nested_desktop_clipboard_text()
+
+        self.assertEqual(text, "shared text")
+        bridge.read_clipboard_text.assert_called_once_with()
+
+    async def test_gamescope_pointer_relay_defaults_on_and_can_be_disabled(
+        self,
+    ):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        self.assertTrue(
+            plugin.nested_desktop_gamescope_pointer_relay_enabled
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = (
+                await plugin
+                .set_nested_desktop_gamescope_pointer_relay_enabled(False)
+            )
+
+            self.assertFalse(result["gamescopePointerRelayEnabled"])
+            self.assertEqual(
+                bridge.gamescope_pointer_relay_values,
+                [False],
+            )
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["gamescopePointerRelayEnabled"])
+
     async def test_inertia_setting_is_persisted_and_applied(self):
         plugin = plugin_backend.Plugin()
         bridge = RecordingMouseBridge()
@@ -543,9 +643,12 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "moduleEnabled": True,
                     "enabled": True,
+                    "gamescopePointerRelayEnabled": True,
                     "inertiaEnabled": False,
                     "bindingsEnabled": True,
                     "bindings": plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    "clipboardEnabled": False,
+                    "clipboardFilesEnabled": True,
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
                     "rustDeskFocusOnInputEnabled": False,
@@ -665,7 +768,10 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     False,
                     True,
                     True,
+                    True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
+                    False,
+                    True,
                     True,
                     False,
                     False,

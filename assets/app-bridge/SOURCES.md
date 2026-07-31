@@ -14,10 +14,14 @@ applications' official logos, screenshots, and site artwork:
 - RustDesk application screenshots:
   <https://rustdesk.com/main.png> and <https://rustdesk.com/remote.jpg>
 
-The Terminal artwork is original project artwork generated with OpenAI's
-built-in image generation tool, then cropped and typeset locally for the Steam
-library slots. Its terminal mark, shortcut icon, and wordmark are original
-project graphics; the shortcut launches KDE Konsole:
+The Terminal artwork is original project artwork generated and composed
+locally for the Steam library slots. Its terminal mark, shortcut icon, and
+wordmark are original project graphics; the shortcut launches KDE Konsole:
 <https://konsole.kde.org/>.
+
+The Google Chrome artwork uses an original project background generated and
+composed locally for the Steam library slots. The Chrome mark is taken from the
+scalable application icon distributed with the installed Google Chrome Flatpak:
+<https://flathub.org/apps/com.google.Chrome>.
 
 Logos and product names remain trademarks of their respective owners.

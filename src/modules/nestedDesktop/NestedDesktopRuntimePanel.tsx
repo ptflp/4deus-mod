@@ -74,6 +74,21 @@ export const NestedDesktopRuntimePanel = ({
         </PanelSectionRow>
         <PanelSectionRow>
           <ToggleField
+            label={strings.nestedDesktopGamescopePointerRelay}
+            description={
+              strings.nestedDesktopGamescopePointerRelayDescription
+            }
+            checked={status?.gamescopePointerRelayEnabled ?? true}
+            disabled={busy || !status?.available}
+            onChange={(enabled) => void update(
+              () => api.setNestedDesktopGamescopePointerRelayEnabled(
+                enabled,
+              ),
+            )}
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ToggleField
             label={strings.nestedDesktopTouchscreen}
             description={strings.nestedDesktopTouchscreenDescription}
             checked={status?.touchEnabled ?? true}

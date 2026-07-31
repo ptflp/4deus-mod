@@ -7,7 +7,10 @@ import os
 import socket
 import time
 
-from .bindings import should_forward_back_button, should_forward_pointer
+from .bindings import (
+    decode_gamescope_display, should_forward_back_button,
+    should_forward_pointer,
+)
 from .constants import (
     FOCUS_SNAPSHOT_FALLBACK_INTERVAL, IDLE_INPUT_FRAME_INTERVAL,
     RUSTDESK_ACTIVE_CONNECTION_CHECK_INTERVAL,
@@ -20,7 +23,6 @@ from .discovery import (
     find_steam_deck_hidraw, remove_nested_wayland_alias,
 )
 from .eis import EisConnection
-from .models import PointerUpdate
 from .rustdesk import RustDeskMouseTranslator, RustDeskRelayTranslator
 from .x11 import X11Connection
 
@@ -49,6 +51,7 @@ class RuntimeFocusMixin:
         if discovered_session != self.session:
             self.nested_desktop_focused = False
             self._set_cursor_overlay(False)
+            self._set_gamescope_pointer_intercepted(False)
             self._close_cursor_overlay()
             self.cursor_overlay_failed_session_pid = None
             self.proton_focusable_windows = ()
@@ -79,6 +82,9 @@ class RuntimeFocusMixin:
                     alias,
                 )
             self.wayland_alias = alias
+
+        if self.clipboard_bridge is not None:
+            self.clipboard_bridge.set_session(self.session)
 
         if self.session is not None and self.inner_eis is None:
             try:
@@ -289,6 +295,7 @@ class RuntimeFocusMixin:
         ):
             self.nested_desktop_focused = False
             self._set_cursor_overlay(False)
+            self._set_gamescope_pointer_intercepted(False)
             self._set_remote_forwarding(False)
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
@@ -349,6 +356,7 @@ class RuntimeFocusMixin:
             )
             if self.inner_eis is None:
                 self._set_cursor_overlay(False)
+                self._set_gamescope_pointer_intercepted(False)
                 return
             if self.suspended or self.hidraw_fd is None:
                 self._set_forwarding(False)
@@ -386,6 +394,11 @@ class RuntimeFocusMixin:
                     and inner_eis.ready
                     and pointer_needs_bridge
                 )
+            gamescope_pointer_relay_requested = bool(
+                self.gamescope_pointer_relay_enabled
+                and self.gamescope_pointer_interceptor is not None
+                and inner_eis.ready
+            )
             self._set_cursor_overlay(
                 not self.suspended
                 and pointer_needs_bridge
@@ -393,95 +406,21 @@ class RuntimeFocusMixin:
                     self.forwarding
                     or self.binding_pointer_forwarding
                     or self.remote_forwarding
+                    or gamescope_pointer_relay_requested
                 )
+            )
+            self._set_gamescope_pointer_intercepted(
+                not self.suspended
+                and pointer_needs_bridge
+                and gamescope_pointer_relay_requested
+                and (
+                    self.cursor_overlay_active
+                    or self.session.software_cursor_forced
+                ),
+                decode_gamescope_display(mouse_focus_display),
             )
         except Exception as error:
             self._handle_eis_loss(error)
-
-    def _set_cursor_overlay(self, active: bool):
-        session = self.session
-        active = bool(
-            active
-            and session is not None
-            and not session.software_cursor_forced
-        )
-        overlay = self.cursor_overlay
-        if (
-            active
-            and session is not None
-            and self.cursor_overlay_failed_session_pid == session.pid
-        ):
-            active = False
-        if not active:
-            self._set_gamescope_cursor_hidden(False)
-        try:
-            if active and overlay is None and session is not None:
-                overlay = self.cursor_overlay_factory(session)
-                self.cursor_overlay = overlay
-            if active:
-                overlay.show()
-            elif overlay is not None:
-                overlay.hide()
-        except Exception as error:
-            LOGGER.warning(
-                "Nested Desktop cursor overlay is unavailable: %s",
-                error,
-            )
-            if session is not None:
-                self.cursor_overlay_failed_session_pid = session.pid
-            self._close_cursor_overlay()
-            active = False
-        if active:
-            self._set_gamescope_cursor_hidden(True)
-        if active == self.cursor_overlay_active:
-            return
-        self.cursor_overlay_active = active
-        LOGGER.info(
-            "Nested Desktop cursor overlay %s",
-            "enabled" if active else "disabled",
-        )
-
-    def _apply_cursor_overlay(self, update: PointerUpdate):
-        overlay = self.cursor_overlay
-        if not self.cursor_overlay_active or overlay is None:
-            return
-        try:
-            overlay.apply(update)
-        except Exception as error:
-            LOGGER.warning(
-                "Lost the Nested Desktop cursor overlay: %s",
-                error,
-            )
-            if self.session is not None:
-                self.cursor_overlay_failed_session_pid = self.session.pid
-            self._close_cursor_overlay()
-
-    def _close_cursor_overlay(self):
-        self._set_gamescope_cursor_hidden(False)
-        overlay = self.cursor_overlay
-        self.cursor_overlay = None
-        self.cursor_overlay_active = False
-        if overlay is None:
-            return
-        try:
-            overlay.close()
-        except Exception:
-            LOGGER.debug(
-                "Failed to close the Nested Desktop cursor overlay",
-                exc_info=True,
-            )
-
-    def _set_gamescope_cursor_hidden(self, hidden: bool):
-        compositor = self.gamescope_cursor_compositor
-        if compositor is None:
-            return
-        try:
-            compositor.set_hidden(hidden)
-        except Exception:
-            LOGGER.warning(
-                "Unable to update the Gamescope cursor compositor",
-                exc_info=True,
-            )
 
     def _has_active_rustdesk_connection(self, now: float) -> bool:
         if now >= self.next_rustdesk_connection_check:
@@ -538,6 +477,7 @@ class RuntimeFocusMixin:
                 if not active and not (
                     self.binding_pointer_forwarding
                     or self.remote_scroll_forwarding
+                    or self.gamescope_pointer_forwarding
                 ):
                     inner_eis.set_emulating(False)
         except Exception as error:
@@ -638,6 +578,7 @@ class RuntimeFocusMixin:
                     not active
                     and not self.forwarding
                     and not self.remote_scroll_forwarding
+                    and not self.gamescope_pointer_forwarding
                 ):
                     inner_eis.set_emulating(False)
         except Exception as error:
@@ -703,9 +644,10 @@ class RuntimeFocusMixin:
             elif inner_eis is not None:
                 inner_eis.set_absolute_emulating(False)
                 self.remote_scroll_forwarding = False
-                if (
-                    not self.forwarding
-                    and not self.binding_pointer_forwarding
+                if not (
+                    self.forwarding
+                    or self.binding_pointer_forwarding
+                    or self.gamescope_pointer_forwarding
                 ):
                     inner_eis.set_emulating(False)
         except Exception as error:
