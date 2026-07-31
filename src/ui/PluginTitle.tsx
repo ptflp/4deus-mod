@@ -7,7 +7,7 @@ import {
 import { FaCog } from "react-icons/fa";
 
 import { useStrings } from "../core/localization";
-import { PLUGIN_SETTINGS_ROUTE } from "./PluginSettingsRoute";
+import { PLUGIN_SETTINGS_ROUTE } from "./routes";
 
 export const PluginTitle = () => {
   const strings = useStrings();

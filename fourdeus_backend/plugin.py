@@ -58,9 +58,10 @@ class Plugin(
         self.controller_settings_path = (
             settings_directory / "controller-settings.json"
         )
-        self.trackpad_auto_recovery_enabled = (
-            self._load_controller_settings()
-        )
+        (
+            self.controller_module_enabled,
+            self.trackpad_auto_recovery_enabled,
+        ) = self._load_controller_settings()
         (
             self.developer_mode,
             self.trackpad_metrics_enabled,
@@ -78,6 +79,7 @@ class Plugin(
             else None
         )
         (
+            self.nested_desktop_module_enabled,
             self.nested_desktop_mouse_enabled,
             self.nested_desktop_mouse_inertia_enabled,
             self.nested_desktop_bindings_enabled,
@@ -85,18 +87,29 @@ class Plugin(
             self.rustdesk_pointer_fix_enabled,
             self.rustdesk_scroll_inertia_enabled,
             self.rustdesk_focus_on_input_enabled,
+            self.nested_desktop_touch_enabled,
+            self.nested_desktop_touch_inertia_enabled,
+            self.nested_desktop_touch_inertia_config,
         ) = self._load_nested_desktop_mouse_settings()
         self.event_loop = None
         self.nested_desktop_mouse = (
             NestedDesktopMouseSupervisor(
                 plugin_root=PLUGIN_ROOT,
                 logger=logger,
+                module_enabled=self.nested_desktop_module_enabled,
                 mouse_enabled=self.nested_desktop_mouse_enabled,
                 inertia_enabled=(
                     self.nested_desktop_mouse_inertia_enabled
                 ),
                 bindings_enabled=self.nested_desktop_bindings_enabled,
                 bindings=self.nested_desktop_bindings,
+                touchscreen_enabled=self.nested_desktop_touch_enabled,
+                touchscreen_inertia_enabled=(
+                    self.nested_desktop_touch_inertia_enabled
+                ),
+                touchscreen_inertia_config=(
+                    self.nested_desktop_touch_inertia_config
+                ),
                 rustdesk_pointer_fix_enabled=(
                     self.rustdesk_pointer_fix_enabled
                 ),
@@ -175,16 +188,23 @@ class Plugin(
             logger.info("Created 4deus Mod uinput keyboard")
         except Exception:
             logger.exception("Failed to create 4deus Mod uinput keyboard")
-        if self.rustdesk_pointer_fix_enabled:
+        if (
+            self.nested_desktop_module_enabled
+            and self.rustdesk_pointer_fix_enabled
+        ):
             await self._stage_rustdesk_pointer_fix()
-        await self._refresh_installed_steamos_wrapper()
+        if self.nested_desktop_module_enabled:
+            await self._refresh_installed_steamos_wrapper()
         self._sync_trackpad_metrics()
         if (
             self.nested_desktop_mouse is not None
+            and self.nested_desktop_module_enabled
             and (
                 self.nested_desktop_mouse_enabled
+                or self.nested_desktop_touch_enabled
                 or self.nested_desktop_bindings_enabled
                 or self.rustdesk_pointer_fix_enabled
+                or self.rustdesk_focus_on_input_enabled
             )
         ):
             self.nested_desktop_mouse.start()

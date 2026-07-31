@@ -29,6 +29,11 @@ export type DeckButtonAction =
 export type DeckButtonBindings = Record<DeckButton, DeckButtonAction>;
 export type DeckQuickAction = string;
 export type DeckQuickActions = Record<DeckButton, DeckQuickAction>;
+export type AdvancedModule =
+  | "keyboard"
+  | "controller"
+  | "nestedDesktop"
+  | "appBridge";
 
 const emptyQuickActions = (): DeckQuickActions => ({
   view: "",
@@ -78,7 +83,9 @@ const normalizeLanguageSwitchShortcut = (
 
 export interface ModSettings {
   version: 1;
+  advancedModules: Record<AdvancedModule, boolean>;
   appBridge: {
+    enabled: boolean;
     shortcutAppIds: Record<string, number>;
   };
   keyboard: {
@@ -106,11 +113,25 @@ export interface ModSettings {
 
 type Listener = () => void;
 
+const patchChanges = <Value extends object>(
+  current: Value,
+  patch: Partial<Value>,
+): boolean => (Object.keys(patch) as Array<keyof Value>).some(
+  (key) => current[key] !== patch[key],
+);
+
 const STORAGE_KEY = "4deus-mod.settings";
 
 const defaults: ModSettings = {
   version: 1,
+  advancedModules: {
+    keyboard: false,
+    controller: false,
+    nestedDesktop: false,
+    appBridge: false,
+  },
   appBridge: {
+    enabled: true,
     shortcutAppIds: {},
   },
   keyboard: {
@@ -158,7 +179,12 @@ const readSettings = (): ModSettings => {
     return {
       ...defaults,
       ...parsed,
+      advancedModules: {
+        ...defaults.advancedModules,
+        ...parsed.advancedModules,
+      },
       appBridge: {
+        enabled: parsed.appBridge?.enabled !== false,
         shortcutAppIds: {
           ...defaults.appBridge.shortcutAppIds,
           ...parsed.appBridge?.shortcutAppIds,
@@ -202,6 +228,10 @@ export class SettingsStore {
   private readonly listeners = new Set<Listener>();
 
   getSnapshot = (): ModSettings => this.settings;
+  getKeyboardSnapshot = (): ModSettings["keyboard"] =>
+    this.settings.keyboard;
+  getAdvancedModulesSnapshot = (): ModSettings["advancedModules"] =>
+    this.settings.advancedModules;
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -209,25 +239,43 @@ export class SettingsStore {
   };
 
   updateKeyboard(patch: Partial<ModSettings["keyboard"]>): void {
-    this.settings = {
+    if (!patchChanges(this.settings.keyboard, patch))
+      return;
+    this.commit({
       ...this.settings,
       keyboard: {
         ...this.settings.keyboard,
         ...patch,
       },
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.settings));
-    this.listeners.forEach((listener) => listener());
+    });
+  }
+
+  updateAdvancedModule(id: AdvancedModule, enabled: boolean): void {
+    if (this.settings.advancedModules[id] === enabled)
+      return;
+    this.commit({
+      ...this.settings,
+      advancedModules: {
+        ...this.settings.advancedModules,
+        [id]: enabled,
+      },
+    });
   }
 
   updateAppBridge(patch: Partial<ModSettings["appBridge"]>): void {
-    this.settings = {
+    if (!patchChanges(this.settings.appBridge, patch))
+      return;
+    this.commit({
       ...this.settings,
       appBridge: {
         ...this.settings.appBridge,
         ...patch,
       },
-    };
+    });
+  }
+
+  private commit(settings: ModSettings): void {
+    this.settings = settings;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.settings));
     this.listeners.forEach((listener) => listener());
   }

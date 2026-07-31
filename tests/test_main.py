@@ -18,6 +18,7 @@ sys.modules.setdefault("decky_plugin", decky_plugin)
 
 from fourdeus_backend import plugin as plugin_backend
 from fourdeus_backend.endpoints import controller as controller_endpoints
+from fourdeus_backend.nested_desktop.touch import TouchscreenInertiaConfig
 import main as decky_entrypoint
 
 
@@ -43,12 +44,16 @@ class RecordingMouseBridge:
         self.started = 0
         self.stopped = 0
         self.is_running = True
+        self.module_enabled_values = []
         self.inertia_values = []
         self.mouse_enabled_values = []
         self.binding_values = []
         self.rustdesk_pointer_fix_values = []
         self.rustdesk_scroll_inertia_values = []
         self.rustdesk_focus_on_input_values = []
+        self.touchscreen_values = []
+        self.touchscreen_inertia_values = []
+        self.touchscreen_inertia_configs = []
         self.suspended_values = []
 
     def start(self):
@@ -65,6 +70,13 @@ class RecordingMouseBridge:
     def set_inertia_enabled(self, enabled):
         self.inertia_values.append(enabled)
 
+    def set_module_enabled(self, enabled):
+        self.module_enabled_values.append(enabled)
+        if enabled:
+            self.start()
+        else:
+            self.stop()
+
     def set_mouse_enabled(self, enabled):
         self.mouse_enabled_values.append(enabled)
 
@@ -79,6 +91,19 @@ class RecordingMouseBridge:
 
     def set_rustdesk_focus_on_input_enabled(self, enabled):
         self.rustdesk_focus_on_input_values.append(enabled)
+
+    def set_touchscreen_enabled(self, enabled):
+        self.touchscreen_values.append(enabled)
+
+    def set_touchscreen_inertia_enabled(self, enabled):
+        self.touchscreen_inertia_values.append(enabled)
+
+    def set_touchscreen_inertia_config(self, config):
+        self.touchscreen_inertia_configs.append(config)
+
+    @staticmethod
+    def touchscreen_available():
+        return True
 
     def set_suspended(self, suspended):
         self.suspended_values.append(suspended)
@@ -312,6 +337,33 @@ class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_module_switch_preserves_settings_and_stops_the_worker(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            disabled = await plugin.set_nested_desktop_module_enabled(False)
+
+            self.assertFalse(disabled["moduleEnabled"])
+            self.assertFalse(disabled["running"])
+            self.assertTrue(disabled["enabled"])
+            self.assertTrue(disabled["bindingsEnabled"])
+            self.assertEqual(bridge.module_enabled_values, [False])
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["moduleEnabled"])
+            self.assertTrue(payload["enabled"])
+            self.assertTrue(payload["bindingsEnabled"])
+
+            enabled = await plugin.set_nested_desktop_module_enabled(True)
+
+            self.assertTrue(enabled["moduleEnabled"])
+            self.assertTrue(enabled["running"])
+            self.assertEqual(bridge.module_enabled_values, [False, True])
+
     async def test_bindings_start_worker_when_mouse_bridge_is_disabled(self):
         plugin = plugin_backend.Plugin()
         bridge = RecordingMouseBridge()
@@ -370,6 +422,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
                 {
+                    "moduleEnabled": True,
                     "enabled": False,
                     "inertiaEnabled": True,
                     "bindingsEnabled": True,
@@ -377,11 +430,19 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
                     "rustDeskFocusOnInputEnabled": False,
+                    "touchEnabled": True,
+                    "touchInertiaEnabled": True,
+                    "touchInertiaConfig": {
+                        "durationMs": 600,
+                        "startSpeed": 420,
+                        "minDistance": 36,
+                    },
                 },
             )
             self.assertEqual(
                 plugin._load_nested_desktop_mouse_settings(),
                 (
+                    True,
                     False,
                     True,
                     True,
@@ -389,6 +450,9 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     False,
                     False,
+                    True,
+                    True,
+                    TouchscreenInertiaConfig(),
                 ),
             )
 
@@ -404,6 +468,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
                 {
+                    "moduleEnabled": True,
                     "enabled": True,
                     "inertiaEnabled": True,
                     "bindingsEnabled": True,
@@ -411,6 +476,13 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
                     "rustDeskFocusOnInputEnabled": False,
+                    "touchEnabled": True,
+                    "touchInertiaEnabled": True,
+                    "touchInertiaConfig": {
+                        "durationMs": 600,
+                        "startSpeed": 420,
+                        "minDistance": 36,
+                    },
                 },
             )
             self.assertEqual(
@@ -419,10 +491,14 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     True,
                     True,
+                    True,
                     plugin_backend.DEFAULT_NESTED_DESKTOP_BINDINGS,
                     True,
                     False,
                     False,
+                    True,
+                    True,
+                    TouchscreenInertiaConfig(),
                 ),
             )
 
@@ -465,6 +541,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
                 {
+                    "moduleEnabled": True,
                     "enabled": True,
                     "inertiaEnabled": False,
                     "bindingsEnabled": True,
@@ -472,6 +549,13 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     "rustDeskPointerFixEnabled": True,
                     "rustDeskScrollInertiaEnabled": False,
                     "rustDeskFocusOnInputEnabled": False,
+                    "touchEnabled": True,
+                    "touchInertiaEnabled": True,
+                    "touchInertiaConfig": {
+                        "durationMs": 600,
+                        "startSpeed": 420,
+                        "minDistance": 36,
+                    },
                 },
             )
 
@@ -495,6 +579,75 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(settings_path.exists())
             self.assertEqual(bridge.inertia_values, [])
 
+    async def test_touchscreen_defaults_on_and_can_be_disabled(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.set_nested_desktop_touch_enabled(False)
+
+            self.assertFalse(result["touchEnabled"])
+            self.assertTrue(result["touchAvailable"])
+            self.assertEqual(bridge.touchscreen_values, [False])
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["touchEnabled"])
+
+    async def test_touchscreen_inertia_is_guarded_and_persisted(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            disabled = (
+                await plugin.set_nested_desktop_touch_inertia_enabled(False)
+            )
+            tuned = await plugin.set_nested_desktop_touch_inertia_config(
+                750,
+                500,
+                42,
+            )
+
+            self.assertFalse(disabled["touchInertiaEnabled"])
+            self.assertEqual(
+                tuned["touchInertiaConfig"],
+                {
+                    "durationMs": 750,
+                    "startSpeed": 500,
+                    "minDistance": 42,
+                },
+            )
+            self.assertEqual(bridge.touchscreen_inertia_values, [False])
+            self.assertEqual(
+                bridge.touchscreen_inertia_configs,
+                [TouchscreenInertiaConfig(750, 500, 42)],
+            )
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["touchInertiaEnabled"])
+            self.assertEqual(
+                payload["touchInertiaConfig"],
+                tuned["touchInertiaConfig"],
+            )
+
+            invalid = (
+                await plugin.set_nested_desktop_touch_inertia_config(
+                    10_000,
+                    500,
+                    42,
+                )
+            )
+            self.assertIn("error", invalid)
+            self.assertEqual(
+                plugin.nested_desktop_touch_inertia_config,
+                TouchscreenInertiaConfig(750, 500, 42),
+            )
+
     def test_legacy_setting_defaults_inertia_to_enabled(self):
         plugin = plugin_backend.Plugin()
         with tempfile.TemporaryDirectory() as directory:
@@ -508,6 +661,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 plugin._load_nested_desktop_mouse_settings(),
                 (
+                    True,
                     False,
                     True,
                     True,
@@ -515,6 +669,9 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
                     True,
                     False,
                     False,
+                    True,
+                    True,
+                    TouchscreenInertiaConfig(),
                 ),
             )
 
@@ -690,6 +847,19 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DeveloperSettingTests(unittest.IsolatedAsyncioTestCase):
+    def test_controller_module_gate_stops_developer_metrics(self):
+        plugin = plugin_backend.Plugin()
+        monitor = RecordingTrackpadMetrics()
+        plugin.trackpad_metrics = monitor
+        plugin.controller_module_enabled = False
+        plugin.developer_mode = True
+        plugin.trackpad_metrics_enabled = True
+        plugin.trackpad_auto_recovery_enabled = True
+
+        plugin._sync_trackpad_metrics()
+
+        self.assertEqual(monitor.configurations, [(False, False)])
+
     async def test_metrics_require_developer_mode_and_persist(self):
         plugin = plugin_backend.Plugin()
         monitor = RecordingTrackpadMetrics()
@@ -767,6 +937,37 @@ class DeveloperSettingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_module_switch_preserves_recovery_preference(self):
+        plugin = plugin_backend.Plugin()
+        monitor = RecordingTrackpadMetrics()
+        plugin.trackpad_metrics = monitor
+        plugin.trackpad_auto_recovery_enabled = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "controller-settings.json"
+            plugin.controller_settings_path = settings_path
+
+            disabled = await plugin.set_controller_module_enabled(False)
+
+            self.assertFalse(disabled["moduleEnabled"])
+            self.assertTrue(disabled["autoRecoveryEnabled"])
+            self.assertFalse(disabled["monitoring"])
+            self.assertEqual(monitor.configurations[-1], (False, False))
+            self.assertEqual(
+                json.loads(settings_path.read_text(encoding="utf-8")),
+                {
+                    "moduleEnabled": False,
+                    "trackpadAutoRecoveryEnabled": True,
+                },
+            )
+
+            enabled = await plugin.set_controller_module_enabled(True)
+
+            self.assertTrue(enabled["moduleEnabled"])
+            self.assertTrue(enabled["autoRecoveryEnabled"])
+            self.assertTrue(enabled["monitoring"])
+            self.assertEqual(monitor.configurations[-1], (False, True))
+
     async def test_auto_recovery_defaults_off_and_persists(self):
         plugin = plugin_backend.Plugin()
         monitor = RecordingTrackpadMetrics()
@@ -776,7 +977,10 @@ class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             settings_path = Path(directory) / "controller-settings.json"
             plugin.controller_settings_path = settings_path
-            self.assertFalse(plugin._load_controller_settings())
+            self.assertEqual(
+                plugin._load_controller_settings(),
+                (True, False),
+            )
 
             disabled = await plugin.set_trackpad_auto_recovery_enabled(False)
 
@@ -784,15 +988,24 @@ class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(disabled["monitoring"])
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
-                {"trackpadAutoRecoveryEnabled": False},
+                {
+                    "moduleEnabled": True,
+                    "trackpadAutoRecoveryEnabled": False,
+                },
             )
-            self.assertFalse(plugin._load_controller_settings())
+            self.assertEqual(
+                plugin._load_controller_settings(),
+                (True, False),
+            )
 
             enabled = await plugin.set_trackpad_auto_recovery_enabled(True)
 
             self.assertTrue(enabled["autoRecoveryEnabled"])
             self.assertTrue(enabled["monitoring"])
-            self.assertTrue(plugin._load_controller_settings())
+            self.assertEqual(
+                plugin._load_controller_settings(),
+                (True, True),
+            )
             self.assertEqual(
                 monitor.configurations[-1],
                 (False, True),

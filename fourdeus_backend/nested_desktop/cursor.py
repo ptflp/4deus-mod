@@ -506,43 +506,54 @@ class NestedDesktopCursorOverlay:
         sync_position: bool = True,
     ):
         now = time.monotonic()
-        if not force_image and now < self.next_image_refresh:
+        image_refresh_due = (
+            force_image or now >= self.next_image_refresh
+        )
+        position_refresh_due = (
+            sync_position or not self.position_primed
+        )
+        if not image_refresh_due and not position_refresh_due:
             return
         snapshot = self._snapshot()
-        if sync_position or not self.position_primed:
+        if position_refresh_due:
             self.pointer_x = snapshot.x
             self.pointer_y = snapshot.y
             self.position_primed = True
-        has_visible_pixels = any(
-            (pixel >> 24) & 0xFF for pixel in snapshot.pixels
-        )
-        if (
-            has_visible_pixels
-            and (
-                force_image
-                or snapshot.serial != self.cursor_serial
-                or (
-                    snapshot.width + (CURSOR_OUTLINE_RADIUS * 2)
-                    != self.cursor_width
-                )
-                or (
-                    snapshot.height + (CURSOR_OUTLINE_RADIUS * 2)
-                    != self.cursor_height
-                )
+        if image_refresh_due:
+            has_visible_pixels = any(
+                (pixel >> 24) & 0xFF for pixel in snapshot.pixels
             )
-        ):
-            self._draw(outlined_cursor_snapshot(snapshot))
-        elif has_visible_pixels:
-            self.cursor_xhot = snapshot.xhot + CURSOR_OUTLINE_RADIUS
-            self.cursor_yhot = snapshot.yhot + CURSOR_OUTLINE_RADIUS
-        elif self.cursor_serial is None:
-            raise RuntimeError(
-                "Nested Desktop returned an empty cursor image"
+            if (
+                has_visible_pixels
+                and (
+                    force_image
+                    or snapshot.serial != self.cursor_serial
+                    or (
+                        snapshot.width + (CURSOR_OUTLINE_RADIUS * 2)
+                        != self.cursor_width
+                    )
+                    or (
+                        snapshot.height + (CURSOR_OUTLINE_RADIUS * 2)
+                        != self.cursor_height
+                    )
+                )
+            ):
+                self._draw(outlined_cursor_snapshot(snapshot))
+            elif has_visible_pixels:
+                self.cursor_xhot = (
+                    snapshot.xhot + CURSOR_OUTLINE_RADIUS
+                )
+                self.cursor_yhot = (
+                    snapshot.yhot + CURSOR_OUTLINE_RADIUS
+                )
+            elif self.cursor_serial is None:
+                raise RuntimeError(
+                    "Nested Desktop returned an empty cursor image"
+                )
+            self.next_image_refresh = (
+                now + CURSOR_IMAGE_REFRESH_INTERVAL
             )
         self._move()
-        self.next_image_refresh = (
-            now + CURSOR_IMAGE_REFRESH_INTERVAL
-        )
 
     def prime(self):
         if self.visible:

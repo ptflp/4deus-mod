@@ -7,12 +7,12 @@ import { useEffect, useState } from "react";
 
 import { useStrings } from "../../core/localization";
 import type {
+  ControllerApi,
   ControllerStatus,
-  SystemToolsApi,
 } from "./types";
 
 interface ControllerPanelProps {
-  api: SystemToolsApi;
+  api: ControllerApi;
 }
 
 export const ControllerPanel = ({ api }: ControllerPanelProps) => {

@@ -77,6 +77,21 @@ export interface Strings {
   nestedDesktopMouseBridgeDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
+  nestedDesktopTouchscreen: string;
+  nestedDesktopTouchscreenDescription: string;
+  nestedDesktopTouchInertia: string;
+  nestedDesktopTouchInertiaDescription: string;
+  advancedSettings: string;
+  advancedSettingsDescription: string;
+  nestedDesktopTouchInertiaTuning: string;
+  nestedDesktopTouchInertiaDuration: string;
+  nestedDesktopTouchInertiaDurationDescription: string;
+  nestedDesktopTouchInertiaStartSpeed: string;
+  nestedDesktopTouchInertiaStartSpeedDescription: string;
+  nestedDesktopTouchInertiaMinDistance: string;
+  nestedDesktopTouchInertiaMinDistanceDescription: string;
+  applyAdvancedSettings: string;
+  resetAdvancedSettings: string;
   rustDeskPointerFix: string;
   rustDeskPointerFixDescription: string;
   rustDeskFocusOnInput: string;
@@ -409,6 +424,21 @@ const define = ([
   nestedDesktopMouseBridgeDescription: "Restores the right-trackpad cursor and click in Nested Desktop while another Game Mode app is running",
   nestedDesktopTrackpadInertia: "Trackpad inertia",
   nestedDesktopTrackpadInertiaDescription: "Continues cursor and scroll movement after a fast swipe; disable to stop immediately when a trackpad is released",
+  nestedDesktopTouchscreen: "Touchscreen in Nested Desktop",
+  nestedDesktopTouchscreenDescription: "Forwards Steam Deck screen taps, swipes, and multitouch directly to Nested Desktop without affecting other Steam screens",
+  nestedDesktopTouchInertia: "Touchscreen inertia",
+  nestedDesktopTouchInertiaDescription: "Adds a smooth, gradually fading finish only after a fast single-finger swipe; taps, holds, drags, and multitouch stop normally",
+  advancedSettings: "Advanced",
+  advancedSettingsDescription: "Show guarded tuning controls with safe ranges and one-click defaults",
+  nestedDesktopTouchInertiaTuning: "Touchscreen inertia tuning",
+  nestedDesktopTouchInertiaDuration: "Fade duration",
+  nestedDesktopTouchInertiaDurationDescription: "How long a maximum-speed swipe can coast before smoothly stopping",
+  nestedDesktopTouchInertiaStartSpeed: "Start speed",
+  nestedDesktopTouchInertiaStartSpeedDescription: "Minimum release speed required to start inertia",
+  nestedDesktopTouchInertiaMinDistance: "Minimum swipe distance",
+  nestedDesktopTouchInertiaMinDistanceDescription: "Minimum deliberate travel before a gesture can coast",
+  applyAdvancedSettings: "Apply",
+  resetAdvancedSettings: "Restore defaults",
   rustDeskPointerFix: "RustDesk pointer fix",
   rustDeskPointerFixDescription: "Prevents duplicate cursors and pointer teleportation in Nested Desktop; Add / Fix RustDesk installs the required system hook automatically",
   rustDeskFocusOnInput: "Focus Nested Desktop on RustDesk input",

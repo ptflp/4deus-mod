@@ -19,12 +19,12 @@ import {
   type NestedDesktopBindingSource,
 } from "./nestedDesktopBindings";
 import type {
+  NestedDesktopApi,
   NestedDesktopMouseStatus,
-  SystemToolsApi,
 } from "./types";
 
 interface NestedDesktopBindingsPanelProps {
-  api: SystemToolsApi;
+  api: NestedDesktopApi;
 }
 
 export const NestedDesktopBindingsPanel = ({

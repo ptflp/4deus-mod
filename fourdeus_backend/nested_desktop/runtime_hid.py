@@ -52,7 +52,7 @@ class RuntimeHidInputMixin:
                 if not report:
                     self._close_hidraw()
                     return
-                if len(report) >= 24 and report[:3] == REPORT_HEADER:
+                if len(report) >= 24 and report.startswith(REPORT_HEADER):
                     latest_report = report
             if latest_report is None:
                 return

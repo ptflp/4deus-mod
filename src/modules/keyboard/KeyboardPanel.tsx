@@ -16,8 +16,10 @@ import { useStrings } from "../../core/localization";
 import {
   AUTO_LAYOUT,
   type LanguageSwitchShortcut,
+  type ModSettings,
   type SettingsStore,
 } from "../../core/settings";
+import { AdvancedSettings } from "../../ui/AdvancedSettings";
 import {
   getEnabledLayouts,
   getLayoutDisplayName,
@@ -28,16 +30,86 @@ interface KeyboardPanelProps {
   settings: SettingsStore;
 }
 
+interface KeyboardBehaviorRowsProps {
+  keyboard: ModSettings["keyboard"];
+  settings: SettingsStore;
+  strings: ReturnType<typeof useStrings>;
+}
+
+const KeyboardBehaviorRows = ({
+  keyboard,
+  settings,
+  strings,
+}: KeyboardBehaviorRowsProps) => (
+  <>
+    <PanelSectionRow>
+      <ToggleField
+        label={strings.keepOnTop}
+        description={strings.keepOnTopDescription}
+        checked={keyboard.keepOnTop}
+        onChange={(keepOnTop) => settings.updateKeyboard({ keepOnTop })}
+      />
+    </PanelSectionRow>
+    <PanelSectionRow>
+      <ToggleField
+        label={strings.keepOpenAfterEnter}
+        description={strings.keepOpenAfterEnterDescription}
+        checked={keyboard.keepOpenAfterEnter}
+        onChange={(keepOpenAfterEnter) => settings.updateKeyboard({
+          keepOpenAfterEnter,
+        })}
+      />
+    </PanelSectionRow>
+    <PanelSectionRow>
+      <ToggleField
+        label={strings.systemKeyLayer}
+        description={strings.systemKeyLayerDescription}
+        checked={keyboard.systemKeyLayer}
+        onChange={(systemKeyLayer) => settings.updateKeyboard({
+          systemKeyLayer,
+        })}
+      />
+    </PanelSectionRow>
+    <PanelSectionRow>
+      <ToggleField
+        label={strings.holdHints}
+        description={strings.holdHintsDescription}
+        checked={keyboard.holdHints}
+        onChange={(holdHints) => settings.updateKeyboard({ holdHints })}
+      />
+    </PanelSectionRow>
+  </>
+);
+
+export const KeyboardQuickPanel = ({
+  settings,
+}: KeyboardPanelProps) => {
+  const strings = useStrings();
+  const keyboard = useSyncExternalStore(
+    settings.subscribe,
+    settings.getKeyboardSnapshot,
+  );
+
+  return (
+    <PanelSection title={strings.keyboard}>
+      <KeyboardBehaviorRows
+        keyboard={keyboard}
+        settings={settings}
+        strings={strings}
+      />
+    </PanelSection>
+  );
+};
+
 const layoutSignature = (layouts: SteamKeyboardLayout[]): string =>
   layouts.map((layout) => `${layout.layout}:${layout.name}`).join(",");
 
 export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
   const strings = useStrings();
-  const snapshot = useSyncExternalStore(
+  const keyboard = useSyncExternalStore(
     settings.subscribe,
-    settings.getSnapshot,
+    settings.getKeyboardSnapshot,
   );
-  const keyboard = snapshot.keyboard;
   const [layouts, setLayouts] = useState(getEnabledLayouts);
   const currentLayoutSignature = useRef(layoutSignature(layouts));
 
@@ -73,43 +145,15 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
     ? keyboard.secondaryLayout
     : AUTO_LAYOUT;
   return (
-    <PanelSection title={strings.keyboard}>
-      <PanelSectionRow>
-        <ToggleField
-          label={strings.keepOnTop}
-          description={strings.keepOnTopDescription}
-          checked={keyboard.keepOnTop}
-          onChange={(keepOnTop) => settings.updateKeyboard({ keepOnTop })}
+    <>
+      <PanelSection title={strings.keyboard}>
+        <KeyboardBehaviorRows
+          keyboard={keyboard}
+          settings={settings}
+          strings={strings}
         />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ToggleField
-          label={strings.keepOpenAfterEnter}
-          description={strings.keepOpenAfterEnterDescription}
-          checked={keyboard.keepOpenAfterEnter}
-          onChange={(keepOpenAfterEnter) => settings.updateKeyboard({
-            keepOpenAfterEnter,
-          })}
-        />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ToggleField
-          label={strings.systemKeyLayer}
-          description={strings.systemKeyLayerDescription}
-          checked={keyboard.systemKeyLayer}
-          onChange={(systemKeyLayer) => settings.updateKeyboard({
-            systemKeyLayer,
-          })}
-        />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ToggleField
-          label={strings.holdHints}
-          description={strings.holdHintsDescription}
-          checked={keyboard.holdHints}
-          onChange={(holdHints) => settings.updateKeyboard({ holdHints })}
-        />
-      </PanelSectionRow>
+      </PanelSection>
+      <PanelSection title={strings.languageSwitchShortcut}>
       <PanelSectionRow>
         <ToggleField
           label={strings.languageSwitchShortcut}
@@ -187,14 +231,25 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
           </PanelSectionRow>
         </>
       )}
-      <PanelSectionRow>
-        <ToggleField
-          label={strings.diagnostics}
-          description={strings.diagnosticsDescription}
-          checked={keyboard.diagnostics}
-          onChange={(diagnostics) => settings.updateKeyboard({ diagnostics })}
-        />
-      </PanelSectionRow>
-    </PanelSection>
+      </PanelSection>
+      <AdvancedSettings
+        label={strings.advancedSettings}
+        description={strings.advancedSettingsDescription}
+        moduleId="keyboard"
+        settings={settings}
+      >
+        <PanelSection title={strings.diagnostics}>
+          <PanelSectionRow>
+            <ToggleField
+              label={strings.diagnostics}
+              description={strings.diagnosticsDescription}
+              checked={keyboard.diagnostics}
+              onChange={(diagnostics) =>
+                settings.updateKeyboard({ diagnostics })}
+            />
+          </PanelSectionRow>
+        </PanelSection>
+      </AdvancedSettings>
+    </>
   );
 };

@@ -10,6 +10,7 @@ from typing import Sequence
 
 from .constants import (
     RUSTDESK_KEYBOARD_NAME, RUSTDESK_MOUSE_NAME, STEAM_DECK_HID_ID,
+    STEAM_DECK_TOUCHSCREEN_NAMES,
 )
 from .models import NestedDesktopSession
 
@@ -216,6 +217,28 @@ def find_steam_deck_hidraw(
             continue
         return dev_root / candidate.name
     return None
+
+
+def find_steam_deck_touchscreen(
+    sys_class_input: Path = Path("/sys/class/input"),
+    dev_root: Path = Path("/dev/input"),
+) -> Path | None:
+    try:
+        candidates = sorted(sys_class_input.glob("event*"))
+    except OSError:
+        return None
+    for candidate in candidates:
+        try:
+            name = (candidate / "device/name").read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).strip()
+        except (FileNotFoundError, PermissionError, OSError):
+            continue
+        if name in STEAM_DECK_TOUCHSCREEN_NAMES:
+            return dev_root / candidate.name
+    return None
+
 
 def find_rustdesk_joystick(
     sys_class_input: Path = Path("/sys/class/input"),

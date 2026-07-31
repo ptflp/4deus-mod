@@ -9,8 +9,12 @@ export interface MangoHudFixStatus {
   current: boolean;
   error?: string;
   installed: boolean;
-  libraryPath: string;
-  serviceState: string;
+}
+
+export interface MangoHudApi {
+  getMangoHudFixStatus(): Promise<MangoHudFixStatus>;
+  installMangoHudFix(): Promise<MangoHudFixStatus>;
+  removeMangoHudFix(): Promise<MangoHudFixStatus>;
 }
 
 export interface SteamOsApplicationStatus {
@@ -38,6 +42,12 @@ export interface SteamOsArtworkResult {
   preserved: number;
 }
 
+export interface TouchscreenInertiaConfig {
+  durationMs: number;
+  minDistance: number;
+  startSpeed: number;
+}
+
 export interface NestedDesktopMouseStatus {
   available: boolean;
   bindings: NestedDesktopBindings;
@@ -45,40 +55,44 @@ export interface NestedDesktopMouseStatus {
   enabled: boolean;
   error?: string;
   inertiaEnabled: boolean;
+  moduleEnabled: boolean;
   rustDeskFocusOnInputEnabled: boolean;
   rustDeskPointerFixEnabled: boolean;
   rustDeskScrollInertiaEnabled: boolean;
   running: boolean;
   suspended: boolean;
+  touchAvailable: boolean;
+  touchEnabled: boolean;
+  touchInertiaConfig: TouchscreenInertiaConfig;
+  touchInertiaEnabled: boolean;
 }
 
-export interface ControllerStatus {
-  armed: boolean;
-  autoRecoveryEnabled: boolean;
-  available: boolean;
-  error?: string;
-  lastAttemptAtMs: number;
-  lastSuccessAtMs: number;
-  monitoring: boolean;
-  pending: boolean;
-  successCount: number;
-}
-
-export interface SystemToolsApi {
-  getMangoHudFixStatus(): Promise<MangoHudFixStatus>;
-  installMangoHudFix(): Promise<MangoHudFixStatus>;
-  removeMangoHudFix(): Promise<MangoHudFixStatus>;
+export interface NestedDesktopApi {
   getSteamOsApplicationStatus(): Promise<SteamOsApplicationStatus>;
   prepareSteamOsApplication(): Promise<PreparedSteamOsApplication>;
   installSteamOsApplicationArtwork(
     appId: number,
   ): Promise<SteamOsArtworkResult>;
   getNestedDesktopMouseStatus(): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopModuleEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
   setNestedDesktopMouseEnabled(
     enabled: boolean,
   ): Promise<NestedDesktopMouseStatus>;
   setNestedDesktopMouseInertiaEnabled(
     enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopTouchEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopTouchInertiaEnabled(
+    enabled: boolean,
+  ): Promise<NestedDesktopMouseStatus>;
+  setNestedDesktopTouchInertiaConfig(
+    durationMs: number,
+    startSpeed: number,
+    minDistance: number,
   ): Promise<NestedDesktopMouseStatus>;
   setRustDeskPointerFixEnabled(
     enabled: boolean,
@@ -97,8 +111,4 @@ export interface SystemToolsApi {
     action: NestedDesktopBindingAction,
   ): Promise<NestedDesktopMouseStatus>;
   resetNestedDesktopBindings(): Promise<NestedDesktopMouseStatus>;
-  getControllerStatus(): Promise<ControllerStatus>;
-  setTrackpadAutoRecoveryEnabled(
-    enabled: boolean,
-  ): Promise<ControllerStatus>;
 }

@@ -48,6 +48,14 @@ Install the latest release directly from Decky Loader using the
 Secondary labels are visual only. Steam remains responsible for the active
 layout and text input.
 
+## Controller module
+
+- Monitors the built-in Steam Deck trackpads for the stuck calibration state.
+- Optionally power-cycles the controller automatically after the guarded
+  recovery checks succeed.
+- Keeps recovery and developer metrics behind one module lifecycle so disabling
+  Controller stops all HID monitoring without deleting either preference.
+
 ## App Bridge module
 
 - Scans installed Flatpak and desktop applications without modifying Steam's
@@ -68,18 +76,15 @@ layout and text input.
 - Refreshes branded portrait, grid, hero, and logo artwork for Parsec and
   RustDesk whenever their Add / Fix actions run.
 
-## System Tools module
+## Nested Desktop module
 
-- Provides explicit install, repair, status, and removal actions for narrowly
-  scoped system compatibility fixes.
-- Includes a MangoHud Nested Desktop fix for protected KWin processes whose
-  `/proc/<pid>/fd` or `/proc/<pid>/fdinfo` directories cannot be enumerated.
-- Keeps the built-in Gamescope performance overlay running instead of allowing
-  MangoApp to enter a crash loop.
+- Provides explicit install, repair, status, and removal actions for the
+  narrowly scoped MangoHud Nested Desktop compatibility fix.
+- Keeps the built-in Gamescope performance overlay running when protected KWin
+  processes prevent MangoApp from enumerating `/proc/<pid>/fd` or
+  `/proc/<pid>/fdinfo`.
 - Installs only a user-level systemd drop-in and a dedicated preload library;
-  it does not replace the system MangoHud package.
-- Requires no additional runtime packages: the guard uses the same glibc and
-  GCC runtime libraries already required by SteamOS MangoApp.
+  it does not replace the system MangoHud package or add runtime dependencies.
 - Removes only files marked as managed by 4deus Mod and cleans the fix up when
   the plugin is uninstalled.
 - Adds or repairs a **Steam Os** non-Steam shortcut for the built-in Nested
@@ -92,6 +97,14 @@ layout and text input.
 - Restores right-trackpad and right-stick cursor control, configurable clicks,
   and left-pad scrolling in Nested Desktop while another Game Mode application
   is running.
+- Restores the Steam Deck touchscreen in Nested Desktop, including swipes and
+  multiple simultaneous contacts. Touch forwarding has its own saved switch
+  and is active only while Nested Desktop owns input focus.
+- Optionally extends a fast, straight, single-finger swipe with time-based
+  kinetic motion and a smooth fade. Taps, holds, direction changes, slow
+  drags, multitouch, new contacts, and focus loss cancel or suppress it.
+- Keeps guarded touchscreen inertia tuning behind the module's Advanced
+  switch, with safe ranges, an explicit Apply action, and one-click defaults.
 - Fixes RustDesk's duplicate cursor, click offset, and pointer teleportation by
   relaying only its pointer events through Nested Desktop's EIS input. The
   setting is enabled by default and can be disabled without restarting
@@ -107,9 +120,10 @@ layout and text input.
   switch, and can reset the complete set to Steam defaults.
 - Activates the input bridge only while Nested Desktop is frontmost, with
   configurable cursor and scroll inertia that is saved between sessions.
-- Uses Decky's root permission only for managed systemd compatibility
-  drop-ins; the latency-sensitive Nested Desktop input worker still runs as
-  the regular Steam Deck user.
+- Uses Decky's root process only to open the protected physical touchscreen
+  and for managed systemd compatibility drop-ins. The descriptor is passed to
+  the latency-sensitive Nested Desktop input worker, which still runs as the
+  regular Steam Deck user and never grabs the touchscreen away from Steam.
 
 ### Why dual-language labels matter
 
@@ -134,9 +148,12 @@ every key shows the character that the active secondary layout will produce.
 
 ## Interface
 
-The Quick Access panel provides one activation row per mod. Detailed options
-open in a native full-screen Decky settings route, keeping the panel compact as
-new modules are added.
+The Quick Access panel has a permanent module manager plus one tab per enabled
+module. Steam's native tab navigation lets L2/R2 move between them. Disabling a
+module removes its tab, stops its runtime work, and preserves the configured
+feature values for the next activation. Each enabled module tab starts with a
+localized Settings button, followed by its frequent, safe controls. The button
+opens a short, focused full-screen settings route for that module.
 
 ## Development
 

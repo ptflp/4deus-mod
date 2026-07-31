@@ -82,6 +82,22 @@ class LinuxInputEvent:
     event_type: int
     code: int
     value: int
+    timestamp: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TouchUpdate:
+    contact_id: int
+    phase: str
+    x: float | None = None
+    y: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TouchFrame:
+    timestamp: float
+    updates: tuple[TouchUpdate, ...]
+
 
 @dataclass(frozen=True, slots=True)
 class BindingUpdate:

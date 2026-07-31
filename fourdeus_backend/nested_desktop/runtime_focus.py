@@ -52,6 +52,7 @@ class RuntimeFocusMixin:
             self.cursor_overlay_failed_session_pid = None
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
+            self._set_touch_forwarding(False)
             self._set_remote_forwarding(False)
             self._close_rustdesk_joystick()
             self._close_rustdesk_keyboard()
@@ -242,6 +243,7 @@ class RuntimeFocusMixin:
             self._set_remote_forwarding(False)
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
+            self._set_touch_forwarding(False)
             return
         try:
             app_id = self.session.app_id
@@ -273,6 +275,13 @@ class RuntimeFocusMixin:
                 focused_app,
                 focused_gfx_app,
                 mouse_focus_display,
+            )
+            self._set_touch_forwarding(
+                self.touchscreen_enabled
+                and self.touchscreen_reader is not None
+                and not self.suspended
+                and remote_pointer_targeted
+                and getattr(inner_eis, "touch_ready", False)
             )
             self._set_remote_forwarding(
                 self.rustdesk_pointer_fix_enabled
@@ -337,40 +346,8 @@ class RuntimeFocusMixin:
                     or self.remote_forwarding
                 )
             )
-            if (
-                not pointer_needs_bridge
-                and remote_pointer_targeted
-                and not self.suspended
-                and (
-                    self.mouse_enabled
-                    or self.rustdesk_pointer_fix_enabled
-                )
-            ):
-                self._prime_cursor_overlay()
         except Exception as error:
             self._handle_eis_loss(error)
-
-    def _prime_cursor_overlay(self):
-        session = self.session
-        if (
-            session is None
-            or session.software_cursor_forced
-            or self.cursor_overlay_failed_session_pid == session.pid
-        ):
-            return
-        overlay = self.cursor_overlay
-        try:
-            if overlay is None:
-                overlay = self.cursor_overlay_factory(session)
-                self.cursor_overlay = overlay
-            overlay.prime()
-        except Exception as error:
-            LOGGER.warning(
-                "Nested Desktop cursor overlay is unavailable: %s",
-                error,
-            )
-            self.cursor_overlay_failed_session_pid = session.pid
-            self._close_cursor_overlay()
 
     def _set_cursor_overlay(self, active: bool):
         session = self.session
@@ -544,6 +521,31 @@ class RuntimeFocusMixin:
             LOGGER.info("Nested Desktop configurable bindings enabled")
         else:
             LOGGER.info("Nested Desktop configurable bindings disabled")
+
+    def _set_touch_forwarding(self, active: bool):
+        if active == self.touch_forwarding:
+            return
+        if not active:
+            self.touchscreen_inertia.reset()
+        inner_eis = self.inner_eis
+        try:
+            if active:
+                active = bool(
+                    inner_eis is not None
+                    and inner_eis.set_touch_emulating(True)
+                )
+            elif inner_eis is not None:
+                inner_eis.set_touch_emulating(False)
+        except Exception as error:
+            self._handle_eis_loss(error)
+            active = False
+        if active == self.touch_forwarding:
+            return
+        self.touch_forwarding = active
+        LOGGER.info(
+            "Nested Desktop touchscreen forwarding %s",
+            "enabled" if active else "disabled",
+        )
 
     def _set_binding_pointer_forwarding(self, active: bool):
         active = bool(

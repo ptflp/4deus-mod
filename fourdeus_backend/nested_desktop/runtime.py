@@ -26,11 +26,15 @@ from .models import NestedDesktopSession
 from .runtime_focus import RuntimeFocusMixin
 from .runtime_hid import RuntimeHidInputMixin
 from .runtime_remote import RuntimeRemoteInputMixin
+from .runtime_touch import RuntimeTouchInputMixin
 from .rustdesk import (
     RustDeskMouseTranslator, RustDeskRelayTranslator,
     RustDeskScrollInertia, query_rustdesk_video_connection_count,
 )
 from .x11 import X11Connection
+from .touch import (
+    TouchscreenInertia, TouchscreenInertiaConfig, TouchscreenReader,
+)
 
 
 LOGGER = logging.getLogger("4deus-nested-mouse")
@@ -40,6 +44,7 @@ class NestedDesktopMouseRuntime(
     RuntimeFocusMixin,
     RuntimeRemoteInputMixin,
     RuntimeHidInputMixin,
+    RuntimeTouchInputMixin,
 ):
     def __init__(
         self,
@@ -56,6 +61,12 @@ class NestedDesktopMouseRuntime(
         rustdesk_pointer_fix_enabled: bool = True,
         rustdesk_scroll_inertia_enabled: bool = False,
         rustdesk_focus_on_input_enabled: bool = False,
+        touchscreen_enabled: bool = True,
+        touchscreen_fd: int | None = None,
+        touchscreen_inertia_enabled: bool = True,
+        touchscreen_inertia_config: (
+            TouchscreenInertiaConfig | None
+        ) = None,
         action_callback: Callable[[str], None] | None = None,
         suspended: bool = False,
         control_fd: int | None = None,
@@ -98,6 +109,22 @@ class NestedDesktopMouseRuntime(
         self.rustdesk_focus_on_input_enabled = (
             rustdesk_focus_on_input_enabled
         )
+        self.touchscreen_enabled = touchscreen_enabled
+        self.touchscreen_inertia = TouchscreenInertia(
+            enabled=touchscreen_inertia_enabled,
+            config=touchscreen_inertia_config,
+        )
+        self.touchscreen_reader = None
+        if touchscreen_enabled and touchscreen_fd is not None:
+            try:
+                self.touchscreen_reader = TouchscreenReader(
+                    touchscreen_fd
+                )
+            except Exception:
+                os.close(touchscreen_fd)
+                LOGGER.exception(
+                    "Unable to initialize the Steam Deck touchscreen"
+                )
         self.rustdesk_ipc_path = rustdesk_ipc_path or Path(
             f"/tmp/RustDesk-{os.geteuid()}/ipc"
         )
@@ -138,6 +165,7 @@ class NestedDesktopMouseRuntime(
         self.remote_relaying: bool | None = None
         self.binding_forwarding = False
         self.binding_pointer_forwarding = False
+        self.touch_forwarding = False
         self.next_input_frame = 0.0
         self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
         self.focus_snapshot: tuple[
@@ -183,7 +211,9 @@ class NestedDesktopMouseRuntime(
             self._set_binding_forwarding(False)
             self._set_remote_forwarding(False)
             self._set_remote_relaying(False)
+            self._set_touch_forwarding(False)
             self._close_hidraw()
+            self._close_touchscreen()
             self._close_rustdesk_joystick()
             self._close_rustdesk_keyboard()
             remove_nested_wayland_alias(self.session, self.wayland_alias)
@@ -201,6 +231,7 @@ class NestedDesktopMouseRuntime(
         if suspended:
             self._set_forwarding(False)
             self._set_binding_forwarding(False)
+            self._set_touch_forwarding(False)
         self.next_input_frame = 0.0
         self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL
         LOGGER.info(
@@ -321,10 +352,17 @@ class NestedDesktopMouseRuntime(
         now = time.monotonic()
         if include_remote and self.remote_scroll_forwarding:
             timeout = self.rustdesk_scroll_inertia.timeout(now, timeout)
+        if self.touch_forwarding:
+            timeout = self.touchscreen_inertia.timeout(now, timeout)
         control_fd = self.control_fd
         rustdesk_fd = self.rustdesk_fd if include_remote else None
         rustdesk_keyboard_fd = (
             self.rustdesk_keyboard_fd if include_remote else None
+        )
+        touchscreen_fd = (
+            self.touchscreen_reader.fd
+            if self.touchscreen_reader is not None
+            else None
         )
         relay = (
             self.rustdesk_relay_socket
@@ -337,6 +375,7 @@ class NestedDesktopMouseRuntime(
                 control_fd,
                 rustdesk_fd,
                 rustdesk_keyboard_fd,
+                touchscreen_fd,
                 relay,
             )
             if descriptor is not None
@@ -345,6 +384,7 @@ class NestedDesktopMouseRuntime(
             self.stop_event.wait(max(0.0, timeout))
             if include_remote:
                 self._tick_rustdesk_scroll_inertia()
+            self._tick_touchscreen_inertia()
             return
         try:
             readable, _, _ = select.select(
@@ -367,10 +407,20 @@ class NestedDesktopMouseRuntime(
                 self._close_rustdesk_joystick()
                 self._close_rustdesk_keyboard()
                 self._set_remote_relaying(False)
+            if touchscreen_fd is not None:
+                self._set_touch_forwarding(False)
+                self._close_touchscreen()
             return
 
         if control_fd is not None and control_fd in readable:
             self._read_control_commands()
+        if (
+            touchscreen_fd is not None
+            and self.touchscreen_reader is not None
+            and touchscreen_fd == self.touchscreen_reader.fd
+            and touchscreen_fd in readable
+        ):
+            self._read_touchscreen_events()
         if (
             rustdesk_fd is not None
             and rustdesk_fd == self.rustdesk_fd
@@ -391,6 +441,7 @@ class NestedDesktopMouseRuntime(
             self._read_rustdesk_relay_events()
         if include_remote:
             self._tick_rustdesk_scroll_inertia()
+        self._tick_touchscreen_inertia()
 
     def _tick_rustdesk_scroll_inertia(self):
         inner_eis = self.inner_eis
@@ -421,9 +472,11 @@ class NestedDesktopMouseRuntime(
         self.remote_scroll_forwarding = False
         self.remote_button_forwarding = False
         self.rustdesk_scroll_inertia.reset()
+        self.touchscreen_inertia.reset()
         self._set_remote_relaying(False)
         self.binding_forwarding = False
         self.binding_pointer_forwarding = False
+        self.touch_forwarding = False
         self._set_cursor_overlay(False)
         self.next_input_frame = 0.0
         self.input_frame_interval = IDLE_INPUT_FRAME_INTERVAL

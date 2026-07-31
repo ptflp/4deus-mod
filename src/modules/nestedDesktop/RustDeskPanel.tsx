@@ -7,12 +7,12 @@ import { useEffect, useState } from "react";
 
 import { useStrings } from "../../core/localization";
 import type {
+  NestedDesktopApi,
   NestedDesktopMouseStatus,
-  SystemToolsApi,
 } from "./types";
 
 interface RustDeskPanelProps {
-  api: SystemToolsApi;
+  api: NestedDesktopApi;
 }
 
 export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {

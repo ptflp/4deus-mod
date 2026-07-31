@@ -11,14 +11,14 @@ from .constants import (
     ACTION_MOUSE_LEFT, ACTION_MOUSE_MIDDLE, ACTION_MOUSE_RIGHT,
     ACTION_NONE, ACTION_SHOW_KEYBOARD, BACK_BUTTON,
     BUTTON_SOURCE_MASKS, DEFAULT_NESTED_DESKTOP_BINDINGS, EIS_KEY_CODES,
-    LEFT_PAD_TOUCHED, LEFT_PAD_X_OFFSET, LEFT_STICK_PRESS_THRESHOLD,
+    LEFT_PAD_TOUCHED, LEFT_STICK_PRESS_THRESHOLD,
     LEFT_STICK_RELEASE_THRESHOLD, LEFT_TRIGGER, MAX_TRACKPAD_DELTA,
     MOUSE_BINDING_ACTIONS, MOUSE_SCALE, NESTED_DESKTOP_BINDING_ACTIONS,
     NESTED_DESKTOP_BINDING_SOURCES, POINTER_INERTIA_DECAY,
     POINTER_INERTIA_START, POINTER_INERTIA_STOP, POINTER_VELOCITY_BLEND,
     REPORT_HEADER, RIGHT_PAD_PRESSED, RIGHT_PAD_PRESSURE_OFFSET,
     RIGHT_PAD_PRESS_THRESHOLD, RIGHT_PAD_RELEASE_THRESHOLD,
-    RIGHT_PAD_TOUCHED, RIGHT_PAD_X_OFFSET, RIGHT_STICK_DEADZONE,
+    RIGHT_PAD_TOUCHED, RIGHT_STICK_DEADZONE,
     RIGHT_STICK_MAX_SPEED, RIGHT_TRIGGER, SCROLL_EMIT_THRESHOLD,
     SCROLL_INERTIA_DECAY, SCROLL_INERTIA_START, SCROLL_INERTIA_STOP,
     SCROLL_SCALE, SCROLL_START_DEADZONE, SCROLL_VELOCITY_BLEND,
@@ -30,15 +30,18 @@ from .models import BindingUpdate, PointerUpdate, TrackpadState
 def parse_trackpad_report(report: bytes) -> TrackpadState | None:
     if (
         len(report) < RIGHT_PAD_PRESSURE_OFFSET + 2
-        or report[:3] != REPORT_HEADER
+        or not report.startswith(REPORT_HEADER)
     ):
         return None
-    buttons = int.from_bytes(report[8:16], "little")
+    buttons, left_x, left_y, right_x, right_y = struct.unpack_from(
+        "<Qhhhh",
+        report,
+        8,
+    )
     controls = buttons & 0xFFFFFFFF
-    left_x, left_y = struct.unpack_from("<hh", report, LEFT_PAD_X_OFFSET)
-    right_x, right_y = struct.unpack_from("<hh", report, RIGHT_PAD_X_OFFSET)
-    left_stick_x, left_stick_y = struct.unpack_from("<hh", report, 48)
-    right_stick_x, right_stick_y = struct.unpack_from("<hh", report, 52)
+    left_stick_x, left_stick_y, right_stick_x, right_stick_y = (
+        struct.unpack_from("<hhhh", report, 48)
+    )
     right_pressure = struct.unpack_from(
         "<H",
         report,
@@ -125,6 +128,26 @@ def normalize_nested_desktop_bindings(
             normalized[source] = action
     return normalized
 
+
+_STICK_SOURCE_MASKS = {
+    "leftStickUp": 1 << 43,
+    "leftStickRight": 1 << 44,
+    "leftStickLeft": 1 << 45,
+    "leftStickDown": 1 << 46,
+}
+_STICK_SOURCES = (
+    ("leftStickUp", "left_stick_y", True),
+    ("leftStickRight", "left_stick_x", True),
+    ("leftStickLeft", "left_stick_x", False),
+    ("leftStickDown", "left_stick_y", False),
+)
+_SOURCE_MASKS = {
+    **BUTTON_SOURCE_MASKS,
+    **_STICK_SOURCE_MASKS,
+}
+_BINDING_BUTTON_MASK = sum(BUTTON_SOURCE_MASKS.values())
+
+
 class InputBindingTranslator:
     def __init__(
         self,
@@ -150,6 +173,7 @@ class InputBindingTranslator:
         self.last_sources = {
             source: False for source in NESTED_DESKTOP_BINDING_SOURCES
         }
+        self.last_source_bits = 0
         self.injected_keys: set[int] = set()
         self.injected_mouse: set[str] = set()
         self.right_pressure_pressed = False
@@ -192,6 +216,7 @@ class InputBindingTranslator:
         self.last_sources = {
             source: False for source in NESTED_DESKTOP_BINDING_SOURCES
         }
+        self.last_source_bits = 0
         return BindingUpdate(key_events=key_events, pointer=pointer)
 
     def set_pointer_actions_enabled(
@@ -221,11 +246,8 @@ class InputBindingTranslator:
         )
         return value >= threshold if positive else value <= -threshold
 
-    def _source_states(self, state: TrackpadState) -> dict[str, bool]:
-        states = {
-            source: bool(state.buttons & mask)
-            for source, mask in BUTTON_SOURCE_MASKS.items()
-        }
+    def _source_bits(self, state: TrackpadState) -> int:
+        bits = state.buttons & _BINDING_BUTTON_MASK
         if (
             not state.right_touched
             or state.right_pressure <= RIGHT_PAD_RELEASE_THRESHOLD
@@ -233,23 +255,22 @@ class InputBindingTranslator:
             self.right_pressure_pressed = False
         elif state.right_pressure >= RIGHT_PAD_PRESS_THRESHOLD:
             self.right_pressure_pressed = True
-        states["rightPadClick"] = bool(
-            states["rightPadClick"] or self.right_pressure_pressed
-        )
-        stick_values = {
-            "leftStickUp": (state.left_stick_y, True),
-            "leftStickRight": (state.left_stick_x, True),
-            "leftStickLeft": (state.left_stick_x, False),
-            "leftStickDown": (state.left_stick_y, False),
-        }
-        for source, (value, positive) in stick_values.items():
-            states[source] = self._stick_pressed(
-                value,
+        if self.right_pressure_pressed:
+            bits |= BUTTON_SOURCE_MASKS["rightPadClick"]
+        for source, field, positive in _STICK_SOURCES:
+            mask = _STICK_SOURCE_MASKS[source]
+            if self._stick_pressed(
+                getattr(state, field),
                 positive,
-                self.last_sources[source],
-            )
+                bool(self.last_source_bits & mask),
+            ):
+                bits |= mask
+        return bits
+
+    @staticmethod
+    def _source_states(source_bits: int) -> dict[str, bool]:
         return {
-            source: states.get(source, False)
+            source: bool(source_bits & _SOURCE_MASKS[source])
             for source in NESTED_DESKTOP_BINDING_SOURCES
         }
 
@@ -271,13 +292,17 @@ class InputBindingTranslator:
         )
 
     def translate(self, state: TrackpadState) -> BindingUpdate:
-        sources = self._source_states(state)
+        source_bits = self._source_bits(state)
         if not self.active:
-            self.last_sources = sources
+            self.last_source_bits = source_bits
             return BindingUpdate()
+        if source_bits == self.last_source_bits and not self.needs_sync:
+            return BindingUpdate()
+        sources = self._source_states(source_bits)
         if self.needs_sync:
             self.needs_sync = False
             self.last_sources = sources
+            self.last_source_bits = source_bits
             self.pointer_activation_blocked = bool(
                 self.pointer_actions_enabled
                 and any(
@@ -286,8 +311,6 @@ class InputBindingTranslator:
                     for source, pressed in sources.items()
                 )
             )
-            return BindingUpdate()
-        if sources == self.last_sources:
             return BindingUpdate()
 
         desired_keys = {
@@ -330,6 +353,7 @@ class InputBindingTranslator:
         )
         pointer = self._mouse_update(desired_mouse)
         self.last_sources = sources
+        self.last_source_bits = source_bits
         self.injected_keys = desired_keys
         self.injected_mouse = desired_mouse
         return BindingUpdate(

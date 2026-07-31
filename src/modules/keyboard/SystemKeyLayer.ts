@@ -1143,10 +1143,12 @@ export class SystemKeyLayer {
   }
 
   private releaseModifiers(): void {
+    const changed = this.controlActive || this.altActive || this.shiftActive;
     this.controlActive = false;
     this.altActive = false;
     this.shiftActive = false;
-    this.render();
+    if (changed)
+      this.render();
   }
 
   private tapSystemKey(keyName: string): void {

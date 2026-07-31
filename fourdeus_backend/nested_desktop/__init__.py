@@ -13,12 +13,13 @@ from .cursor import (
 from .discovery import (
     ensure_nested_wayland_alias, find_nested_desktop_session,
     find_rustdesk_joystick, find_rustdesk_keyboard, find_steam_deck_hidraw,
-    remove_nested_wayland_alias,
+    find_steam_deck_touchscreen, remove_nested_wayland_alias,
 )
 from .eis import EisConnection
 from .models import (
     BindingUpdate, CursorSnapshot, JoystickEvent, LinuxInputEvent,
-    NestedDesktopSession, PointerUpdate, TrackpadState,
+    NestedDesktopSession, PointerUpdate, TouchFrame, TouchUpdate,
+    TrackpadState,
 )
 from .runtime import LOGGER, NestedDesktopMouseRuntime
 from .rustdesk import (
@@ -28,6 +29,10 @@ from .rustdesk import (
     receive_rustdesk_ipc_frame,
 )
 from .supervisor import NestedDesktopMouseSupervisor
+from .touch import (
+    TouchscreenInertia, TouchscreenInertiaConfig, TouchscreenParser,
+    TouchscreenReader,
+)
 from .x11 import X11Connection
 
 __all__ = [
@@ -55,6 +60,7 @@ __all__ = [
     'EI_DEVICE_CAP_POINTER',
     'EI_DEVICE_CAP_POINTER_ABSOLUTE',
     'EI_DEVICE_CAP_SCROLL',
+    'EI_DEVICE_CAP_TOUCH',
     'EI_EVENT_DEVICE_ADDED',
     'EI_EVENT_DEVICE_PAUSED',
     'EI_EVENT_DEVICE_REMOVED',
@@ -88,6 +94,10 @@ __all__ = [
     'LEGACY_RUSTDESK_POINTER_SYNC_MARKER',
     'LINUX_ABS_X',
     'LINUX_ABS_Y',
+    'LINUX_ABS_MT_POSITION_X',
+    'LINUX_ABS_MT_POSITION_Y',
+    'LINUX_ABS_MT_SLOT',
+    'LINUX_ABS_MT_TRACKING_ID',
     'LINUX_EV_ABS',
     'LINUX_EV_KEY',
     'LINUX_EV_REL',
@@ -154,7 +164,15 @@ __all__ = [
     'SCROLL_START_DEADZONE',
     'SCROLL_VELOCITY_BLEND',
     'STEAM_DECK_HID_ID',
+    'STEAM_DECK_TOUCHSCREEN_NAMES',
     'STEAM_UI_APP_ID',
+    'TOUCH_PORTAL_CAPABILITY',
+    'TouchFrame',
+    'TouchUpdate',
+    'TouchscreenInertia',
+    'TouchscreenInertiaConfig',
+    'TouchscreenParser',
+    'TouchscreenReader',
     'TrackpadState',
     'TrackpadTranslator',
     'X11Connection',
@@ -169,6 +187,7 @@ __all__ = [
     'find_rustdesk_joystick',
     'find_rustdesk_keyboard',
     'find_steam_deck_hidraw',
+    'find_steam_deck_touchscreen',
     'main',
     'normalize_nested_desktop_bindings',
     'outlined_cursor_snapshot',

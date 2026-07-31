@@ -10,6 +10,7 @@ from ..dependencies import (
     DEFAULT_NESTED_DESKTOP_BINDINGS,
     NESTED_DESKTOP_BINDING_ACTIONS,
     NESTED_DESKTOP_BINDING_SOURCES,
+    TouchscreenInertiaConfig,
     logger,
     normalize_nested_desktop_bindings,
 )
@@ -31,13 +32,31 @@ class NestedDesktopEndpointsMixin:
 
     async def get_nested_desktop_mouse_status(self):
         bridge = self.nested_desktop_mouse
+        touchscreen_available = getattr(
+            bridge,
+            "touchscreen_available",
+            None,
+        )
         return {
             "available": bridge is not None,
             "bindings": dict(self.nested_desktop_bindings),
             "bindingsEnabled": self.nested_desktop_bindings_enabled,
             "enabled": self.nested_desktop_mouse_enabled,
+            "moduleEnabled": self.nested_desktop_module_enabled,
             "inertiaEnabled": (
                 self.nested_desktop_mouse_inertia_enabled
+            ),
+            "touchEnabled": self.nested_desktop_touch_enabled,
+            "touchInertiaEnabled": (
+                self.nested_desktop_touch_inertia_enabled
+            ),
+            "touchInertiaConfig": (
+                self.nested_desktop_touch_inertia_config.as_dict()
+            ),
+            "touchAvailable": (
+                bool(touchscreen_available())
+                if callable(touchscreen_available)
+                else bridge is not None
             ),
             "rustDeskPointerFixEnabled": (
                 self.rustdesk_pointer_fix_enabled
@@ -51,6 +70,37 @@ class NestedDesktopEndpointsMixin:
             "running": bridge.running() if bridge is not None else False,
             "suspended": self.nested_desktop_keyboard_visible,
         }
+
+    async def set_nested_desktop_module_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "Nested Desktop module enabled must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                module_enabled=enabled,
+            )
+            self.nested_desktop_module_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_module_enabled,
+                    enabled,
+                )
+            logger.info(
+                "Nested Desktop module %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception("Failed to change the Nested Desktop module")
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
 
     async def set_nested_desktop_keyboard_visible(self, visible: bool):
         if not isinstance(visible, bool):
@@ -77,11 +127,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                enabled,
-                self.nested_desktop_mouse_inertia_enabled,
-                self.nested_desktop_bindings_enabled,
-                self.nested_desktop_bindings,
-                self.rustdesk_pointer_fix_enabled,
+                mouse_enabled=enabled,
             )
             self.nested_desktop_mouse_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -117,11 +163,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                self.nested_desktop_mouse_enabled,
-                enabled,
-                self.nested_desktop_bindings_enabled,
-                self.nested_desktop_bindings,
-                self.rustdesk_pointer_fix_enabled,
+                inertia_enabled=enabled,
             )
             self.nested_desktop_mouse_inertia_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -144,6 +186,117 @@ class NestedDesktopEndpointsMixin:
                 "error": str(error),
             }
 
+    async def set_nested_desktop_touch_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "Touchscreen enabled must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                touch_enabled=enabled,
+            )
+            self.nested_desktop_touch_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_touchscreen_enabled,
+                    enabled,
+                )
+            logger.info(
+                "Nested Desktop touchscreen forwarding %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception(
+                "Failed to change Nested Desktop touchscreen forwarding"
+            )
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    async def set_nested_desktop_touch_inertia_enabled(
+        self,
+        enabled: bool,
+    ):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": "Touchscreen inertia enabled must be a boolean",
+            }
+
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                touch_inertia_enabled=enabled,
+            )
+            self.nested_desktop_touch_inertia_enabled = enabled
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_touchscreen_inertia_enabled,
+                    enabled,
+                )
+            logger.info(
+                "Nested Desktop touchscreen inertia %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception(
+                "Failed to change Nested Desktop touchscreen inertia"
+            )
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
+    async def set_nested_desktop_touch_inertia_config(
+        self,
+        duration_ms: object,
+        start_speed: object,
+        min_distance: object,
+    ):
+        try:
+            config = TouchscreenInertiaConfig.from_user_values(
+                duration_ms,
+                start_speed,
+                min_distance,
+            )
+        except (TypeError, ValueError) as error:
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+        try:
+            await asyncio.to_thread(
+                self._save_nested_desktop_mouse_settings,
+                touch_inertia_config=config,
+            )
+            self.nested_desktop_touch_inertia_config = config
+            bridge = self.nested_desktop_mouse
+            if bridge is not None:
+                await asyncio.to_thread(
+                    bridge.set_touchscreen_inertia_config,
+                    config,
+                )
+            logger.info(
+                "Updated Nested Desktop touchscreen inertia tuning"
+            )
+            return await self.get_nested_desktop_mouse_status()
+        except Exception as error:
+            logger.exception(
+                "Failed to update Nested Desktop touchscreen inertia tuning"
+            )
+            return {
+                **await self.get_nested_desktop_mouse_status(),
+                "error": str(error),
+            }
+
     async def set_rustdesk_pointer_fix_enabled(self, enabled: bool):
         if not isinstance(enabled, bool):
             return {
@@ -154,11 +307,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                self.nested_desktop_mouse_enabled,
-                self.nested_desktop_mouse_inertia_enabled,
-                self.nested_desktop_bindings_enabled,
-                self.nested_desktop_bindings,
-                enabled,
+                rustdesk_pointer_fix_enabled=enabled,
             )
             self.rustdesk_pointer_fix_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -167,7 +316,7 @@ class NestedDesktopEndpointsMixin:
                     bridge.set_rustdesk_pointer_fix_enabled,
                     enabled,
                 )
-            if enabled:
+            if enabled and self.nested_desktop_module_enabled:
                 await self._install_rustdesk_pointer_fix(restart=True)
             logger.info(
                 "RustDesk Nested Desktop pointer fix %s",
@@ -196,12 +345,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                self.nested_desktop_mouse_enabled,
-                self.nested_desktop_mouse_inertia_enabled,
-                self.nested_desktop_bindings_enabled,
-                self.nested_desktop_bindings,
-                self.rustdesk_pointer_fix_enabled,
-                enabled,
+                rustdesk_scroll_inertia_enabled=enabled,
             )
             self.rustdesk_scroll_inertia_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -237,13 +381,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                self.nested_desktop_mouse_enabled,
-                self.nested_desktop_mouse_inertia_enabled,
-                self.nested_desktop_bindings_enabled,
-                self.nested_desktop_bindings,
-                self.rustdesk_pointer_fix_enabled,
-                self.rustdesk_scroll_inertia_enabled,
-                enabled,
+                rustdesk_focus_on_input_enabled=enabled,
             )
             self.rustdesk_focus_on_input_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -311,11 +449,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                self.nested_desktop_mouse_enabled,
-                self.nested_desktop_mouse_inertia_enabled,
-                enabled,
-                self.nested_desktop_bindings,
-                self.rustdesk_pointer_fix_enabled,
+                bindings_enabled=enabled,
             )
             self.nested_desktop_bindings_enabled = enabled
             bridge = self.nested_desktop_mouse
@@ -360,11 +494,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                self.nested_desktop_mouse_enabled,
-                self.nested_desktop_mouse_inertia_enabled,
-                self.nested_desktop_bindings_enabled,
-                bindings,
-                self.rustdesk_pointer_fix_enabled,
+                bindings=bindings,
             )
             self.nested_desktop_bindings = bindings
             bridge = self.nested_desktop_mouse
@@ -387,11 +517,7 @@ class NestedDesktopEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_nested_desktop_mouse_settings,
-                self.nested_desktop_mouse_enabled,
-                self.nested_desktop_mouse_inertia_enabled,
-                self.nested_desktop_bindings_enabled,
-                bindings,
-                self.rustdesk_pointer_fix_enabled,
+                bindings=bindings,
             )
             self.nested_desktop_bindings = bindings
             bridge = self.nested_desktop_mouse
@@ -412,7 +538,19 @@ class NestedDesktopEndpointsMixin:
 
     def _load_nested_desktop_mouse_settings(
         self,
-    ) -> tuple[bool, bool, bool, dict[str, str], bool, bool, bool]:
+    ) -> tuple[
+        bool,
+        bool,
+        bool,
+        bool,
+        dict[str, str],
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        TouchscreenInertiaConfig,
+    ]:
         try:
             payload = json.loads(
                 self.nested_desktop_mouse_settings_path.read_text(
@@ -420,6 +558,7 @@ class NestedDesktopEndpointsMixin:
                 )
             )
             return (
+                payload.get("moduleEnabled", True) is not False,
                 payload.get("enabled", True) is not False,
                 payload.get("inertiaEnabled", True) is not False,
                 payload.get("bindingsEnabled", True) is not False,
@@ -427,9 +566,15 @@ class NestedDesktopEndpointsMixin:
                 payload.get("rustDeskPointerFixEnabled", True) is not False,
                 payload.get("rustDeskScrollInertiaEnabled", False) is True,
                 payload.get("rustDeskFocusOnInputEnabled", False) is True,
+                payload.get("touchEnabled", True) is not False,
+                payload.get("touchInertiaEnabled", True) is not False,
+                TouchscreenInertiaConfig.from_mapping(
+                    payload.get("touchInertiaConfig")
+                ),
             )
         except FileNotFoundError:
             return (
+                True,
                 True,
                 True,
                 True,
@@ -437,6 +582,9 @@ class NestedDesktopEndpointsMixin:
                 True,
                 False,
                 False,
+                True,
+                True,
+                TouchscreenInertiaConfig(),
             )
         except Exception:
             logger.exception(
@@ -446,22 +594,45 @@ class NestedDesktopEndpointsMixin:
                 True,
                 True,
                 True,
+                True,
                 dict(DEFAULT_NESTED_DESKTOP_BINDINGS),
                 True,
                 False,
                 False,
+                True,
+                True,
+                TouchscreenInertiaConfig(),
             )
 
     def _save_nested_desktop_mouse_settings(
         self,
-        enabled: bool,
-        inertia_enabled: bool,
-        bindings_enabled: bool,
-        bindings: dict[str, str],
-        rustdesk_pointer_fix_enabled: bool,
+        *,
+        module_enabled: bool | None = None,
+        mouse_enabled: bool | None = None,
+        inertia_enabled: bool | None = None,
+        bindings_enabled: bool | None = None,
+        bindings: dict[str, str] | None = None,
+        rustdesk_pointer_fix_enabled: bool | None = None,
         rustdesk_scroll_inertia_enabled: bool | None = None,
         rustdesk_focus_on_input_enabled: bool | None = None,
+        touch_enabled: bool | None = None,
+        touch_inertia_enabled: bool | None = None,
+        touch_inertia_config: TouchscreenInertiaConfig | None = None,
     ):
+        if module_enabled is None:
+            module_enabled = self.nested_desktop_module_enabled
+        if mouse_enabled is None:
+            mouse_enabled = self.nested_desktop_mouse_enabled
+        if inertia_enabled is None:
+            inertia_enabled = self.nested_desktop_mouse_inertia_enabled
+        if bindings_enabled is None:
+            bindings_enabled = self.nested_desktop_bindings_enabled
+        if bindings is None:
+            bindings = self.nested_desktop_bindings
+        if rustdesk_pointer_fix_enabled is None:
+            rustdesk_pointer_fix_enabled = (
+                self.rustdesk_pointer_fix_enabled
+            )
         if rustdesk_scroll_inertia_enabled is None:
             rustdesk_scroll_inertia_enabled = (
                 self.rustdesk_scroll_inertia_enabled
@@ -470,13 +641,24 @@ class NestedDesktopEndpointsMixin:
             rustdesk_focus_on_input_enabled = (
                 self.rustdesk_focus_on_input_enabled
             )
+        if touch_enabled is None:
+            touch_enabled = self.nested_desktop_touch_enabled
+        if touch_inertia_enabled is None:
+            touch_inertia_enabled = (
+                self.nested_desktop_touch_inertia_enabled
+            )
+        if touch_inertia_config is None:
+            touch_inertia_config = (
+                self.nested_desktop_touch_inertia_config
+            )
         path = self.nested_desktop_mouse_settings_path
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
         temporary.write_text(
             json.dumps(
                 {
-                    "enabled": enabled,
+                    "moduleEnabled": module_enabled,
+                    "enabled": mouse_enabled,
                     "inertiaEnabled": inertia_enabled,
                     "bindingsEnabled": bindings_enabled,
                     "bindings": normalize_nested_desktop_bindings(bindings),
@@ -489,6 +671,9 @@ class NestedDesktopEndpointsMixin:
                     "rustDeskFocusOnInputEnabled": (
                         rustdesk_focus_on_input_enabled
                     ),
+                    "touchEnabled": touch_enabled,
+                    "touchInertiaEnabled": touch_inertia_enabled,
+                    "touchInertiaConfig": touch_inertia_config.as_dict(),
                 },
                 indent=2,
             )

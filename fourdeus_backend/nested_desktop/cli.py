@@ -12,8 +12,14 @@ import sys
 import threading
 from typing import Mapping
 
-from .constants import RUSTDESK_POINTER_RELAY_SOCKET
+from .constants import (
+    RUSTDESK_POINTER_RELAY_SOCKET,
+    TOUCH_INERTIA_DEFAULT_DURATION_MS,
+    TOUCH_INERTIA_DEFAULT_MIN_DISTANCE,
+    TOUCH_INERTIA_DEFAULT_START_SPEED,
+)
 from .runtime import NestedDesktopMouseRuntime
+from .touch import TouchscreenInertiaConfig
 
 
 LOGGER = logging.getLogger("4deus-nested-mouse")
@@ -41,6 +47,12 @@ def run_worker(
     inertia_enabled: bool = True,
     bindings_enabled: bool = True,
     bindings: Mapping[str, object] | None = None,
+    touchscreen_enabled: bool = True,
+    touchscreen_fd: int | None = None,
+    touchscreen_inertia_enabled: bool = True,
+    touchscreen_inertia_config: (
+        TouchscreenInertiaConfig | None
+    ) = None,
     rustdesk_pointer_fix_enabled: bool = True,
     rustdesk_scroll_inertia_enabled: bool = False,
     rustdesk_focus_on_input_enabled: bool = False,
@@ -65,6 +77,10 @@ def run_worker(
         inertia_enabled=inertia_enabled,
         bindings_enabled=bindings_enabled,
         bindings=bindings,
+        touchscreen_enabled=touchscreen_enabled,
+        touchscreen_fd=touchscreen_fd,
+        touchscreen_inertia_enabled=touchscreen_inertia_enabled,
+        touchscreen_inertia_config=touchscreen_inertia_config,
         rustdesk_pointer_fix_enabled=rustdesk_pointer_fix_enabled,
         rustdesk_scroll_inertia_enabled=(
             rustdesk_scroll_inertia_enabled
@@ -91,6 +107,24 @@ def main() -> int:
     parser.add_argument("--no-mouse-bridge", action="store_true")
     parser.add_argument("--no-inertia", action="store_true")
     parser.add_argument("--no-bindings", action="store_true")
+    parser.add_argument("--no-touchscreen", action="store_true")
+    parser.add_argument("--touchscreen-fd", type=int, default=-1)
+    parser.add_argument("--no-touchscreen-inertia", action="store_true")
+    parser.add_argument(
+        "--touchscreen-inertia-duration-ms",
+        type=int,
+        default=TOUCH_INERTIA_DEFAULT_DURATION_MS,
+    )
+    parser.add_argument(
+        "--touchscreen-inertia-start-speed",
+        type=int,
+        default=TOUCH_INERTIA_DEFAULT_START_SPEED,
+    )
+    parser.add_argument(
+        "--touchscreen-inertia-min-distance",
+        type=int,
+        default=TOUCH_INERTIA_DEFAULT_MIN_DISTANCE,
+    )
     parser.add_argument("--no-rustdesk-pointer-fix", action="store_true")
     parser.add_argument("--rustdesk-scroll-inertia", action="store_true")
     parser.add_argument(
@@ -113,6 +147,30 @@ def main() -> int:
         inertia_enabled=not arguments.no_inertia,
         bindings_enabled=not arguments.no_bindings,
         bindings=bindings,
+        touchscreen_enabled=not arguments.no_touchscreen,
+        touchscreen_fd=(
+            arguments.touchscreen_fd
+            if arguments.touchscreen_fd >= 0
+            else None
+        ),
+        touchscreen_inertia_enabled=(
+            not arguments.no_touchscreen_inertia
+        ),
+        touchscreen_inertia_config=(
+            TouchscreenInertiaConfig.from_mapping(
+                {
+                    "durationMs": (
+                        arguments.touchscreen_inertia_duration_ms
+                    ),
+                    "startSpeed": (
+                        arguments.touchscreen_inertia_start_speed
+                    ),
+                    "minDistance": (
+                        arguments.touchscreen_inertia_min_distance
+                    ),
+                }
+            )
+        ),
         rustdesk_pointer_fix_enabled=(
             not arguments.no_rustdesk_pointer_fix
         ),

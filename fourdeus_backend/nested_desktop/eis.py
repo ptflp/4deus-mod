@@ -13,12 +13,14 @@ from .constants import (
     BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, EI_DEVICE_CAP_BUTTON,
     EI_DEVICE_CAP_KEYBOARD, EI_DEVICE_CAP_POINTER,
     EI_DEVICE_CAP_POINTER_ABSOLUTE, EI_DEVICE_CAP_SCROLL,
+    EI_DEVICE_CAP_TOUCH,
     EI_EVENT_DEVICE_ADDED, EI_EVENT_DEVICE_PAUSED,
     EI_EVENT_DEVICE_REMOVED, EI_EVENT_DEVICE_RESUMED,
     EI_EVENT_DISCONNECT, EI_EVENT_SEAT_ADDED, KEYBOARD_DEVICE_GRACE,
     KEYBOARD_PORTAL_CAPABILITY, POINTER_PORTAL_CAPABILITY,
+    TOUCH_PORTAL_CAPABILITY,
 )
-from .models import PointerUpdate
+from .models import PointerUpdate, TouchUpdate
 
 
 LOGGER = logging.getLogger("4deus-nested-mouse")
@@ -36,12 +38,16 @@ class EisConnection:
         self.pointer_device = None
         self.absolute_pointer_device = None
         self.keyboard_device = None
+        self.touch_device = None
         self.ready = False
         self.absolute_ready = False
         self.keyboard_ready = False
+        self.touch_ready = False
         self.emulating = False
         self.absolute_emulating = False
         self.keyboard_emulating = False
+        self.touch_emulating = False
+        self.active_touches = {}
         self.sequence = 0
         self.lib = ctypes.CDLL(
             ctypes.util.find_library("ei") or "libei.so.1"
@@ -63,6 +69,7 @@ class EisConnection:
                 dbus.Int32(
                     KEYBOARD_PORTAL_CAPABILITY
                     | POINTER_PORTAL_CAPABILITY
+                    | TOUCH_PORTAL_CAPABILITY
                 )
             )
             backend_fd = fd_object.take()
@@ -144,6 +151,21 @@ class EisConnection:
             ctypes.c_uint32,
             ctypes.c_bool,
         ]
+        self.lib.ei_device_touch_new.argtypes = [pointer]
+        self.lib.ei_device_touch_new.restype = pointer
+        self.lib.ei_touch_down.argtypes = [
+            pointer,
+            ctypes.c_double,
+            ctypes.c_double,
+        ]
+        self.lib.ei_touch_motion.argtypes = [
+            pointer,
+            ctypes.c_double,
+            ctypes.c_double,
+        ]
+        self.lib.ei_touch_up.argtypes = [pointer]
+        self.lib.ei_touch_unref.argtypes = [pointer]
+        self.lib.ei_touch_unref.restype = pointer
         self.lib.ei_device_scroll_delta.argtypes = [
             pointer,
             ctypes.c_double,
@@ -232,6 +254,7 @@ class EisConnection:
                 ctypes.c_int(EI_DEVICE_CAP_POINTER),
                 ctypes.c_int(EI_DEVICE_CAP_POINTER_ABSOLUTE),
                 ctypes.c_int(EI_DEVICE_CAP_KEYBOARD),
+                ctypes.c_int(EI_DEVICE_CAP_TOUCH),
                 ctypes.c_int(EI_DEVICE_CAP_SCROLL),
                 ctypes.c_int(EI_DEVICE_CAP_BUTTON),
                 ctypes.c_void_p(),
@@ -277,6 +300,14 @@ class EisConnection:
                 )
             ):
                 self.keyboard_device = self.lib.ei_device_ref(candidate)
+            if (
+                self.touch_device is None
+                and self.lib.ei_device_has_capability(
+                    candidate,
+                    EI_DEVICE_CAP_TOUCH,
+                )
+            ):
+                self.touch_device = self.lib.ei_device_ref(candidate)
             return
         event_device = self.lib.ei_event_get_device(event)
         if event_type == EI_EVENT_DEVICE_RESUMED:
@@ -286,6 +317,8 @@ class EisConnection:
                 self.absolute_ready = True
             if event_device == self.keyboard_device:
                 self.keyboard_ready = True
+            if event_device == self.touch_device:
+                self.touch_ready = True
         elif event_type == EI_EVENT_DEVICE_PAUSED:
             if event_device == self.pointer_device:
                 self.ready = False
@@ -296,6 +329,10 @@ class EisConnection:
             if event_device == self.keyboard_device:
                 self.keyboard_ready = False
                 self.keyboard_emulating = False
+            if event_device == self.touch_device:
+                self.touch_ready = False
+                self.touch_emulating = False
+                self._release_active_touches(send_up=False)
         elif event_type == EI_EVENT_DEVICE_REMOVED:
             if event_device == self.pointer_device:
                 self.ready = False
@@ -314,6 +351,13 @@ class EisConnection:
                 self.keyboard_emulating = False
                 self.keyboard_device = self.lib.ei_device_unref(
                     self.keyboard_device
+                )
+            if event_device == self.touch_device:
+                self.touch_ready = False
+                self.touch_emulating = False
+                self._release_active_touches(send_up=False)
+                self.touch_device = self.lib.ei_device_unref(
+                    self.touch_device
                 )
 
     def set_emulating(self, active: bool) -> bool:
@@ -380,6 +424,25 @@ class EisConnection:
         self.lib.ei_dispatch(self.ei)
         return self.keyboard_ready
 
+    def set_touch_emulating(self, active: bool) -> bool:
+        self.dispatch()
+        if active == self.touch_emulating:
+            return self.touch_ready
+        device = self.touch_device
+        if active:
+            if not self.touch_ready or device is None:
+                return False
+            if not self._device_emulating_elsewhere(device, "touch"):
+                self._start_emulating(device)
+            self.touch_emulating = True
+        elif device is not None:
+            self._release_active_touches(send_up=True)
+            self.touch_emulating = False
+            if not self._device_emulating_elsewhere(device, "touch"):
+                self.lib.ei_device_stop_emulating(device)
+        self.lib.ei_dispatch(self.ei)
+        return self.touch_ready
+
     def _device_emulating_elsewhere(self, device, owner: str) -> bool:
         return any(
             active and candidate == device
@@ -391,6 +454,7 @@ class EisConnection:
                     "absolute",
                 ),
                 (self.keyboard_device, self.keyboard_emulating, "keyboard"),
+                (self.touch_device, self.touch_emulating, "touch"),
             )
             if candidate_owner != owner
         )
@@ -457,8 +521,10 @@ class EisConnection:
         )
         self.lib.ei_dispatch(self.ei)
 
-    def absolute_bounds(self) -> tuple[int, int, int, int] | None:
-        device = self.absolute_pointer_device
+    def _device_bounds(
+        self,
+        device,
+    ) -> tuple[int, int, int, int] | None:
         if device is None:
             return None
         region = self.lib.ei_device_get_region(device, 0)
@@ -470,6 +536,85 @@ class EisConnection:
             int(self.lib.ei_region_get_width(region)),
             int(self.lib.ei_region_get_height(region)),
         )
+
+    def absolute_bounds(self) -> tuple[int, int, int, int] | None:
+        return self._device_bounds(self.absolute_pointer_device)
+
+    def touch_bounds(self) -> tuple[int, int, int, int] | None:
+        return self._device_bounds(self.touch_device)
+
+    @staticmethod
+    def _touch_coordinate(
+        normalized: float,
+        start: int,
+        size: int,
+    ) -> float:
+        value = max(0.0, min(1.0, normalized))
+        return float(start) + value * max(0, size - 1)
+
+    def inject_touch(self, updates: tuple[TouchUpdate, ...]):
+        device = self.touch_device
+        bounds = self.touch_bounds()
+        if (
+            not updates
+            or not self.touch_ready
+            or not self.touch_emulating
+            or device is None
+            or bounds is None
+        ):
+            return
+        origin_x, origin_y, width, height = bounds
+        emitted = False
+        for update in updates:
+            touch = self.active_touches.get(update.contact_id)
+            if (
+                update.phase == "down"
+                and update.x is not None
+                and update.y is not None
+            ):
+                if touch is not None:
+                    continue
+                touch = self.lib.ei_device_touch_new(device)
+                if not touch:
+                    continue
+                self.lib.ei_touch_down(
+                    touch,
+                    self._touch_coordinate(update.x, origin_x, width),
+                    self._touch_coordinate(update.y, origin_y, height),
+                )
+                self.active_touches[update.contact_id] = touch
+                emitted = True
+            elif (
+                update.phase == "motion"
+                and touch is not None
+                and update.x is not None
+                and update.y is not None
+            ):
+                self.lib.ei_touch_motion(
+                    touch,
+                    self._touch_coordinate(update.x, origin_x, width),
+                    self._touch_coordinate(update.y, origin_y, height),
+                )
+                emitted = True
+            elif update.phase == "up" and touch is not None:
+                self.lib.ei_touch_up(touch)
+                self.lib.ei_touch_unref(touch)
+                self.active_touches.pop(update.contact_id, None)
+                emitted = True
+        if emitted:
+            self.lib.ei_device_frame(device, self.lib.ei_now(self.ei))
+            self.lib.ei_dispatch(self.ei)
+
+    def _release_active_touches(self, *, send_up: bool):
+        device = self.touch_device
+        touches = tuple(self.active_touches.values())
+        self.active_touches.clear()
+        for touch in touches:
+            if send_up:
+                self.lib.ei_touch_up(touch)
+            self.lib.ei_touch_unref(touch)
+        if send_up and touches and device is not None and self.ei is not None:
+            self.lib.ei_device_frame(device, self.lib.ei_now(self.ei))
 
     def inject_absolute(self, update: PointerUpdate):
         device = self.absolute_pointer_device
@@ -531,6 +676,12 @@ class EisConnection:
     def close(self):
         if self.ei is not None:
             try:
+                self._release_active_touches(
+                    send_up=(
+                        self.touch_ready
+                        and self.touch_emulating
+                    )
+                )
                 active_devices = {
                     device
                     for device, active in (
@@ -540,6 +691,7 @@ class EisConnection:
                             self.absolute_emulating,
                         ),
                         (self.keyboard_device, self.keyboard_emulating),
+                        (self.touch_device, self.touch_emulating),
                     )
                     if device is not None and active
                 }
@@ -561,13 +713,19 @@ class EisConnection:
                 self.keyboard_device = self.lib.ei_device_unref(
                     self.keyboard_device
                 )
+            if self.touch_device is not None:
+                self.touch_device = self.lib.ei_device_unref(
+                    self.touch_device
+                )
             self.ei = self.lib.ei_unref(self.ei)
         self.ready = False
         self.absolute_ready = False
         self.keyboard_ready = False
+        self.touch_ready = False
         self.emulating = False
         self.absolute_emulating = False
         self.keyboard_emulating = False
+        self.touch_emulating = False
         if self.remote is not None and self.cookie is not None:
             try:
                 self.remote.disconnect(self.dbus.Int32(self.cookie))

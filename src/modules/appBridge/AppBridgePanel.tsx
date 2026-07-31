@@ -6,17 +6,17 @@ import {
   TextField,
   ToggleField,
 } from "@decky/ui";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useStrings } from "../../core/localization";
 import type { SettingsStore } from "../../core/settings";
-import { ensureAppBridgeShortcut } from "./steamShortcuts";
+import { AdvancedSettings } from "../../ui/AdvancedSettings";
 import type {
   AppBridgeApi,
   AppBridgeApplication,
   AppBridgeProfileDraft,
-  PreparedAppBridgeProfile,
 } from "./types";
+import { useAppBridgeInstaller } from "./useAppBridgeInstaller";
 
 interface AppBridgePanelProps {
   api: AppBridgeApi;
@@ -48,100 +48,36 @@ const profileFromApplication = (
   workingDirectory: application.workingDirectory,
 });
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 export const AppBridgePanel = ({
   api,
   settings,
 }: AppBridgePanelProps) => {
   const strings = useStrings();
-  const snapshot = useSyncExternalStore(
-    settings.subscribe,
-    settings.getSnapshot,
-  );
-  const bridge = snapshot.appBridge;
+  const installer = useAppBridgeInstaller(api, settings, strings);
   const [applications, setApplications] = useState<AppBridgeApplication[]>([]);
   const [selectedApplication, setSelectedApplication] = useState("");
   const [profile, setProfile] = useState(EMPTY_PROFILE);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const loadApplications = async (): Promise<void> => {
-    setBusy(true);
+    setLoading(true);
+    setLoadError("");
     try {
       setApplications(await api.listApplications());
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setLoadError(errorMessage(error));
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     void loadApplications();
   }, []);
-
-  const rememberShortcut = (
-    profileId: string,
-    appId: number,
-  ): void => settings.updateAppBridge({
-    shortcutAppIds: {
-      ...bridge.shortcutAppIds,
-      [profileId]: appId,
-    },
-  });
-
-  const installPrepared = async (
-    prepared: PreparedAppBridgeProfile,
-  ): Promise<void> => {
-    if (prepared.error)
-      throw new Error(prepared.error);
-    const appId = await ensureAppBridgeShortcut(
-      prepared,
-      bridge.shortcutAppIds[prepared.id],
-    );
-    if (prepared.artworkId) {
-      const artwork = await api.installArtwork(prepared.artworkId, appId);
-      if (artwork.error)
-        throw new Error(artwork.error);
-    }
-    rememberShortcut(prepared.id, appId);
-    setMessage(`${strings.appBridgeReady}: ${prepared.name}`);
-  };
-
-  const installParsec = async (): Promise<void> => {
-    setBusy(true);
-    setMessage("");
-    try {
-      await installPrepared(await api.prepareParsec());
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const installRustDesk = async (): Promise<void> => {
-    setBusy(true);
-    setMessage("");
-    try {
-      await installPrepared(await api.prepareRustDesk());
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const installProfile = async (): Promise<void> => {
-    setBusy(true);
-    setMessage("");
-    try {
-      await installPrepared(await api.saveProfile(profile));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const chooseApplication = (applicationId: string): void => {
     setSelectedApplication(applicationId);
@@ -156,48 +92,25 @@ export const AppBridgePanel = ({
     patch: Partial<AppBridgeProfileDraft>,
   ): void => setProfile((current) => ({ ...current, ...patch }));
 
-  const canInstallProfile = Boolean(profile.name && profile.executable);
-  const controlsDisabled = busy;
+  const busy = loading || installer.busy;
+  const canInstall = Boolean(profile.name && profile.executable);
+  const applicationOptions = useMemo(
+    () => applications.map((application) => ({
+      data: application.id,
+      label: `${application.name} · ${application.kind}`,
+    })),
+    [applications],
+  );
 
   return (
     <>
-      <PanelSection title={strings.appBridgeQuickSetup}>
-        <PanelSectionRow>
-          <div>{strings.appBridgeParsecDescription}</div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <DialogButton
-            disabled={controlsDisabled}
-            onClick={() => void installParsec()}
-            style={{ width: "100%" }}
-          >
-            {strings.addOrFixParsec}
-          </DialogButton>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <div>{strings.appBridgeRustDeskDescription}</div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <DialogButton
-            disabled={controlsDisabled}
-            onClick={() => void installRustDesk()}
-            style={{ width: "100%" }}
-          >
-            {strings.addOrFixRustDesk}
-          </DialogButton>
-        </PanelSectionRow>
-      </PanelSection>
-
       <PanelSection title={strings.appBridgeApplications}>
         <PanelSectionRow>
           <DropdownItem
-            disabled={controlsDisabled || applications.length === 0}
+            disabled={busy || applications.length === 0}
             label={strings.appBridgeSelectApplication}
             menuLabel={strings.appBridgeSelectApplication}
-            rgOptions={applications.map((application) => ({
-              data: application.id,
-              label: `${application.name} · ${application.kind}`,
-            }))}
+            rgOptions={applicationOptions}
             selectedOption={selectedApplication}
             strDefaultLabel={strings.appBridgeSelectApplication}
             onChange={({ data }) => chooseApplication(data.toString())}
@@ -205,7 +118,7 @@ export const AppBridgePanel = ({
         </PanelSectionRow>
         <PanelSectionRow>
           <DialogButton
-            disabled={controlsDisabled}
+            disabled={busy}
             onClick={() => void loadApplications()}
             style={{ width: "100%" }}
           >
@@ -228,72 +141,87 @@ export const AppBridgePanel = ({
             })}
           />
         </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label={strings.appBridgeArguments}
-            value={profile.arguments}
-            onChange={(event) => updateProfile({
-              arguments: event.target.value,
-            })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label={strings.appBridgeWorkingDirectory}
-            value={profile.workingDirectory}
-            onChange={(event) => updateProfile({
-              workingDirectory: event.target.value,
-            })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label={strings.appBridgeTrackProcess}
-            value={profile.waitForProcess}
-            onChange={(event) => updateProfile({
-              waitForProcess: event.target.value,
-            })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ToggleField
-            label={strings.appBridgeClearSteamRuntime}
-            checked={profile.clearSteamPreload}
-            disabled={busy}
-            onChange={(clearSteamPreload) => updateProfile({
-              clearSteamPreload,
-            })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ToggleField
-            label={strings.appBridgeForceX11}
-            checked={profile.forceX11}
-            disabled={busy}
-            onChange={(forceX11) => updateProfile({ forceX11 })}
-          />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField
-            label={strings.appBridgeLibraryPath}
-            value={profile.libraryPath}
-            onChange={(event) => updateProfile({
-              libraryPath: event.target.value,
-            })}
-          />
-        </PanelSectionRow>
+      </PanelSection>
+
+      <AdvancedSettings
+        label={strings.advancedSettings}
+        description={strings.advancedSettingsDescription}
+        moduleId="appBridge"
+        settings={settings}
+      >
+        <PanelSection>
+          <PanelSectionRow>
+            <TextField
+              label={strings.appBridgeArguments}
+              value={profile.arguments}
+              onChange={(event) => updateProfile({
+                arguments: event.target.value,
+              })}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <TextField
+              label={strings.appBridgeWorkingDirectory}
+              value={profile.workingDirectory}
+              onChange={(event) => updateProfile({
+                workingDirectory: event.target.value,
+              })}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <TextField
+              label={strings.appBridgeTrackProcess}
+              value={profile.waitForProcess}
+              onChange={(event) => updateProfile({
+                waitForProcess: event.target.value,
+              })}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ToggleField
+              label={strings.appBridgeClearSteamRuntime}
+              checked={profile.clearSteamPreload}
+              disabled={busy}
+              onChange={(clearSteamPreload) => updateProfile({
+                clearSteamPreload,
+              })}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ToggleField
+              label={strings.appBridgeForceX11}
+              checked={profile.forceX11}
+              disabled={busy}
+              onChange={(forceX11) => updateProfile({ forceX11 })}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <TextField
+              label={strings.appBridgeLibraryPath}
+              value={profile.libraryPath}
+              onChange={(event) => updateProfile({
+                libraryPath: event.target.value,
+              })}
+            />
+          </PanelSectionRow>
+        </PanelSection>
+      </AdvancedSettings>
+
+      <PanelSection>
         <PanelSectionRow>
           <DialogButton
-            disabled={controlsDisabled || !canInstallProfile}
-            onClick={() => void installProfile()}
+            disabled={busy || !canInstall}
+            onClick={() => void installer.install(
+              () => api.saveProfile(profile),
+            )}
             style={{ width: "100%" }}
           >
             {strings.addOrFixApplication}
           </DialogButton>
         </PanelSectionRow>
-        {message && (
+        {(loadError || installer.message) && (
           <PanelSectionRow>
-            <div>{message}</div>
+            <div>{loadError || installer.message}</div>
           </PanelSectionRow>
         )}
       </PanelSection>

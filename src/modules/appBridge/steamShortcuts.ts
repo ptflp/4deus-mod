@@ -1,7 +1,7 @@
 import type { PreparedAppBridgeProfile } from "./types";
 import type {
   PreparedSteamOsApplication,
-} from "../systemTools/types";
+} from "../nestedDesktop/types";
 
 const NON_STEAM_APP_TYPE = 1 << 30;
 const REGISTRATION_TIMEOUT_MS = 3000;

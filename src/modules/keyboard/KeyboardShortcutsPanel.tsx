@@ -40,11 +40,10 @@ export const KeyboardShortcutsPanel = ({
   settings,
 }: KeyboardShortcutsPanelProps) => {
   const strings = useStrings();
-  const snapshot = useSyncExternalStore(
+  const keyboard = useSyncExternalStore(
     settings.subscribe,
-    settings.getSnapshot,
+    settings.getKeyboardSnapshot,
   );
-  const keyboard = snapshot.keyboard;
   const r4IsSecondLayerModifier = keyboard.deckButtonQuickActionsEnabled
     && keyboard.deckButtonSecondLayerEnabled;
   const configurableButtons = r4IsSecondLayerModifier

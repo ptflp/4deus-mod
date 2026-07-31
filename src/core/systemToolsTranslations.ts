@@ -1,4 +1,9 @@
-export interface SystemToolsTranslation {
+import {
+  type TouchInertiaTranslation,
+  touchInertiaTranslations,
+} from "./touchInertiaTranslations.js";
+
+export interface SystemToolsTranslation extends TouchInertiaTranslation {
   systemTools: string;
   systemToolsDescription: string;
   systemToolsStatus: string;
@@ -21,6 +26,8 @@ export interface SystemToolsTranslation {
   nestedDesktopMouseBridgeDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
+  nestedDesktopTouchscreen: string;
+  nestedDesktopTouchscreenDescription: string;
   rustDeskPointerFix: string;
   rustDeskPointerFixDescription: string;
   rustDeskFocusOnInput: string;
@@ -38,9 +45,12 @@ type BaseSystemToolsTranslation = Omit<
   | "rustDeskFocusOnInputDescription"
   | "rustDeskScrollInertia"
   | "rustDeskScrollInertiaDescription"
+  | "nestedDesktopTouchscreen"
+  | "nestedDesktopTouchscreenDescription"
   | "controller"
   | "trackpadAutoRecovery"
   | "trackpadAutoRecoveryDescription"
+  | keyof TouchInertiaTranslation
 >;
 
 type Values = [
@@ -456,6 +466,136 @@ Record<string, BaseSystemToolsTranslation> = {
   ]),
 };
 
+type TouchscreenOptionsTranslation = Pick<
+  SystemToolsTranslation,
+  | "nestedDesktopTouchscreen"
+  | "nestedDesktopTouchscreenDescription"
+>;
+
+const touchscreenOptionsTranslations:
+Record<string, TouchscreenOptionsTranslation> = {
+  arabic: {
+    nestedDesktopTouchscreen: "شاشة اللمس في Nested Desktop",
+    nestedDesktopTouchscreenDescription: "ينقل اللمسات والسحب واللمس المتعدد على شاشة Steam Deck مباشرةً إلى Nested Desktop دون التأثير في شاشات Steam الأخرى",
+  },
+  brazilian: {
+    nestedDesktopTouchscreen: "Tela sensível ao toque no Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Encaminha toques, gestos e multitoque da tela do Steam Deck diretamente ao Nested Desktop sem afetar outras telas do Steam",
+  },
+  bulgarian: {
+    nestedDesktopTouchscreen: "Сензорен екран в Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Предава докосвания, плъзгания и мултитъч от екрана на Steam Deck директно към Nested Desktop, без да засяга другите екрани на Steam",
+  },
+  czech: {
+    nestedDesktopTouchscreen: "Dotyková obrazovka v Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Předává klepnutí, tahy a vícedotyková gesta z obrazovky Steam Deck přímo do Nested Desktop bez ovlivnění ostatních obrazovek Steamu",
+  },
+  danish: {
+    nestedDesktopTouchscreen: "Berøringsskærm i Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Sender tryk, strøg og multi-touch fra Steam Deck-skærmen direkte til Nested Desktop uden at påvirke andre Steam-skærme",
+  },
+  dutch: {
+    nestedDesktopTouchscreen: "Aanraakscherm in Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Stuurt tikken, vegen en multitouch van het Steam Deck-scherm rechtstreeks naar Nested Desktop zonder andere Steam-schermen te beïnvloeden",
+  },
+  finnish: {
+    nestedDesktopTouchscreen: "Kosketusnäyttö Nested Desktopissa",
+    nestedDesktopTouchscreenDescription: "Välittää Steam Deckin näytön napautukset, pyyhkäisyt ja monikosketuksen suoraan Nested Desktopiin vaikuttamatta muihin Steam-näkymiin",
+  },
+  french: {
+    nestedDesktopTouchscreen: "Écran tactile dans Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Transmet les appuis, balayages et gestes multipoints de l’écran du Steam Deck directement à Nested Desktop sans affecter les autres écrans Steam",
+  },
+  german: {
+    nestedDesktopTouchscreen: "Touchscreen in Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Leitet Tippen, Wischen und Multitouch vom Steam-Deck-Bildschirm direkt an Nested Desktop weiter, ohne andere Steam-Ansichten zu beeinflussen",
+  },
+  greek: {
+    nestedDesktopTouchscreen: "Οθόνη αφής στο Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Μεταφέρει αγγίγματα, σαρώσεις και πολλαπλή αφή από την οθόνη του Steam Deck απευθείας στο Nested Desktop χωρίς να επηρεάζει άλλες οθόνες του Steam",
+  },
+  hungarian: {
+    nestedDesktopTouchscreen: "Érintőképernyő a Nested Desktopban",
+    nestedDesktopTouchscreenDescription: "A Steam Deck képernyőjének érintéseit, húzásait és többujjas műveleteit közvetlenül a Nested Desktopba továbbítja, a Steam többi képernyője nélkül",
+  },
+  indonesian: {
+    nestedDesktopTouchscreen: "Layar sentuh di Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Meneruskan ketukan, usapan, dan multisentuh layar Steam Deck langsung ke Nested Desktop tanpa memengaruhi layar Steam lainnya",
+  },
+  italian: {
+    nestedDesktopTouchscreen: "Schermo tattile in Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Inoltra tocchi, scorrimenti e gesti multitouch dello schermo di Steam Deck direttamente a Nested Desktop senza influire sulle altre schermate di Steam",
+  },
+  japanese: {
+    nestedDesktopTouchscreen: "Nested Desktop のタッチスクリーン",
+    nestedDesktopTouchscreenDescription: "Steam Deck 画面のタップ、スワイプ、マルチタッチを、他の Steam 画面に影響を与えず Nested Desktop に直接転送します",
+  },
+  koreana: {
+    nestedDesktopTouchscreen: "Nested Desktop 터치스크린",
+    nestedDesktopTouchscreenDescription: "다른 Steam 화면에는 영향을 주지 않고 Steam Deck 화면의 탭, 스와이프 및 멀티터치를 Nested Desktop으로 직접 전달합니다",
+  },
+  latam: {
+    nestedDesktopTouchscreen: "Pantalla táctil en Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Envía los toques, deslizamientos y gestos multitáctiles de la pantalla de Steam Deck directamente a Nested Desktop sin afectar otras pantallas de Steam",
+  },
+  malay: {
+    nestedDesktopTouchscreen: "Skrin sentuh dalam Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Menghantar ketikan, leretan dan berbilang sentuhan skrin Steam Deck terus ke Nested Desktop tanpa menjejaskan skrin Steam yang lain",
+  },
+  norwegian: {
+    nestedDesktopTouchscreen: "Berøringsskjerm i Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Sender trykk, sveip og flerberøring fra Steam Deck-skjermen direkte til Nested Desktop uten å påvirke andre Steam-skjermer",
+  },
+  polish: {
+    nestedDesktopTouchscreen: "Ekran dotykowy w Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Przekazuje dotknięcia, przesunięcia i gesty wielodotykowe z ekranu Steam Deck bezpośrednio do Nested Desktop bez wpływu na inne ekrany Steam",
+  },
+  portuguese: {
+    nestedDesktopTouchscreen: "Ecrã tátil no Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Encaminha toques, gestos e multitoque do ecrã do Steam Deck diretamente para o Nested Desktop sem afetar outros ecrãs do Steam",
+  },
+  romanian: {
+    nestedDesktopTouchscreen: "Ecran tactil în Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Trimite atingerile, glisările și gesturile multitouch de pe ecranul Steam Deck direct către Nested Desktop fără a afecta celelalte ecrane Steam",
+  },
+  russian: {
+    nestedDesktopTouchscreen: "Сенсорный экран в Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Передаёт касания, свайпы и мультитач экрана Steam Deck прямо в Nested Desktop, не затрагивая другие экраны Steam",
+  },
+  schinese: {
+    nestedDesktopTouchscreen: "Nested Desktop 中的触摸屏",
+    nestedDesktopTouchscreenDescription: "将 Steam Deck 屏幕的点按、滑动和多点触控直接转发到 Nested Desktop，而不影响其他 Steam 界面",
+  },
+  spanish: {
+    nestedDesktopTouchscreen: "Pantalla táctil en Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Envía los toques, deslizamientos y gestos multitáctiles de la pantalla de Steam Deck directamente a Nested Desktop sin afectar a otras pantallas de Steam",
+  },
+  swedish: {
+    nestedDesktopTouchscreen: "Pekskärm i Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Skickar tryck, svep och multitouch från Steam Deck-skärmen direkt till Nested Desktop utan att påverka andra Steam-skärmar",
+  },
+  tchinese: {
+    nestedDesktopTouchscreen: "Nested Desktop 中的觸控螢幕",
+    nestedDesktopTouchscreenDescription: "將 Steam Deck 螢幕的點按、滑動與多點觸控直接轉送至 Nested Desktop，且不影響其他 Steam 畫面",
+  },
+  thai: {
+    nestedDesktopTouchscreen: "หน้าจอสัมผัสใน Nested Desktop",
+    nestedDesktopTouchscreenDescription: "ส่งการแตะ การปัด และมัลติทัชจากหน้าจอ Steam Deck ไปยัง Nested Desktop โดยตรงโดยไม่กระทบหน้าจอ Steam อื่น",
+  },
+  turkish: {
+    nestedDesktopTouchscreen: "Nested Desktop’ta dokunmatik ekran",
+    nestedDesktopTouchscreenDescription: "Steam Deck ekranındaki dokunma, kaydırma ve çoklu dokunma hareketlerini diğer Steam ekranlarını etkilemeden doğrudan Nested Desktop’a iletir",
+  },
+  ukrainian: {
+    nestedDesktopTouchscreen: "Сенсорний екран у Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Передає торкання, свайпи й мультитач з екрана Steam Deck безпосередньо в Nested Desktop, не впливаючи на інші екрани Steam",
+  },
+  vietnamese: {
+    nestedDesktopTouchscreen: "Màn hình cảm ứng trong Nested Desktop",
+    nestedDesktopTouchscreenDescription: "Chuyển trực tiếp thao tác chạm, vuốt và đa điểm trên màn hình Steam Deck vào Nested Desktop mà không ảnh hưởng đến các màn hình Steam khác",
+  },
+};
+
 type RustDeskOptionsTranslation = Pick<
   SystemToolsTranslation,
   | "rustDeskFocusOnInput"
@@ -816,6 +956,8 @@ Record<string, SystemToolsTranslation> = Object.fromEntries(
       language,
       {
         ...strings,
+        ...touchscreenOptionsTranslations[language],
+        ...touchInertiaTranslations[language],
         ...rustDeskOptionsTranslations[language],
         ...controllerOptionsTranslations[language],
       },

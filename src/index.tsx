@@ -8,6 +8,7 @@ import {
 import { FaSlidersH } from "react-icons/fa";
 
 import { ModuleHost } from "./core/module";
+import { ModuleRegistry } from "./core/moduleRegistry";
 import { SettingsStore } from "./core/settings";
 import type {
   AppBridgeApplication,
@@ -17,6 +18,10 @@ import type {
   PreparedAppBridgeProfile,
 } from "./modules/appBridge/types";
 import type {
+  ControllerApi,
+  ControllerStatus,
+} from "./modules/controller/types";
+import type {
   DeveloperApi,
   DeveloperSettingsStatus,
   TrackpadMetricsWindow,
@@ -25,30 +30,26 @@ import { KeyboardFeature } from "./modules/keyboard/KeyboardFeature";
 import type {
   NestedDesktopBindingAction,
   NestedDesktopBindingSource,
-} from "./modules/systemTools/nestedDesktopBindings";
+} from "./modules/nestedDesktop/nestedDesktopBindings";
 import type {
+  MangoHudApi,
   MangoHudFixStatus,
-  ControllerStatus,
   NestedDesktopMouseStatus,
+  NestedDesktopApi,
   PreparedSteamOsApplication,
   SteamOsApplicationStatus,
   SteamOsArtworkResult,
-  SystemToolsApi,
-} from "./modules/systemTools/types";
-import { AppBridgeSettingsRoute } from "./ui/AppBridgeSettingsRoute";
-import { KeyboardSettingsRoute } from "./ui/KeyboardSettingsRoute";
-import {
-  PLUGIN_SETTINGS_ROUTE,
-  PluginSettingsRoute,
-} from "./ui/PluginSettingsRoute";
+} from "./modules/nestedDesktop/types";
+import { ModSettingsRoute } from "./ui/ModSettingsRoute";
 import { PluginTitle } from "./ui/PluginTitle";
-import { SystemToolsSettingsRoute } from "./ui/SystemToolsSettingsRoute";
+import { ModsPanel } from "./ui/ModsPanel";
 import {
   APP_BRIDGE_SETTINGS_ROUTE,
+  CONTROLLER_SETTINGS_ROUTE,
   KEYBOARD_SETTINGS_ROUTE,
-  ModsPanel,
-  SYSTEM_TOOLS_SETTINGS_ROUTE,
-} from "./ui/ModsPanel";
+  NESTED_DESKTOP_SETTINGS_ROUTE,
+  PLUGIN_SETTINGS_ROUTE,
+} from "./ui/routes";
 
 export default definePlugin(() => {
   const settings = new SettingsStore();
@@ -87,7 +88,7 @@ export default definePlugin(() => {
       PreparedAppBridgeProfile
     >("save_app_bridge_profile"),
   };
-  const systemToolsApi: SystemToolsApi = {
+  const mangoHudApi: MangoHudApi = {
     getMangoHudFixStatus: callable<[], MangoHudFixStatus>(
       "get_mangohud_fix_status",
     ),
@@ -97,6 +98,8 @@ export default definePlugin(() => {
     removeMangoHudFix: callable<[], MangoHudFixStatus>(
       "remove_mangohud_fix",
     ),
+  };
+  const nestedDesktopApi: NestedDesktopApi = {
     getSteamOsApplicationStatus: callable<[], SteamOsApplicationStatus>(
       "get_steamos_application_status",
     ),
@@ -110,6 +113,10 @@ export default definePlugin(() => {
     getNestedDesktopMouseStatus: callable<[], NestedDesktopMouseStatus>(
       "get_nested_desktop_mouse_status",
     ),
+    setNestedDesktopModuleEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_module_enabled"),
     setNestedDesktopMouseEnabled: callable<
       [boolean],
       NestedDesktopMouseStatus
@@ -118,6 +125,18 @@ export default definePlugin(() => {
       [boolean],
       NestedDesktopMouseStatus
     >("set_nested_desktop_mouse_inertia_enabled"),
+    setNestedDesktopTouchEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_touch_enabled"),
+    setNestedDesktopTouchInertiaEnabled: callable<
+      [boolean],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_touch_inertia_enabled"),
+    setNestedDesktopTouchInertiaConfig: callable<
+      [number, number, number],
+      NestedDesktopMouseStatus
+    >("set_nested_desktop_touch_inertia_config"),
     setRustDeskPointerFixEnabled: callable<
       [boolean],
       NestedDesktopMouseStatus
@@ -142,9 +161,15 @@ export default definePlugin(() => {
       [],
       NestedDesktopMouseStatus
     >("reset_nested_desktop_bindings"),
+  };
+  const controllerApi: ControllerApi = {
     getControllerStatus: callable<[], ControllerStatus>(
       "get_controller_status",
     ),
+    setControllerModuleEnabled: callable<
+      [boolean],
+      ControllerStatus
+    >("set_controller_module_enabled"),
     setTrackpadAutoRecoveryEnabled: callable<
       [boolean],
       ControllerStatus
@@ -183,6 +208,10 @@ export default definePlugin(() => {
     logKeyboardDiagnostics,
     setNestedDesktopKeyboardVisible,
   );
+  const modules = new ModuleRegistry(settings, {
+    ...controllerApi,
+    ...nestedDesktopApi,
+  });
   const host = new ModuleHost([keyboardFeature]);
   const nestedDesktopActionListener = addEventListener<[string]>(
     "nested_desktop_action",
@@ -193,34 +222,55 @@ export default definePlugin(() => {
         keyboardFeature.hideKeyboard();
     },
   );
-  const KeyboardRoute = () => <KeyboardSettingsRoute settings={settings} />;
-  const AppBridgeRoute = () => (
-    <AppBridgeSettingsRoute api={appBridgeApi} settings={settings} />
+  const settingsRoute = (initialPage: string) => (
+    <ModSettingsRoute
+      appBridgeApi={appBridgeApi}
+      controllerApi={controllerApi}
+      developerApi={developerApi}
+      initialPage={initialPage}
+      mangoHudApi={mangoHudApi}
+      nestedDesktopApi={nestedDesktopApi}
+      settings={settings}
+    />
   );
-  const SystemToolsRoute = () => (
-    <SystemToolsSettingsRoute api={systemToolsApi} />
-  );
-  const PluginSettings = () => (
-    <PluginSettingsRoute api={developerApi} />
-  );
+  const KeyboardRoute = () => settingsRoute("keyboard");
+  const ControllerRoute = () => settingsRoute("controller");
+  const NestedDesktopRoute = () => settingsRoute("nested-desktop");
+  const AppBridgeRoute = () => settingsRoute("app-bridge");
+  const PluginSettings = () => settingsRoute("plugin-settings");
   routerHook.addRoute(KEYBOARD_SETTINGS_ROUTE, KeyboardRoute, {
     exact: true,
   });
   routerHook.addRoute(APP_BRIDGE_SETTINGS_ROUTE, AppBridgeRoute, {
     exact: true,
   });
-  routerHook.addRoute(SYSTEM_TOOLS_SETTINGS_ROUTE, SystemToolsRoute, {
+  routerHook.addRoute(CONTROLLER_SETTINGS_ROUTE, ControllerRoute, {
     exact: true,
   });
+  routerHook.addRoute(
+    NESTED_DESKTOP_SETTINGS_ROUTE,
+    NestedDesktopRoute,
+    { exact: true },
+  );
   routerHook.addRoute(PLUGIN_SETTINGS_ROUTE, PluginSettings, {
     exact: true,
   });
+  modules.start();
   host.start();
 
   return {
     name: "4deus Mod",
     titleView: <PluginTitle />,
-    content: <ModsPanel settings={settings} />,
+    content: (
+      <ModsPanel
+        appBridgeApi={appBridgeApi}
+        controllerApi={controllerApi}
+        mangoHudApi={mangoHudApi}
+        modules={modules}
+        nestedDesktopApi={nestedDesktopApi}
+        settings={settings}
+      />
+    ),
     icon: <FaSlidersH />,
     onDismount: () => {
       removeEventListener(
@@ -228,9 +278,11 @@ export default definePlugin(() => {
         nestedDesktopActionListener,
       );
       routerHook.removeRoute(PLUGIN_SETTINGS_ROUTE);
-      routerHook.removeRoute(SYSTEM_TOOLS_SETTINGS_ROUTE);
+      routerHook.removeRoute(NESTED_DESKTOP_SETTINGS_ROUTE);
+      routerHook.removeRoute(CONTROLLER_SETTINGS_ROUTE);
       routerHook.removeRoute(APP_BRIDGE_SETTINGS_ROUTE);
       routerHook.removeRoute(KEYBOARD_SETTINGS_ROUTE);
+      modules.stop();
       host.stop();
     },
   };

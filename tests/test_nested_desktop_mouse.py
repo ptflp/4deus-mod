@@ -6,6 +6,7 @@ import struct
 import tempfile
 import threading
 import unittest
+from unittest.mock import MagicMock
 
 from nested_desktop_mouse import (
     BACK_BUTTON,
@@ -35,6 +36,7 @@ from nested_desktop_mouse import (
     TrackpadState,
     TrackpadTranslator,
     NestedDesktopMouseRuntime,
+    NestedDesktopMouseSupervisor,
     RustDeskMouseTranslator,
     RustDeskRelayTranslator,
     RustDeskScrollInertia,
@@ -56,6 +58,26 @@ from nested_desktop_mouse import (
     should_forward_back_button,
     should_forward_pointer,
 )
+
+
+class NestedDesktopSupervisorTests(unittest.TestCase):
+    def test_module_gate_keeps_child_settings_without_starting_worker(self):
+        supervisor = NestedDesktopMouseSupervisor(
+            plugin_root=Path("/tmp/4deus-test"),
+            logger=MagicMock(),
+            module_enabled=False,
+        )
+        supervisor.start = MagicMock()
+
+        supervisor.set_mouse_enabled(False)
+
+        self.assertFalse(supervisor.mouse_enabled)
+        supervisor.start.assert_not_called()
+
+        supervisor.set_module_enabled(True)
+
+        self.assertTrue(supervisor.module_enabled)
+        supervisor.start.assert_called_once_with()
 
 
 def trackpad_state(
@@ -563,6 +585,23 @@ class InputBindingTranslatorTests(unittest.TestCase):
 
 
 class TrackpadTranslatorTests(unittest.TestCase):
+    def test_default_bridge_scroll_uses_tuned_scale_and_deadzone(self):
+        translator = TrackpadTranslator()
+        translator.set_active(True)
+        translator.translate(
+            trackpad_state(left_touched=True, left_y=0)
+        )
+
+        inside_deadzone = translator.translate(
+            trackpad_state(left_touched=True, left_y=479)
+        )
+        scrolled = translator.translate(
+            trackpad_state(left_touched=True, left_y=1_000)
+        )
+
+        self.assertEqual(inside_deadzone, PointerUpdate())
+        self.assertAlmostEqual(scrolled.scroll_y, -2.6)
+
     def test_only_translates_motion_while_active(self):
         translator = TrackpadTranslator(scale=0.1)
         first = trackpad_state(
@@ -721,7 +760,7 @@ class TrackpadTranslatorTests(unittest.TestCase):
         )
 
         scrolled = translator.translate(
-            trackpad_state(left_touched=True, left_y=130)
+            trackpad_state(left_touched=True, left_y=140)
         )
         first_inertia = translator.translate(trackpad_state())
         updates = [
@@ -729,10 +768,25 @@ class TrackpadTranslatorTests(unittest.TestCase):
             for _ in range(80)
         ]
 
-        self.assertEqual(scrolled, PointerUpdate(scroll_y=-3))
-        self.assertAlmostEqual(first_inertia.scroll_y, -1.65)
+        self.assertEqual(scrolled, PointerUpdate(scroll_y=-4))
+        self.assertAlmostEqual(first_inertia.scroll_y, -2.2)
         self.assertTrue(any(update.scroll_y for update in updates))
         self.assertTrue(any(update.scroll_stop_y for update in updates))
+        self.assertFalse(translator.scroll_inertia)
+
+    def test_default_small_scroll_does_not_start_inertia(self):
+        translator = TrackpadTranslator()
+        translator.set_active(True)
+        translator.translate(
+            trackpad_state(left_touched=True, left_y=0)
+        )
+        translator.translate(
+            trackpad_state(left_touched=True, left_y=1_000)
+        )
+
+        stopped = translator.translate(trackpad_state())
+
+        self.assertEqual(stopped, PointerUpdate(scroll_stop_y=True))
         self.assertFalse(translator.scroll_inertia)
 
     def test_slow_left_pad_scroll_stops_without_inertia(self):
@@ -813,12 +867,12 @@ class TrackpadTranslatorTests(unittest.TestCase):
             trackpad_state(left_touched=True, left_y=100)
         )
         translator.translate(
-            trackpad_state(left_touched=True, left_y=130)
+            trackpad_state(left_touched=True, left_y=140)
         )
         translator.translate(trackpad_state())
 
         caught = translator.translate(
-            trackpad_state(left_touched=True, left_y=130)
+            trackpad_state(left_touched=True, left_y=140)
         )
 
         self.assertEqual(caught, PointerUpdate(scroll_stop_y=True))
@@ -1029,6 +1083,50 @@ class GamescopeFocusTests(unittest.TestCase):
                 ("draw", overlay.rendered_snapshot),
             ],
         )
+
+    def test_cursor_overlay_rebases_inside_image_refresh_window(self):
+        overlay = NestedDesktopCursorOverlay.__new__(
+            NestedDesktopCursorOverlay
+        )
+        overlay.position_primed = True
+        overlay.pointer_x = 10.0
+        overlay.pointer_y = 20.0
+        overlay.next_image_refresh = float("inf")
+        overlay._snapshot = MagicMock(return_value=CursorSnapshot(
+            x=640,
+            y=400,
+            width=1,
+            height=1,
+            xhot=0,
+            yhot=0,
+            serial=1,
+            pixels=(0xFFFFFFFF,),
+        ))
+        overlay._move = MagicMock()
+
+        overlay.refresh(sync_position=True)
+
+        self.assertEqual((overlay.pointer_x, overlay.pointer_y), (640, 400))
+        overlay._snapshot.assert_called_once_with()
+        overlay._move.assert_called_once_with()
+        self.assertEqual(overlay.next_image_refresh, float("inf"))
+
+    def test_visible_cursor_keeps_relative_position_inside_refresh_window(self):
+        overlay = NestedDesktopCursorOverlay.__new__(
+            NestedDesktopCursorOverlay
+        )
+        overlay.position_primed = True
+        overlay.pointer_x = 300.0
+        overlay.pointer_y = 200.0
+        overlay.next_image_refresh = float("inf")
+        overlay._snapshot = MagicMock()
+        overlay._move = MagicMock()
+
+        overlay.refresh(sync_position=False)
+
+        self.assertEqual((overlay.pointer_x, overlay.pointer_y), (300, 200))
+        overlay._snapshot.assert_not_called()
+        overlay._move.assert_not_called()
 
     def test_visible_cursor_overlay_does_not_follow_stale_xfixes_position(self):
         calls = []
@@ -1505,15 +1603,11 @@ class RuntimeSuspensionTests(unittest.TestCase):
 
         class CursorOverlay:
             def __init__(self, _session):
-                self.primed = 0
                 self.shown = 0
                 self.hidden = 0
                 self.closed = 0
                 self.updates = []
                 overlays.append(self)
-
-            def prime(self):
-                self.primed += 1
 
             def show(self):
                 self.shown += 1
@@ -1551,9 +1645,7 @@ class RuntimeSuspensionTests(unittest.TestCase):
         self.assertFalse(runtime.forwarding)
         self.assertTrue(inner_eis.keyboard_emulating)
         self.assertFalse(inner_eis.emulating)
-        self.assertEqual(len(overlays), 1)
-        self.assertEqual(overlays[0].primed, 1)
-        self.assertEqual(overlays[0].shown, 0)
+        self.assertEqual(overlays, [])
 
         OuterX11.focusable_apps = [769, 2, 3]
         runtime._refresh_forwarding()
@@ -1579,7 +1671,6 @@ class RuntimeSuspensionTests(unittest.TestCase):
         self.assertFalse(inner_eis.emulating)
         self.assertFalse(runtime.cursor_overlay_active)
         self.assertEqual(overlays[0].hidden, 1)
-        self.assertEqual(overlays[0].primed, 2)
 
     def test_legacy_forced_software_cursor_skips_dynamic_overlay(self):
         created = []

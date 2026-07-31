@@ -15,6 +15,8 @@ from typing import Callable, Mapping
 
 from .bindings import normalize_nested_desktop_bindings
 from .constants import ACTION_HIDE_KEYBOARD, ACTION_SHOW_KEYBOARD
+from .discovery import find_steam_deck_touchscreen
+from .touch import TouchscreenInertiaConfig
 
 
 class NestedDesktopMouseSupervisor:
@@ -22,10 +24,16 @@ class NestedDesktopMouseSupervisor:
         self,
         plugin_root: str | Path,
         logger: logging.Logger,
+        module_enabled: bool = True,
         mouse_enabled: bool = True,
         inertia_enabled: bool = True,
         bindings_enabled: bool = True,
         bindings: Mapping[str, object] | None = None,
+        touchscreen_enabled: bool = True,
+        touchscreen_inertia_enabled: bool = True,
+        touchscreen_inertia_config: (
+            TouchscreenInertiaConfig | None
+        ) = None,
         rustdesk_pointer_fix_enabled: bool = True,
         rustdesk_scroll_inertia_enabled: bool = False,
         rustdesk_focus_on_input_enabled: bool = False,
@@ -34,10 +42,16 @@ class NestedDesktopMouseSupervisor:
     ):
         self.plugin_root = Path(plugin_root)
         self.logger = logger
+        self.module_enabled = module_enabled
         self.mouse_enabled = mouse_enabled
         self.inertia_enabled = inertia_enabled
         self.bindings_enabled = bindings_enabled
         self.bindings = normalize_nested_desktop_bindings(bindings)
+        self.touchscreen_enabled = touchscreen_enabled
+        self.touchscreen_inertia_enabled = touchscreen_inertia_enabled
+        self.touchscreen_inertia_config = (
+            touchscreen_inertia_config or TouchscreenInertiaConfig()
+        )
         self.rustdesk_pointer_fix_enabled = rustdesk_pointer_fix_enabled
         self.rustdesk_scroll_inertia_enabled = (
             rustdesk_scroll_inertia_enabled
@@ -54,6 +68,8 @@ class NestedDesktopMouseSupervisor:
         self.process_lock = threading.Lock()
 
     def start(self):
+        if not self.module_enabled:
+            return
         if self.thread is not None and self.thread.is_alive():
             return
         self.stop_event.clear()
@@ -94,10 +110,51 @@ class NestedDesktopMouseSupervisor:
             return
         self._restart_with(lambda: setattr(self, "inertia_enabled", enabled))
 
+    def set_module_enabled(self, enabled: bool):
+        if enabled == self.module_enabled:
+            return
+        self._restart_with(lambda: setattr(self, "module_enabled", enabled))
+
     def set_mouse_enabled(self, enabled: bool):
         if enabled == self.mouse_enabled:
             return
         self._restart_with(lambda: setattr(self, "mouse_enabled", enabled))
+
+    def set_touchscreen_enabled(self, enabled: bool):
+        if enabled == self.touchscreen_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(self, "touchscreen_enabled", enabled)
+        )
+
+    def set_touchscreen_inertia_enabled(self, enabled: bool):
+        if enabled == self.touchscreen_inertia_enabled:
+            return
+        self._restart_with(
+            lambda: setattr(
+                self,
+                "touchscreen_inertia_enabled",
+                enabled,
+            )
+        )
+
+    def set_touchscreen_inertia_config(
+        self,
+        config: TouchscreenInertiaConfig,
+    ):
+        if config == self.touchscreen_inertia_config:
+            return
+        self._restart_with(
+            lambda: setattr(
+                self,
+                "touchscreen_inertia_config",
+                config,
+            )
+        )
+
+    @staticmethod
+    def touchscreen_available() -> bool:
+        return find_steam_deck_touchscreen() is not None
 
     def set_rustdesk_pointer_fix_enabled(self, enabled: bool):
         if enabled == self.rustdesk_pointer_fix_enabled:
@@ -186,10 +243,14 @@ class NestedDesktopMouseSupervisor:
             self.stop()
         apply()
         if (
-            self.mouse_enabled
-            or self.bindings_enabled
-            or self.rustdesk_pointer_fix_enabled
-            or self.rustdesk_focus_on_input_enabled
+            self.module_enabled
+            and (
+                self.mouse_enabled
+                or self.touchscreen_enabled
+                or self.bindings_enabled
+                or self.rustdesk_pointer_fix_enabled
+                or self.rustdesk_focus_on_input_enabled
+            )
         ):
             self.start()
 
@@ -257,6 +318,41 @@ class NestedDesktopMouseSupervisor:
                     command.append("--no-mouse-bridge")
                 if not self.bindings_enabled:
                     command.append("--no-bindings")
+                touchscreen_fd = None
+                if self.touchscreen_enabled:
+                    touchscreen_path = find_steam_deck_touchscreen()
+                    if touchscreen_path is not None:
+                        try:
+                            touchscreen_fd = os.open(
+                                touchscreen_path,
+                                os.O_RDONLY | os.O_NONBLOCK,
+                            )
+                            command.extend(
+                                (
+                                    "--touchscreen-fd",
+                                    str(touchscreen_fd),
+                                )
+                            )
+                        except OSError as error:
+                            self.logger.warning(
+                                "Steam Deck touchscreen is unavailable: %s",
+                                error,
+                            )
+                else:
+                    command.append("--no-touchscreen")
+                if not self.touchscreen_inertia_enabled:
+                    command.append("--no-touchscreen-inertia")
+                inertia_config = self.touchscreen_inertia_config
+                command.extend(
+                    (
+                        "--touchscreen-inertia-duration-ms",
+                        str(inertia_config.duration_ms),
+                        "--touchscreen-inertia-start-speed",
+                        str(inertia_config.start_speed),
+                        "--touchscreen-inertia-min-distance",
+                        str(inertia_config.min_distance),
+                    )
+                )
                 if not self.rustdesk_pointer_fix_enabled:
                     command.append("--no-rustdesk-pointer-fix")
                 if self.rustdesk_scroll_inertia_enabled:
@@ -275,17 +371,26 @@ class NestedDesktopMouseSupervisor:
                         ),
                     )
                 )
-                process = subprocess.Popen(
-                    command,
-                    cwd=self.plugin_root,
-                    env=environment,
-                    close_fds=True,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    user=worker_user,
-                    group=worker_group,
-                    extra_groups=worker_groups,
-                )
+                try:
+                    process = subprocess.Popen(
+                        command,
+                        cwd=self.plugin_root,
+                        env=environment,
+                        close_fds=True,
+                        pass_fds=(
+                            (touchscreen_fd,)
+                            if touchscreen_fd is not None
+                            else ()
+                        ),
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        user=worker_user,
+                        group=worker_group,
+                        extra_groups=worker_groups,
+                    )
+                finally:
+                    if touchscreen_fd is not None:
+                        os.close(touchscreen_fd)
             except Exception:
                 self.logger.exception(
                     "Failed to start the Nested Desktop mouse bridge"

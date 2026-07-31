@@ -75,6 +75,7 @@ try:
         NESTED_DESKTOP_BINDING_ACTIONS,
         NESTED_DESKTOP_BINDING_SOURCES,
         NestedDesktopMouseSupervisor,
+        TouchscreenInertiaConfig,
         normalize_nested_desktop_bindings,
     )
 except Exception:
@@ -82,6 +83,7 @@ except Exception:
     DEFAULT_NESTED_DESKTOP_BINDINGS = {}
     NESTED_DESKTOP_BINDING_ACTIONS = frozenset()
     NESTED_DESKTOP_BINDING_SOURCES = ()
+    TouchscreenInertiaConfig = None
 
     def normalize_nested_desktop_bindings(_bindings):
         return {}
@@ -103,6 +105,7 @@ __all__ = [
     "RustDeskPointerFixManager",
     "SteamOsApplicationManager",
     "TrackpadMetricsMonitor",
+    "TouchscreenInertiaConfig",
     "logger",
     "normalize_nested_desktop_bindings",
     "power_cycle_steam_deck_controller",

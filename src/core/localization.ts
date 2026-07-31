@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import { english, translations, type Strings } from "./translations";
 
@@ -18,16 +18,36 @@ const getStrings = (language: string): Strings => {
 
 export type { Strings };
 
-export const useStrings = (): Strings => {
-  const [strings, setStrings] = useState(() => getStrings("english"));
+type Listener = () => void;
 
-  useEffect(() => {
-    window.SteamClient.Settings.GetCurrentLanguage()
-      .then((language) => setStrings(getStrings(language)))
-      .catch((error) => {
-        console.warn("[4deus Mod] Failed to read Steam language", error);
-      });
-  }, []);
+let currentStrings = getStrings("english");
+let languageRequested = false;
+const listeners = new Set<Listener>();
 
-  return strings;
+const getSnapshot = (): Strings => currentStrings;
+
+const requestLanguage = (): void => {
+  if (languageRequested)
+    return;
+  languageRequested = true;
+  void window.SteamClient.Settings.GetCurrentLanguage()
+    .then((language) => {
+      currentStrings = getStrings(language);
+      listeners.forEach((listener) => listener());
+    })
+    .catch((error) => {
+      console.warn("[4deus Mod] Failed to read Steam language", error);
+    });
 };
+
+const subscribe = (listener: Listener): (() => void) => {
+  listeners.add(listener);
+  requestLanguage();
+  return () => listeners.delete(listener);
+};
+
+export const useStrings = (): Strings => useSyncExternalStore(
+  subscribe,
+  getSnapshot,
+  getSnapshot,
+);

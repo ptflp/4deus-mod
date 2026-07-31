@@ -31,9 +31,36 @@ class ControllerEndpointsMixin:
         )
         return {
             "available": monitor is not None,
+            "moduleEnabled": self.controller_module_enabled,
             "autoRecoveryEnabled": self.trackpad_auto_recovery_enabled,
             **recovery,
         }
+
+    async def set_controller_module_enabled(self, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {
+                **await self.get_controller_status(),
+                "error": "Controller module enabled must be a boolean",
+            }
+        try:
+            await asyncio.to_thread(
+                self._save_controller_settings,
+                enabled,
+                self.trackpad_auto_recovery_enabled,
+            )
+            self.controller_module_enabled = enabled
+            await asyncio.to_thread(self._sync_trackpad_metrics)
+            logger.info(
+                "Controller module %s",
+                "enabled" if enabled else "disabled",
+            )
+            return await self.get_controller_status()
+        except Exception as error:
+            logger.exception("Failed to change the Controller module")
+            return {
+                **await self.get_controller_status(),
+                "error": str(error),
+            }
 
     async def set_trackpad_auto_recovery_enabled(self, enabled: bool):
         if not isinstance(enabled, bool):
@@ -44,6 +71,7 @@ class ControllerEndpointsMixin:
         try:
             await asyncio.to_thread(
                 self._save_controller_settings,
+                self.controller_module_enabled,
                 enabled,
             )
             self.trackpad_auto_recovery_enabled = enabled
@@ -97,25 +125,35 @@ class ControllerEndpointsMixin:
                 "error": str(error),
             }
 
-    def _load_controller_settings(self) -> bool:
+    def _load_controller_settings(self) -> tuple[bool, bool]:
         try:
             payload = json.loads(
                 self.controller_settings_path.read_text(encoding="utf-8")
             )
-            return payload.get("trackpadAutoRecoveryEnabled", False) is True
+            return (
+                payload.get("moduleEnabled", True) is not False,
+                payload.get("trackpadAutoRecoveryEnabled", False) is True,
+            )
         except FileNotFoundError:
-            return False
+            return True, False
         except Exception:
             logger.exception("Failed to read controller settings")
-            return False
+            return True, False
 
-    def _save_controller_settings(self, enabled: bool):
+    def _save_controller_settings(
+        self,
+        module_enabled: bool,
+        auto_recovery_enabled: bool,
+    ):
         path = self.controller_settings_path
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
         temporary.write_text(
             json.dumps(
-                {"trackpadAutoRecoveryEnabled": enabled},
+                {
+                    "moduleEnabled": module_enabled,
+                    "trackpadAutoRecoveryEnabled": auto_recovery_enabled,
+                },
                 indent=2,
             )
             + "\n",
