@@ -12,6 +12,8 @@ from .clipboard_content import (
     ClipboardContent,
     PORTAL_FILE_TRANSFER_MIME,
     PORTAL_FILES_MIME,
+    WINDOWS_DROP_EFFECT_COPY,
+    WINDOWS_PREFERRED_DROP_EFFECT,
 )
 from .clipboard_klipper import KlipperClipboardMonitor
 from .clipboard_portal import (
@@ -221,8 +223,15 @@ class NestedDesktopClipboardBridge:
                             and destination is inner
                         ):
                             continue
-                        if destination.set_content(shared):
-                            self._log_shared(shared, destination_name)
+                        destination_content = self._content_for_destination(
+                            destination,
+                            shared,
+                        )
+                        if destination.set_content(destination_content):
+                            self._log_shared(
+                                destination_content,
+                                destination_name,
+                            )
         except Exception as error:
             LOGGER.warning(
                 "Lost Nested Desktop clipboard sharing: %s",
@@ -290,6 +299,28 @@ class NestedDesktopClipboardBridge:
     def _clear_file_transfer(self):
         if self.file_transfer_portal is not None:
             self.file_transfer_portal.clear()
+
+    def _content_for_destination(
+        self,
+        destination,
+        content: ClipboardContent,
+    ) -> ClipboardContent:
+        if (
+            content.file_uris
+            and any(destination is outer for outer in self.outers)
+        ):
+            platform_formats = dict(content.platform_file_formats)
+            platform_formats[WINDOWS_PREFERRED_DROP_EFFECT] = (
+                WINDOWS_DROP_EFFECT_COPY
+            )
+            return replace(
+                content,
+                text=None,
+                platform_file_formats=tuple(sorted(
+                    platform_formats.items()
+                )),
+            )
+        return content
 
     def _matches_latest(self, content: ClipboardContent) -> bool:
         comparable = replace(content, platform_file_formats=())

@@ -11,9 +11,12 @@ from urllib.parse import urlsplit, urlunsplit
 MAX_FILE_URI_COUNT = 4096
 PORTAL_FILE_TRANSFER_MIME = "application/vnd.portal.filetransfer"
 PORTAL_FILES_MIME = "application/vnd.portal.files"
+WINDOWS_PREFERRED_DROP_EFFECT = "Preferred DropEffect"
+WINDOWS_DROP_EFFECT_COPY = (1).to_bytes(4, "little")
 PLATFORM_FILE_MIME_TYPES = (
     PORTAL_FILE_TRANSFER_MIME,
     PORTAL_FILES_MIME,
+    WINDOWS_PREFERRED_DROP_EFFECT,
 )
 LOGGER = logging.getLogger("4deus-nested-mouse")
 

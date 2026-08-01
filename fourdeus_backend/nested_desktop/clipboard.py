@@ -370,8 +370,11 @@ class X11ClipboardEndpoint(X11ClipboardOwnerMixin):
         offered_targets = set(offered)
         selected: deque[int] = deque()
         for mime in CLIPBOARD_PLATFORM_FILE_MIME_TYPES:
-            platform_target = self.platform_file_atoms[mime]
-            if platform_target in offered_targets:
+            platform_target = self.platform_file_atoms.get(mime)
+            if (
+                platform_target is not None
+                and platform_target in offered_targets
+            ):
                 selected.append(platform_target)
         for file_target in self.preferred_file_targets:
             if file_target in offered_targets:

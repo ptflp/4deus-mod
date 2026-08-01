@@ -123,6 +123,14 @@ The receiving application obtains access through the desktop portal. The
 session is retired when clipboard ownership changes or the bridge closes.
 Disabling file sharing removes both URI and portal formats.
 
+Gamescope's XWayland clipboard proxy retains only a UTF-8 text payload. A file
+selection that also advertises its URI as plain text would therefore be claimed
+by Gamescope and republished without `text/uri-list`. For Gamescope destinations,
+the bridge omits only that redundant text fallback while retaining the complete
+file targets; ordinary text clipboard payloads are unchanged. It also publishes
+the four-byte Windows `Preferred DropEffect` value for copy operations, allowing
+Wine Explorer to accept the imported `CF_HDROP` file list.
+
 Dolphin publishes its MIME data immediately, but KWin deliberately exposes a
 native Wayland selection to XWayland only while an X11/XWayland window is
 active. This focus gate prevents background X clients from snooping the

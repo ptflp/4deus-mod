@@ -620,12 +620,13 @@ class NestedDesktopClipboardTests(unittest.TestCase):
             [ClipboardContent(
                 file_uris=("file:///tmp/copied.pdf",),
                 platform_file_formats=(
+                    ("Preferred DropEffect", b"\x01\x00\x00\x00"),
                     (
-                        "application/vnd.portal.filetransfer",
+                        "application/vnd.portal.files",
                         b"bridge-token",
                     ),
                     (
-                        "application/vnd.portal.files",
+                        "application/vnd.portal.filetransfer",
                         b"bridge-token",
                     ),
                 ),
@@ -688,8 +689,9 @@ class NestedDesktopClipboardTests(unittest.TestCase):
         self.assertEqual(
             endpoints[0].received[0].platform_file_formats,
             (
-                ("application/vnd.portal.filetransfer", b"bridge-token"),
+                ("Preferred DropEffect", b"\x01\x00\x00\x00"),
                 ("application/vnd.portal.files", b"bridge-token"),
+                ("application/vnd.portal.filetransfer", b"bridge-token"),
             ),
         )
         bridge.close()
@@ -865,6 +867,58 @@ class NestedDesktopClipboardTests(unittest.TestCase):
         self.assertEqual(endpoints[":1"].received[-1], nested_text)
         bridge.close()
         self.assertTrue(all(endpoint.closed for endpoint in endpoints.values()))
+
+    def test_gamescope_files_omit_text_and_include_windows_copy_effect(self):
+        endpoints = {}
+
+        class Endpoint:
+            def __init__(self, display_name, _xauthority):
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                endpoints[display_name] = self
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                return True
+
+            @staticmethod
+            def close():
+                return None
+
+        bridge = NestedDesktopClipboardBridge(endpoint_factory=Endpoint)
+        bridge.set_session(NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        ))
+        copied = ClipboardContent(
+            text="file:///tmp/copied.pdf",
+            file_uris=("file:///tmp/copied.pdf",),
+        )
+        gamescope_copied = ClipboardContent(
+            file_uris=("file:///tmp/copied.pdf",),
+            platform_file_formats=(
+                ("Preferred DropEffect", b"\x01\x00\x00\x00"),
+            ),
+        )
+
+        endpoints[":2"].updates.append(copied)
+        bridge.dispatch()
+
+        self.assertEqual(endpoints[":1"].received, [gamescope_copied])
+        self.assertEqual(endpoints[":2"].received, [])
+        self.assertEqual(endpoints[":0"].received, [gamescope_copied])
+        self.assertEqual(bridge.latest_content, copied)
+        bridge.close()
 
     def test_optional_gamescope_clipboard_may_be_unavailable(self):
         endpoints = {}
