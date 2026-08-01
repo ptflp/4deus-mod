@@ -211,6 +211,7 @@ interface ModuleTabProps {
   nestedDesktopApi: NestedDesktopApi;
   settings: SettingsStore;
   settingsLabel: string;
+  strings: Strings;
 }
 
 const ModuleTab = ({
@@ -221,11 +222,12 @@ const ModuleTab = ({
   nestedDesktopApi,
   settings,
   settingsLabel,
+  strings,
 }: ModuleTabProps) => (
   <>
     <SettingsLink
       icon={definition.id === "appBridge" ? <FaPlus /> : undefined}
-      label={definition.id === "appBridge" ? "Add App" : settingsLabel}
+      label={definition.id === "appBridge" ? strings.addApp : settingsLabel}
       route={definition.route}
       title={definition.title}
     />
@@ -330,6 +332,7 @@ export const ModsPanel = ({
             nestedDesktopApi={nestedDesktopApi}
             settings={settings}
             settingsLabel={settingsLabel}
+            strings={strings}
           />
         ),
       })),
@@ -343,6 +346,7 @@ export const ModsPanel = ({
       nestedDesktopApi,
       settings,
       settingsLabel,
+      strings,
     ],
   );
 

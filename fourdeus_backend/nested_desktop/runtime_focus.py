@@ -430,6 +430,9 @@ class RuntimeFocusMixin:
                     or gamescope_pointer_relay_requested
                 )
             )
+            gamescope_display = decode_gamescope_display(
+                mouse_focus_display
+            )
             self._set_gamescope_pointer_intercepted(
                 not self.suspended
                 and pointer_needs_bridge
@@ -438,8 +441,13 @@ class RuntimeFocusMixin:
                     self.cursor_overlay_active
                     or self.session.software_cursor_forced
                 ),
-                decode_gamescope_display(mouse_focus_display),
+                gamescope_display,
             )
+            if (
+                self.nested_desktop_gfx_focused
+                and not was_nested_desktop_gfx_focused
+            ):
+                self._sync_gamescope_pointer_position(gamescope_display)
         except Exception as error:
             self._handle_eis_loss(error)
 

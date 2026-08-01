@@ -1,4 +1,5 @@
-import { DECK_QUICK_KEY_GROUPS } from "../keyboard/deckButtonBindings";
+import type { Strings } from "../../core/translations";
+import { getDeckQuickKeyGroups } from "../keyboard/deckButtonBindings";
 
 export type NestedDesktopBindingSource =
   | "a"
@@ -91,15 +92,65 @@ export const NESTED_DESKTOP_BINDING_GROUPS: ReadonlyArray<{
   },
 ];
 
-export const NESTED_DESKTOP_ACTION_OPTIONS = [
+const localizedBindingLabel = (
+  source: NestedDesktopBindingSource,
+  strings: Strings,
+): string | undefined => {
+  if (source.startsWith("dpad"))
+    return strings.nestedDesktopBindingDpad;
+  if (source.startsWith("leftStick"))
+    return strings.nestedDesktopBindingLeftStick;
+  const labels: Partial<Record<NestedDesktopBindingSource, string>> = {
+    leftPadClick: strings.nestedDesktopBindingLeftTrackpadClick,
+    menu: strings.nestedDesktopBindingMenu,
+    rightPadClick: strings.nestedDesktopBindingRightTrackpadClick,
+    view: strings.nestedDesktopBindingView,
+  };
+  return labels[source];
+};
+
+const bindingDirection = (label: string): string =>
+  ["↑", "→", "←", "↓"].find((direction) => label.endsWith(direction)) ?? "";
+
+export const getNestedDesktopBindingGroups = (
+  strings: Strings,
+): typeof NESTED_DESKTOP_BINDING_GROUPS =>
+  NESTED_DESKTOP_BINDING_GROUPS.map((group, groupIndex) => ({
+    title: [
+      group.title,
+      strings.nestedDesktopBindingGroupDpadStick,
+      strings.nestedDesktopBindingGroupMenuButtons,
+      strings.nestedDesktopBindingGroupTrackpads,
+    ][groupIndex],
+    sources: group.sources.map(({ source, label }) => {
+      const localized = localizedBindingLabel(source, strings);
+      return {
+        source,
+        label: localized
+          ? `${localized}${bindingDirection(label) ? ` ${bindingDirection(label)}` : ""}`
+          : label,
+      };
+    }),
+  }));
+
+export const getNestedDesktopActionOptions = (strings: Strings) => [
   { data: "none", label: "—" },
   {
-    label: "Steam / Mouse",
+    label: "Steam / 🖱",
     options: [
-      { data: "SHOW_KEYBOARD", label: "⌨ Keyboard" },
-      { data: "MOUSE_LEFT", label: "Mouse 1" },
-      { data: "MOUSE_RIGHT", label: "Mouse 2" },
-      { data: "MOUSE_MIDDLE", label: "Mouse 3" },
+      {
+        data: "SHOW_KEYBOARD",
+        label: `⌨ ${strings.nestedDesktopBindingKeyboard}`,
+      },
+      { data: "MOUSE_LEFT", label: strings.nestedDesktopBindingMousePrimary },
+      {
+        data: "MOUSE_RIGHT",
+        label: strings.nestedDesktopBindingMouseSecondary,
+      },
+      {
+        data: "MOUSE_MIDDLE",
+        label: strings.nestedDesktopBindingMouseMiddle,
+      },
     ],
   },
   {
@@ -111,7 +162,7 @@ export const NESTED_DESKTOP_ACTION_OPTIONS = [
       { data: "KEY_LEFTMETA", label: "Meta" },
     ],
   },
-  ...DECK_QUICK_KEY_GROUPS.map((group) => ({
+  ...getDeckQuickKeyGroups(strings).map((group) => ({
     label: group.label,
     options: group.options.map((option) => ({
       data: option.keyName,

@@ -20,10 +20,14 @@ import {
 import {
   DECK_QUICK_KEY_GROUPS,
   formatDeckQuickChord,
+  getDeckQuickKeyGroups,
   parseDeckQuickChord,
   resolveDeckButtonAction,
   resolveDeckButtonCommand,
 } from "../src/modules/keyboard/deckButtonBindings.ts";
+import {
+  keyboardTranslations,
+} from "../src/core/keyboardTranslations.ts";
 import type {
   DeckButtonBindings,
   DeckQuickActions,
@@ -298,6 +302,27 @@ test("quick-action selector exposes grouped keys and formats chords", () => {
     withControl: false,
     withShift: false,
   });
+});
+
+test("localized quick-action labels preserve parser tokens", () => {
+  const [system] = getDeckQuickKeyGroups(keyboardTranslations.russian);
+  assert.equal(system.label, "Системные клавиши");
+  assert.deepEqual(
+    system.options.find(({ keyName }) => keyName === "KEY_SPACE"),
+    {
+      keyName: "KEY_SPACE",
+      label: "Пробел",
+      token: "Space",
+    },
+  );
+  assert.deepEqual(
+    system.options.find(({ keyName }) => keyName === "KEY_SLASH"),
+    {
+      keyName: "KEY_SLASH",
+      label: "/",
+      token: "Slash",
+    },
+  );
 });
 
 test("keyboard layouts expose normal and Shift symbols", () => {

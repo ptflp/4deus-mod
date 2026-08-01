@@ -10,7 +10,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from nested_desktop_mouse import (
     BACK_BUTTON,
@@ -1866,6 +1866,46 @@ class TrackpadTranslatorTests(unittest.TestCase):
 
 
 class GamescopeFocusTests(unittest.TestCase):
+    def test_pointer_grab_failure_is_warned_once_per_focus_session(self):
+        now = [0.0]
+        connections = []
+
+        class Connection:
+            def __init__(self, display_name):
+                self.display_name = display_name
+                connections.append(self)
+
+            @staticmethod
+            def grab_pointer():
+                return False
+
+            @staticmethod
+            def close():
+                pass
+
+        interceptor = GamescopePointerInterceptor(
+            connection_factory=Connection,
+            clock=lambda: now[0],
+            retry_interval=2.0,
+        )
+        with patch(
+            "fourdeus_backend.nested_desktop.gamescope.LOGGER"
+        ) as logger:
+            self.assertFalse(interceptor.set_active(True, ":1"))
+            now[0] = 1.0
+            self.assertFalse(interceptor.set_active(True, ":1"))
+            now[0] = 2.0
+            self.assertFalse(interceptor.set_active(True, ":1"))
+
+            self.assertEqual(len(connections), 2)
+            self.assertEqual(logger.warning.call_count, 1)
+            self.assertEqual(logger.debug.call_count, 1)
+
+            self.assertTrue(interceptor.set_active(False))
+            self.assertFalse(interceptor.set_active(True, ":1"))
+            self.assertEqual(len(connections), 3)
+            self.assertEqual(logger.warning.call_count, 2)
+
     def test_gamescope_pointer_translator_keeps_fractional_motion(self):
         translator = GamescopePointerTranslator()
 
@@ -1933,6 +1973,10 @@ class GamescopeFocusTests(unittest.TestCase):
                 return updates
 
             @staticmethod
+            def pointer_snapshot():
+                return (320, 240, 640, 480)
+
+            @staticmethod
             def release_update():
                 return PointerUpdate(left_button=False)
 
@@ -1955,6 +1999,10 @@ class GamescopeFocusTests(unittest.TestCase):
                 ),
             ),
         )
+        self.assertEqual(
+            interceptor.pointer_snapshot(),
+            (320, 240, 640, 480),
+        )
         self.assertTrue(interceptor.set_active(False))
 
         self.assertEqual(len(connections), 1)
@@ -1966,6 +2014,13 @@ class GamescopeFocusTests(unittest.TestCase):
             interceptor.take_release_updates(),
             (PointerUpdate(left_button=False),),
         )
+        self.assertEqual(
+            interceptor.pointer_snapshot(":1"),
+            (320, 240, 640, 480),
+        )
+        self.assertEqual(len(connections), 2)
+        self.assertEqual(connections[1].grabs, 0)
+        self.assertEqual(connections[1].closed, 1)
 
     def test_gamescope_pointer_relay_delays_and_forwards_external_input(self):
         class Interceptor:
@@ -2411,6 +2466,103 @@ class GamescopeFocusTests(unittest.TestCase):
 
 
 class RuntimeSuspensionTests(unittest.TestCase):
+    def test_pointer_position_is_mapped_between_display_resolutions(self):
+        update = NestedDesktopMouseRuntime._map_pointer_position(
+            (320, 240, 640, 480),
+            (0, 0, 1280, 800),
+        )
+
+        self.assertIsNotNone(update)
+        self.assertAlmostEqual(update.absolute_x, 640.5, places=1)
+        self.assertAlmostEqual(update.absolute_y, 400.3, places=1)
+
+    def test_pointer_sync_temporarily_uses_absolute_eis_device(self):
+        class Interceptor:
+            @staticmethod
+            def pointer_snapshot(_display_name):
+                return (320, 240, 640, 480)
+
+        class InnerEis:
+            absolute_emulating = False
+
+            def __init__(self):
+                self.transitions = []
+                self.updates = []
+
+            @staticmethod
+            def absolute_bounds():
+                return (0, 0, 1280, 800)
+
+            def set_absolute_emulating(self, active):
+                self.absolute_emulating = active
+                self.transitions.append(active)
+                return True
+
+            def inject_absolute(self, update):
+                self.updates.append(update)
+
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            gamescope_pointer_relay_enabled=False,
+            gamescope_pointer_interceptor=Interceptor(),
+        )
+        runtime.inner_eis = InnerEis()
+        runtime.cursor_overlay = MagicMock()
+        runtime.cursor_overlay_active = True
+
+        self.assertTrue(runtime._sync_gamescope_pointer_position(":1"))
+
+        self.assertEqual(runtime.inner_eis.transitions, [True, False])
+        self.assertEqual(len(runtime.inner_eis.updates), 1)
+        update = runtime.inner_eis.updates[0]
+        self.assertAlmostEqual(update.absolute_x, 640.5, places=1)
+        self.assertAlmostEqual(update.absolute_y, 400.3, places=1)
+        runtime.cursor_overlay.apply.assert_called_once_with(update)
+
+    def test_pointer_is_synchronized_once_on_real_gfx_focus_return(self):
+        class InnerEis:
+            ready = False
+            keyboard_ready = False
+            touch_ready = False
+
+            @staticmethod
+            def dispatch():
+                pass
+
+        runtime = NestedDesktopMouseRuntime(threading.Event())
+        runtime.inner_eis = InnerEis()
+        runtime.outer_x11 = MagicMock()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=22,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+        runtime._gamescope_focus_snapshot = MagicMock(return_value=(
+            (22,),
+            (22,),
+            tuple(packed_display(":1")),
+            (),
+        ))
+        runtime._sync_gamescope_pointer_position = MagicMock()
+        for method_name in (
+            "_set_touch_forwarding",
+            "_set_remote_forwarding",
+            "_set_remote_relaying",
+            "_set_remote_button_forwarding",
+            "_set_forwarding",
+            "_set_binding_forwarding",
+            "_set_cursor_overlay",
+            "_set_gamescope_pointer_intercepted",
+        ):
+            setattr(runtime, method_name, MagicMock())
+
+        runtime._refresh_forwarding()
+        runtime._refresh_forwarding()
+
+        runtime._sync_gamescope_pointer_position.assert_called_once_with(":1")
+
     def test_focus_exit_requests_one_lazy_clipboard_flush(self):
         class InnerEis:
             ready = False

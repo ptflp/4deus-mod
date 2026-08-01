@@ -20,6 +20,7 @@ import type {
   DeckQuickActions,
   LanguageSwitchShortcut,
 } from "../../core/settings";
+import { getCurrentStrings } from "../../core/localization";
 import {
   type DeckButtonCommand,
   resolveDeckButtonCommand,
@@ -1564,6 +1565,7 @@ export class SystemKeyLayer {
       this.systemMode,
       this.functionLayer,
       this.languageSwitchShortcutEnabled,
+      getCurrentStrings().holdBadge,
     );
   }
 

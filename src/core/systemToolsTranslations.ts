@@ -24,12 +24,6 @@ export interface SystemToolsTranslation extends TouchInertiaTranslation {
   steamOsApplicationReady: string;
   nestedDesktopMouseBridge: string;
   nestedDesktopMouseBridgeDescription: string;
-  nestedDesktopGamescopePointerRelay: string;
-  nestedDesktopGamescopePointerRelayDescription: string;
-  nestedDesktopClipboard: string;
-  nestedDesktopClipboardDescription: string;
-  nestedDesktopClipboardFiles: string;
-  nestedDesktopClipboardFilesDescription: string;
   nestedDesktopTrackpadInertia: string;
   nestedDesktopTrackpadInertiaDescription: string;
   nestedDesktopTouchscreen: string;
@@ -53,12 +47,6 @@ type BaseSystemToolsTranslation = Omit<
   | "rustDeskScrollInertiaDescription"
   | "nestedDesktopTouchscreen"
   | "nestedDesktopTouchscreenDescription"
-  | "nestedDesktopClipboard"
-  | "nestedDesktopClipboardDescription"
-  | "nestedDesktopClipboardFiles"
-  | "nestedDesktopClipboardFilesDescription"
-  | "nestedDesktopGamescopePointerRelay"
-  | "nestedDesktopGamescopePointerRelayDescription"
   | "controller"
   | "trackpadAutoRecovery"
   | "trackpadAutoRecoveryDescription"
@@ -381,9 +369,9 @@ Record<string, BaseSystemToolsTranslation> = {
     "Системные инструменты", "Установка и управление точечными системными исправлениями", "Состояние", "Загрузка…",
     "Исправление MangoHud для Nested Desktop", "Не даёт защищённым процессам Nested Desktop аварийно завершать MangoApp и скрывать оверлей производительности",
     "Установлено", "Требуется обновление или восстановление", "Не установлено", "Недоступно в этой системе",
-    "Установить / Исправить", "Удалить исправление", "Исправление MangoHud установлено", "Исправление MangoHud удалено",
+    "Установить или исправить", "Удалить исправление", "Исправление MangoHud установлено", "Исправление MangoHud удалено",
     "SteamOS в игровом режиме", "Добавляет или исправляет полностью настроенный ярлык Nested Desktop в библиотеке Steam",
-    "Добавить / Исправить SteamOS", "Приложение SteamOS готово",
+    "Добавить или исправить SteamOS", "Приложение SteamOS готово",
     "Мышь Nested Desktop поверх игры", "Восстанавливает курсор и клик правого трекпада в Nested Desktop, когда параллельно запущено другое приложение в игровом режиме",
     "Инерция трекпадов", "Продолжает движение курсора и прокрутки после быстрого свайпа; отключите для мгновенной остановки при отпускании трекпада",
     "Исправление курсора RustDesk", "Убирает второй курсор и телепортацию указателя в Nested Desktop; «Добавить / исправить RustDesk» автоматически устанавливает нужную системную интеграцию",
@@ -961,61 +949,7 @@ Record<string, ControllerOptionsTranslation> = {
   },
 };
 
-type ClipboardOptionsTranslation = Pick<
-  SystemToolsTranslation,
-  | "nestedDesktopClipboard"
-  | "nestedDesktopClipboardDescription"
-  | "nestedDesktopClipboardFiles"
-  | "nestedDesktopClipboardFilesDescription"
->;
-
-const englishClipboardOptions: ClipboardOptionsTranslation = {
-  nestedDesktopClipboard: "Shared clipboard",
-  nestedDesktopClipboardDescription: "Synchronizes newly copied text, images, and enabled file references between Gamescope and Nested Desktop; disabled by default",
-  nestedDesktopClipboardFiles: "Files and folders",
-  nestedDesktopClipboardFilesDescription: "Shares copied local files and folders by path. Paste always copies; originals are never moved",
-};
-
-const clipboardOptionsTranslations:
-Record<string, ClipboardOptionsTranslation> = Object.fromEntries(
-  Object.keys(baseSystemToolsTranslations).map((language) => [
-    language,
-    language === "russian"
-      ? {
-        nestedDesktopClipboard: "Общий буфер обмена",
-        nestedDesktopClipboardDescription: "Синхронизирует новый текст, изображения и включённые ссылки на файлы между Gamescope и Nested Desktop; по умолчанию выключено",
-        nestedDesktopClipboardFiles: "Файлы и папки",
-        nestedDesktopClipboardFilesDescription: "Передаёт пути скопированных локальных файлов и папок. Вставка всегда копирует — оригиналы никогда не перемещаются",
-      }
-      : englishClipboardOptions,
-  ]),
-) as Record<string, ClipboardOptionsTranslation>;
-
-type GamescopePointerRelayTranslation = Pick<
-  SystemToolsTranslation,
-  | "nestedDesktopGamescopePointerRelay"
-  | "nestedDesktopGamescopePointerRelayDescription"
->;
-
-const englishGamescopePointerRelay: GamescopePointerRelayTranslation = {
-  nestedDesktopGamescopePointerRelay: "Redirect Gamescope pointer input",
-  nestedDesktopGamescopePointerRelayDescription: "Keeps Gamescope mouse, trackpad, clicks, and scrolling in Nested Desktop while a game runs in parallel",
-};
-
-const gamescopePointerRelayTranslations:
-Record<string, GamescopePointerRelayTranslation> = Object.fromEntries(
-  Object.keys(baseSystemToolsTranslations).map((language) => [
-    language,
-    language === "russian"
-      ? {
-        nestedDesktopGamescopePointerRelay: "Перенаправлять ввод Gamescope",
-        nestedDesktopGamescopePointerRelayDescription: "Оставляет мышь, трекпады, клики и прокрутку Gamescope в Nested Desktop, когда игра запущена параллельно",
-      }
-      : englishGamescopePointerRelay,
-  ]),
-) as Record<string, GamescopePointerRelayTranslation>;
-
-export const systemToolsTranslations:
+const localizedSystemToolsTranslations:
 Record<string, SystemToolsTranslation> = Object.fromEntries(
   Object.entries(baseSystemToolsTranslations).map(
     ([language, strings]) => [
@@ -1023,8 +957,6 @@ Record<string, SystemToolsTranslation> = Object.fromEntries(
       {
         ...strings,
         ...touchscreenOptionsTranslations[language],
-        ...clipboardOptionsTranslations[language],
-        ...gamescopePointerRelayTranslations[language],
         ...touchInertiaTranslations[language],
         ...rustDeskOptionsTranslations[language],
         ...controllerOptionsTranslations[language],
@@ -1032,3 +964,57 @@ Record<string, SystemToolsTranslation> = Object.fromEntries(
     ],
   ),
 ) as Record<string, SystemToolsTranslation>;
+
+const englishSystemToolsTranslation: SystemToolsTranslation = {
+  addOrRepairSteamOsApplication: "Add or repair SteamOS",
+  advancedSettings: "Advanced",
+  advancedSettingsDescription: "Show guarded tuning controls with safe ranges and one-click defaults",
+  applyAdvancedSettings: "Apply",
+  controller: "Controller",
+  installOrRepairMangoHudFix: "Install or repair fix",
+  mangoHudFix: "MangoHud fix for Nested Desktop",
+  mangoHudFixApplied: "MangoHud fix installed",
+  mangoHudFixDescription: "Prevent protected Nested Desktop processes from crashing MangoApp and hiding the performance overlay",
+  mangoHudFixInstalled: "Installed",
+  mangoHudFixNeedsRepair: "Update or repair required",
+  mangoHudFixNotInstalled: "Not installed",
+  mangoHudFixRemoved: "MangoHud fix removed",
+  mangoHudFixUnavailable: "Unavailable on this system",
+  nestedDesktopMouseBridge: "Nested Desktop mouse over games",
+  nestedDesktopMouseBridgeDescription: "Restore the right-trackpad cursor and click in Nested Desktop while another Gaming Mode app is running",
+  nestedDesktopTouchInertia: "Touchscreen inertia",
+  nestedDesktopTouchInertiaDescription: "Add a smooth fade only after a fast one-finger swipe. Taps, holds, drags, and multitouch stop normally.",
+  nestedDesktopTouchInertiaDuration: "Fade duration",
+  nestedDesktopTouchInertiaDurationDescription: "How long a maximum-speed swipe can coast before stopping smoothly",
+  nestedDesktopTouchInertiaMinDistance: "Minimum swipe distance",
+  nestedDesktopTouchInertiaMinDistanceDescription: "Minimum deliberate travel before a gesture can coast",
+  nestedDesktopTouchInertiaStartSpeed: "Start speed",
+  nestedDesktopTouchInertiaStartSpeedDescription: "Minimum release speed required to start inertia",
+  nestedDesktopTouchInertiaTuning: "Touchscreen inertia tuning",
+  nestedDesktopTouchscreen: "Touchscreen in Nested Desktop",
+  nestedDesktopTouchscreenDescription: "Forward Steam Deck taps, swipes, and multitouch directly to Nested Desktop without affecting other Steam screens",
+  nestedDesktopTrackpadInertia: "Trackpad inertia",
+  nestedDesktopTrackpadInertiaDescription: "Continue cursor and scroll movement after a fast swipe. Disable to stop immediately when the trackpad is released.",
+  removeMangoHudFix: "Remove fix",
+  resetAdvancedSettings: "Restore defaults",
+  rustDeskFocusOnInput: "Focus Nested Desktop on RustDesk input",
+  rustDeskFocusOnInputDescription: "⚠ Bring Nested Desktop to the foreground on RustDesk pointer or keyboard input. This bypasses Steam's PIN lock screen. Disabled by default; enabling it means you accept this risk.",
+  rustDeskPointerFix: "RustDesk pointer fix",
+  rustDeskPointerFixDescription: "Prevent duplicate cursors and pointer teleportation in Nested Desktop. Adding or repairing RustDesk installs the required system hook automatically.",
+  rustDeskScrollInertia: "RustDesk wheel inertia",
+  rustDeskScrollInertiaDescription: "Add a short natural glide after fast wheel scrolling. Disabled by default and independent of trackpad inertia.",
+  steamOsApplication: "SteamOS in Gaming Mode",
+  steamOsApplicationDescription: "Add or repair a fully configured Nested Desktop shortcut in the Steam library",
+  steamOsApplicationReady: "SteamOS application is ready",
+  systemTools: "System Tools",
+  systemToolsDescription: "Install and manage narrowly scoped system fixes",
+  systemToolsLoading: "Loading…",
+  systemToolsStatus: "Status",
+  trackpadAutoRecovery: "Automatic trackpad recovery",
+  trackpadAutoRecoveryDescription: "Automatically recover frozen or stuck trackpads. Disabled by default.",
+};
+
+export const systemToolsTranslations: Record<string, SystemToolsTranslation> = {
+  english: englishSystemToolsTranslation,
+  ...localizedSystemToolsTranslations,
+};

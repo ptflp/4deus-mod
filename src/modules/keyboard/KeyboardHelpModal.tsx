@@ -60,9 +60,9 @@ const HelpStep = ({
   </div>
 );
 
-const MenuButtonGlyph = () => (
+const MenuButtonGlyph = ({ label }: { label: string }) => (
   <span
-    aria-label="Menu"
+    aria-label={label}
     role="img"
     style={{
       display: "inline-flex",
@@ -95,7 +95,7 @@ const KeyboardHelpModal = ({
       closeModal={closeModal}
       onOK={closeModal}
       strTitle={strings.keyboardHelpTitle}
-      strOKButtonText="OK"
+      strOKButtonText={strings.ok}
       strDescription={(
         <div
           style={{
@@ -106,12 +106,12 @@ const KeyboardHelpModal = ({
           }}
         >
           <HelpStep
-            badge="Hold Ctrl"
+            badge={strings.keyboardHelpHoldCtrlBadge}
             title={strings.systemKeyLayer}
             description={strings.keyboardHelpSystemLayerDescription}
           />
           <HelpStep
-            badge="Hold 🌐"
+            badge={strings.keyboardHelpHoldLanguageBadge}
             title={strings.languageSwitchShortcut}
             description={strings.keyboardHelpLanguageMenuDescription}
           />
@@ -121,12 +121,12 @@ const KeyboardHelpModal = ({
             description={strings.keyboardHelpSwapDescription}
           />
           <HelpStep
-            badge="Auto"
+            badge={strings.keyboardHelpAutoBadge}
             title={strings.autoSwapVisualLayer}
             description={strings.keyboardHelpAutoSwapDescription}
           />
           <HelpStep
-            badge={<MenuButtonGlyph />}
+            badge={<MenuButtonGlyph label={strings.menuButton} />}
             badgeIsCapsule
             title={strings.keyboardHelpPosition}
             description={strings.keyboardHelpPositionDescription}

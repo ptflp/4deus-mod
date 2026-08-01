@@ -97,9 +97,13 @@ export const AppBridgePanel = ({
   const applicationOptions = useMemo(
     () => applications.map((application) => ({
       data: application.id,
-      label: `${application.name} · ${application.kind}`,
+      label: `${application.name} · ${
+        application.kind === "flatpak"
+          ? strings.appBridgeFlatpakApplication
+          : strings.appBridgeDesktopApplication
+      }`,
     })),
-    [applications],
+    [applications, strings],
   );
 
   return (

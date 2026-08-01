@@ -57,6 +57,7 @@ export class HoldHintView {
     systemMode: boolean,
     functionLayer: boolean,
     languageSwitchEnabled: boolean,
+    label: string,
   ): void {
     const keyboard = this.keyboard;
     if (!keyboard)
@@ -73,6 +74,7 @@ export class HoldHintView {
       systemMode,
       functionLayer,
       languageSwitchEnabled,
+      label,
     ].join(":");
     if (
       signature === this.lastSignature
@@ -87,7 +89,7 @@ export class HoldHintView {
     if (targets.length === 0)
       return;
     this.ensureStyles();
-    targets.forEach((key) => this.renderHint(key));
+    targets.forEach((key) => this.renderHint(key, label));
   }
 
   private resolveTargets(
@@ -108,14 +110,14 @@ export class HoldHintView {
     return targets.filter((key): key is HTMLElement => key !== null);
   }
 
-  private renderHint(key: HTMLElement): void {
+  private renderHint(key: HTMLElement, label: string): void {
     key.classList.add(HINT_KEY_CLASS);
     const container = key.ownerDocument.createElement("span");
     container.className = HOLD_HINT_LABEL_CLASS;
     container.setAttribute("aria-hidden", "true");
     const badge = key.ownerDocument.createElement("span");
     badge.className = HINT_BADGE_CLASS;
-    badge.textContent = "Hold";
+    badge.textContent = label;
     container.appendChild(badge);
     key.appendChild(container);
     this.syncTypography(container, key);

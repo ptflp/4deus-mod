@@ -187,6 +187,7 @@ class GamescopePointerInterceptor:
         self.connection = None
         self.display_name: str | None = None
         self.retry_after = 0.0
+        self.last_grab_failure: tuple[str, str] | None = None
         self.pending_release_updates: list[PointerUpdate] = []
 
     def set_active(
@@ -203,6 +204,8 @@ class GamescopePointerInterceptor:
             return True
         if not active:
             self.close()
+            self.retry_after = 0.0
+            self.last_grab_failure = None
             return True
         now = self.clock()
         if now < self.retry_after:
@@ -220,7 +223,14 @@ class GamescopePointerInterceptor:
                 except Exception:
                     pass
             self.retry_after = now + self.retry_interval
-            LOGGER.warning(
+            failure = (str(display_name), str(error))
+            log = (
+                LOGGER.warning
+                if failure != self.last_grab_failure
+                else LOGGER.debug
+            )
+            self.last_grab_failure = failure
+            log(
                 "Unable to intercept Gamescope pointer on %s: %s",
                 display_name,
                 error,
@@ -229,6 +239,7 @@ class GamescopePointerInterceptor:
         self.connection = connection
         self.display_name = str(display_name)
         self.retry_after = 0.0
+        self.last_grab_failure = None
         LOGGER.info(
             "Gamescope master pointer redirected from %s",
             display_name,
@@ -263,6 +274,48 @@ class GamescopePointerInterceptor:
             )
             self.close()
             return ()
+
+    def pointer_snapshot(
+        self,
+        display_name: str | None = None,
+    ) -> tuple[int, int, int, int] | None:
+        connection = self.connection
+        temporary = None
+        if connection is None and display_name:
+            try:
+                temporary = self.connection_factory(str(display_name))
+                connection = temporary
+            except Exception:
+                LOGGER.debug(
+                    "Unable to open %s for a pointer snapshot",
+                    display_name,
+                    exc_info=True,
+                )
+                return None
+        if connection is None:
+            return None
+        snapshot = getattr(connection, "pointer_snapshot", None)
+        if not callable(snapshot):
+            if temporary is not None:
+                temporary.close()
+            return None
+        try:
+            return snapshot()
+        except Exception:
+            LOGGER.debug(
+                "Unable to read the Gamescope pointer position",
+                exc_info=True,
+            )
+            return None
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.close()
+                except Exception:
+                    LOGGER.debug(
+                        "Unable to close the pointer snapshot connection",
+                        exc_info=True,
+                    )
 
     def take_release_updates(self) -> tuple[PointerUpdate, ...]:
         updates = tuple(self.pending_release_updates)

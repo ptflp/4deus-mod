@@ -8,13 +8,14 @@ import {
 import {
   Fragment,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
 import { useStrings } from "../../core/localization";
 import {
-  NESTED_DESKTOP_ACTION_OPTIONS,
-  NESTED_DESKTOP_BINDING_GROUPS,
+  getNestedDesktopActionOptions,
+  getNestedDesktopBindingGroups,
   type NestedDesktopBindingAction,
   type NestedDesktopBindingSource,
 } from "./nestedDesktopBindings";
@@ -34,6 +35,14 @@ export const NestedDesktopBindingsPanel = ({
   const [status, setStatus] = useState<NestedDesktopMouseStatus>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const actionOptions = useMemo(
+    () => getNestedDesktopActionOptions(strings),
+    [strings],
+  );
+  const bindingGroups = useMemo(
+    () => getNestedDesktopBindingGroups(strings),
+    [strings],
+  );
 
   useEffect(() => {
     api.getNestedDesktopMouseStatus()
@@ -103,7 +112,7 @@ export const NestedDesktopBindingsPanel = ({
       </PanelSection>
 
       {status?.bindingsEnabled
-        && NESTED_DESKTOP_BINDING_GROUPS.map((group) => (
+        && bindingGroups.map((group) => (
           <PanelSection key={group.title} title={group.title}>
             {group.sources.map(({ source, label }) => (
               <Fragment key={source}>
@@ -111,7 +120,7 @@ export const NestedDesktopBindingsPanel = ({
                   <DropdownItem
                     label={label}
                     menuLabel={strings.keyBinding}
-                    rgOptions={NESTED_DESKTOP_ACTION_OPTIONS}
+                    rgOptions={actionOptions}
                     selectedOption={status.bindings[source] ?? "none"}
                     disabled={busy}
                     onChange={({ data }) =>

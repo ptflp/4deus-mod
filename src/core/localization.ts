@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from "react";
 
-import { english, translations, type Strings } from "./translations";
+import { getTranslation, type Strings } from "./translations";
 
 const steamString = (token: string): string | undefined =>
   window.LocalizationManager?.m_mapTokens?.get(token);
 
 const getStrings = (language: string): Strings => {
-  const selected = translations[language] ?? english;
+  const selected = getTranslation(language);
   return {
     ...selected,
     keyboard: steamString("Settings_Page_Keyboard") ?? selected.keyboard,
@@ -25,6 +25,8 @@ let languageRequested = false;
 const listeners = new Set<Listener>();
 
 const getSnapshot = (): Strings => currentStrings;
+
+export const getCurrentStrings = (): Strings => currentStrings;
 
 const requestLanguage = (): void => {
   if (languageRequested)

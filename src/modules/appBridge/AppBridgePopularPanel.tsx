@@ -22,7 +22,7 @@ export const AppBridgePopularPanel = ({
   const installer = useAppBridgeInstaller(api, settings, strings);
 
   return (
-    <PanelSection title={strings.appBridgeQuickSetup}>
+    <PanelSection title={strings.appBridgePopular}>
       <PanelSectionRow>
         <div>{strings.appBridgeParsecDescription}</div>
       </PanelSectionRow>

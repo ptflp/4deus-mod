@@ -6,6 +6,7 @@ import {
 } from "@decky/ui";
 import {
   Fragment,
+  useMemo,
   useSyncExternalStore,
 } from "react";
 
@@ -21,21 +22,6 @@ interface KeyboardShortcutsPanelProps {
   settings: SettingsStore;
 }
 
-const deckButtonActionOptions: Array<{
-  data: DeckButtonAction;
-  label: string;
-}> = [
-  { data: "none", label: "—" },
-  { data: "KEY_ESC", label: "Esc" },
-  { data: "KEY_SPACE", label: "Space" },
-  { data: "KEY_BACKSPACE", label: "Backspace" },
-  { data: "KEY_ENTER", label: "Enter" },
-  { data: "KEY_TAB", label: "Tab" },
-  { data: "KEY_LEFTCTRL", label: "Ctrl" },
-  { data: "KEY_LEFTALT", label: "Alt" },
-  { data: "KEY_LEFTSHIFT", label: "Shift" },
-];
-
 export const KeyboardShortcutsPanel = ({
   settings,
 }: KeyboardShortcutsPanelProps) => {
@@ -44,6 +30,20 @@ export const KeyboardShortcutsPanel = ({
     settings.subscribe,
     settings.getKeyboardSnapshot,
   );
+  const deckButtonActionOptions = useMemo<Array<{
+    data: DeckButtonAction;
+    label: string;
+  }>>(() => [
+    { data: "none", label: "—" },
+    { data: "KEY_ESC", label: "Esc" },
+    { data: "KEY_SPACE", label: strings.keySpace },
+    { data: "KEY_BACKSPACE", label: strings.keyBackspace },
+    { data: "KEY_ENTER", label: "Enter" },
+    { data: "KEY_TAB", label: "Tab" },
+    { data: "KEY_LEFTCTRL", label: "Ctrl" },
+    { data: "KEY_LEFTALT", label: "Alt" },
+    { data: "KEY_LEFTSHIFT", label: "Shift" },
+  ], [strings]);
   const r4IsSecondLayerModifier = keyboard.deckButtonQuickActionsEnabled
     && keyboard.deckButtonSecondLayerEnabled;
   const configurableButtons = r4IsSecondLayerModifier

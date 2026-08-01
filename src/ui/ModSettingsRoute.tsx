@@ -129,7 +129,7 @@ export const ModSettingsRoute = ({
       },
       {
         identifier: "app-bridge-popular",
-        title: "Popular",
+        title: strings.appBridgePopular,
         content: (
           <AppBridgePopularPanel api={appBridgeApi} settings={settings} />
         ),

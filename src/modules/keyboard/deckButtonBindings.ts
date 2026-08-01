@@ -4,6 +4,7 @@ import type {
   DeckButtonBindings,
   DeckQuickActions,
 } from "../../core/settings";
+import type { Strings } from "../../core/translations";
 
 export const DECK_BUTTONS: ReadonlyArray<{
   button: DeckButton;
@@ -98,6 +99,47 @@ export const DECK_QUICK_KEY_GROUPS: ReadonlyArray<{
     }),
   },
 ];
+
+const LOCALIZED_QUICK_KEY_LABELS: Readonly<
+Record<string, keyof Strings>
+> = {
+  KEY_BACKSPACE: "keyBackspace",
+  KEY_END: "keyEnd",
+  KEY_HOME: "keyHome",
+  KEY_INSERT: "keyInsert",
+  KEY_PAGEDOWN: "keyPageDown",
+  KEY_PAGEUP: "keyPageUp",
+  KEY_SPACE: "keySpace",
+};
+
+const QUICK_KEY_SYMBOLS: Readonly<Record<string, string>> = {
+  KEY_APOSTROPHE: "'",
+  KEY_BACKSLASH: "\\",
+  KEY_COMMA: ",",
+  KEY_DOT: ".",
+  KEY_EQUAL: "=",
+  KEY_GRAVE: "`",
+  KEY_MINUS: "−",
+  KEY_SEMICOLON: ";",
+  KEY_SLASH: "/",
+};
+
+export const getDeckQuickKeyGroups = (
+  strings: Strings,
+): ReadonlyArray<{
+  label: string;
+  options: readonly DeckQuickKeyOption[];
+}> => DECK_QUICK_KEY_GROUPS.map((group, groupIndex) => ({
+  label: groupIndex === 0 ? strings.keyGroupSystem : group.label,
+  options: group.options.map((option) => ({
+    ...option,
+    label: QUICK_KEY_SYMBOLS[option.keyName]
+      ?? (LOCALIZED_QUICK_KEY_LABELS[option.keyName]
+        ? strings[LOCALIZED_QUICK_KEY_LABELS[option.keyName]]
+        : option.label),
+    token: option.token ?? option.label,
+  })),
+}));
 
 const QUICK_KEY_BY_NAME = new Map(
   DECK_QUICK_KEY_GROUPS.flatMap(({ options }) =>

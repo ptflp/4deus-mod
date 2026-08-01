@@ -16,6 +16,35 @@ LOGGER = logging.getLogger("4deus-nested-mouse")
 
 
 class RuntimeCursorMixin:
+    @staticmethod
+    def _map_pointer_position(
+        source: tuple[int, int, int, int],
+        target: tuple[int, int, int, int],
+    ) -> PointerUpdate | None:
+        source_x, source_y, source_width, source_height = source
+        target_x, target_y, target_width, target_height = target
+        if min(
+            source_width,
+            source_height,
+            target_width,
+            target_height,
+        ) <= 0:
+            return None
+        source_x = max(0, min(source_width - 1, source_x))
+        source_y = max(0, min(source_height - 1, source_y))
+        normalized_x = source_x / max(1, source_width - 1)
+        normalized_y = source_y / max(1, source_height - 1)
+        return PointerUpdate(
+            absolute_x=(
+                float(target_x)
+                + normalized_x * max(0, target_width - 1)
+            ),
+            absolute_y=(
+                float(target_y)
+                + normalized_y * max(0, target_height - 1)
+            ),
+        )
+
     def _pointer_emulation_has_owner(self) -> bool:
         return bool(
             self.forwarding
@@ -182,6 +211,53 @@ class RuntimeCursorMixin:
                 return
         if was_active:
             LOGGER.info("Gamescope pointer relay disabled")
+
+    def _sync_gamescope_pointer_position(
+        self,
+        display_name: str | None,
+    ) -> bool:
+        """Rebase the inner pointer after returning from another app."""
+        interceptor = self.gamescope_pointer_interceptor
+        inner_eis = self.inner_eis
+        if (
+            interceptor is None
+            or inner_eis is None
+            or not display_name
+        ):
+            return False
+        # A Proton application may retain the XI2 grab briefly after losing
+        # focus. Reading XQueryPointer does not require that grab, so use a
+        # short-lived X11 connection when the regular relay could not start.
+        source = interceptor.pointer_snapshot(display_name)
+        target = inner_eis.absolute_bounds()
+        if source is None or target is None:
+            return False
+        update = self._map_pointer_position(source, target)
+        if update is None:
+            return False
+        was_absolute_emulating = bool(inner_eis.absolute_emulating)
+        started_absolute_emulation = False
+        if not was_absolute_emulating:
+            if not inner_eis.set_absolute_emulating(True):
+                return False
+            started_absolute_emulation = True
+        try:
+            inner_eis.inject_absolute(update)
+            self._apply_cursor_overlay(update)
+        finally:
+            if started_absolute_emulation:
+                inner_eis.set_absolute_emulating(False)
+        LOGGER.info(
+            "Nested Desktop pointer synchronized from %dx%d (%d, %d) "
+            "to %.1f, %.1f",
+            source[2],
+            source[3],
+            source[0],
+            source[1],
+            update.absolute_x,
+            update.absolute_y,
+        )
+        return True
 
     def _inject_gamescope_release_updates(self, updates):
         inner_eis = self.inner_eis

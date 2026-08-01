@@ -197,6 +197,24 @@ class GamescopePointerCapture:
         self.x11.XOpenDisplay.restype = pointer
         self.x11.XDefaultRootWindow.argtypes = [pointer]
         self.x11.XDefaultRootWindow.restype = ctypes.c_ulong
+        self.x11.XDefaultScreen.argtypes = [pointer]
+        self.x11.XDefaultScreen.restype = ctypes.c_int
+        self.x11.XDisplayWidth.argtypes = [pointer, ctypes.c_int]
+        self.x11.XDisplayWidth.restype = ctypes.c_int
+        self.x11.XDisplayHeight.argtypes = [pointer, ctypes.c_int]
+        self.x11.XDisplayHeight.restype = ctypes.c_int
+        self.x11.XQueryPointer.argtypes = [
+            pointer,
+            ctypes.c_ulong,
+            ctypes.POINTER(ctypes.c_ulong),
+            ctypes.POINTER(ctypes.c_ulong),
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_uint),
+        ]
+        self.x11.XQueryPointer.restype = ctypes.c_int
         self.x11.XConnectionNumber.argtypes = [pointer]
         self.x11.XConnectionNumber.restype = ctypes.c_int
         self.x11.XPending.argtypes = [pointer]
@@ -317,6 +335,36 @@ class GamescopePointerCapture:
         if not self.display:
             return -1
         return int(self.x11.XConnectionNumber(self.display))
+
+    def pointer_snapshot(self) -> tuple[int, int, int, int] | None:
+        """Return the root pointer position and display dimensions."""
+        if not self.display:
+            return None
+        root = ctypes.c_ulong()
+        child = ctypes.c_ulong()
+        root_x = ctypes.c_int()
+        root_y = ctypes.c_int()
+        window_x = ctypes.c_int()
+        window_y = ctypes.c_int()
+        buttons = ctypes.c_uint()
+        if not self.x11.XQueryPointer(
+            self.display,
+            self.root,
+            ctypes.byref(root),
+            ctypes.byref(child),
+            ctypes.byref(root_x),
+            ctypes.byref(root_y),
+            ctypes.byref(window_x),
+            ctypes.byref(window_y),
+            ctypes.byref(buttons),
+        ):
+            return None
+        screen = self.x11.XDefaultScreen(self.display)
+        width = int(self.x11.XDisplayWidth(self.display, screen))
+        height = int(self.x11.XDisplayHeight(self.display, screen))
+        if width <= 0 or height <= 0:
+            return None
+        return root_x.value, root_y.value, width, height
 
     @staticmethod
     def _valuator_values(event: _XIRawEvent) -> dict[int, float]:

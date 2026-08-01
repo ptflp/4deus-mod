@@ -2,7 +2,7 @@ import {
   DropdownItem,
   PanelSectionRow,
 } from "@decky/ui";
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 
 import type { Strings } from "../../core/translations";
 import type {
@@ -10,7 +10,7 @@ import type {
   DeckQuickActions,
 } from "../../core/settings";
 import {
-  DECK_QUICK_KEY_GROUPS,
+  getDeckQuickKeyGroups,
   parseDeckQuickChord,
 } from "./deckButtonBindings";
 
@@ -22,25 +22,6 @@ interface QuickActionEditorProps {
   setNumber: 1 | 2;
   strings: Strings;
 }
-
-const SLOT_OPTIONS = [
-  { data: "", label: "—" },
-  {
-    label: "Ctrl / Alt / Shift",
-    options: [
-      { data: "Ctrl", label: "Ctrl" },
-      { data: "Alt", label: "Alt" },
-      { data: "Shift", label: "Shift" },
-    ],
-  },
-  ...DECK_QUICK_KEY_GROUPS.map((group) => ({
-    label: group.label,
-    options: group.options.map((option) => ({
-      data: option.token ?? option.label,
-      label: option.label,
-    })),
-  })),
-];
 
 const MAX_CHORD_KEYS = 4;
 
@@ -64,6 +45,24 @@ export const QuickActionEditor = ({
   setNumber,
   strings,
 }: QuickActionEditorProps) => {
+  const slotOptions = useMemo(() => [
+    { data: "", label: "—" },
+    {
+      label: "Ctrl / Alt / Shift",
+      options: [
+        { data: "Ctrl", label: "Ctrl" },
+        { data: "Alt", label: "Alt" },
+        { data: "Shift", label: "Shift" },
+      ],
+    },
+    ...getDeckQuickKeyGroups(strings).map((group) => ({
+      label: group.label,
+      options: group.options.map((option) => ({
+        data: option.token ?? option.label,
+        label: option.label,
+      })),
+    })),
+  ], [strings]);
   const value = actions[button];
   const tokens = chordTokens(value);
   const chord = parseDeckQuickChord(value);
@@ -93,7 +92,7 @@ export const QuickActionEditor = ({
                 label={index === 0 ? title : `${title} — ${index + 1}`}
                 description={index === 0 ? description : undefined}
                 menuLabel={strings.keyBinding}
-                rgOptions={SLOT_OPTIONS}
+                rgOptions={slotOptions}
                 selectedOption={tokens[index] ?? ""}
                 onChange={({ data }) => updateSlot(index, data)}
               />

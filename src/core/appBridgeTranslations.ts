@@ -1,3 +1,5 @@
+import type { SteamLanguage } from "./locales";
+
 export interface AppBridgeTranslation {
   addOrFixApplication: string;
   addOrFixParsec: string;
@@ -13,7 +15,7 @@ export interface AppBridgeTranslation {
   appBridgeLoadApplications: string;
   appBridgeName: string;
   appBridgeParsecDescription: string;
-  appBridgeQuickSetup: string;
+  appBridgePopular: string;
   appBridgeReady: string;
   appBridgeRustDeskDescription: string;
   appBridgeSelectApplication: string;
@@ -24,7 +26,7 @@ export interface AppBridgeTranslation {
 type Values = [
   appBridge: string,
   appBridgeEnabledDescription: string,
-  appBridgeQuickSetup: string,
+  appBridgePopular: string,
   appBridgeParsecDescription: string,
   addOrFixParsec: string,
   appBridgeRustDeskDescription: string,
@@ -47,7 +49,7 @@ type Values = [
 const define = ([
   appBridge,
   appBridgeEnabledDescription,
-  appBridgeQuickSetup,
+  appBridgePopular,
   appBridgeParsecDescription,
   addOrFixParsec,
   appBridgeRustDeskDescription,
@@ -80,7 +82,7 @@ const define = ([
   appBridgeLoadApplications,
   appBridgeName,
   appBridgeParsecDescription,
-  appBridgeQuickSetup,
+  appBridgePopular,
   appBridgeReady,
   appBridgeRustDeskDescription,
   appBridgeSelectApplication,
@@ -88,7 +90,7 @@ const define = ([
   appBridgeWorkingDirectory,
 });
 
-export const appBridgeTranslations: Record<string, AppBridgeTranslation> = {
+const localizedAppBridgeTranslations: Record<string, AppBridgeTranslation> = {
   arabic: define([
     "جسر التطبيقات", "أضف تطبيقات خارجية إلى وضع الألعاب عبر ملفات توافق قابلة للتهيئة", "إعداد سريع",
     "أضف Parsec أو أصلح اختصاره في Steam باستخدام ملف تتبع العمليات المختبر", "إضافة / إصلاح Parsec",
@@ -322,3 +324,100 @@ export const appBridgeTranslations: Record<string, AppBridgeTranslation> = {
     "Buộc môi trường Gamescope/X11", "Đường dẫn thư viện tương thích", "Thêm / Sửa ứng dụng", "Hồ sơ và lối tắt Steam đã sẵn sàng",
   ]),
 };
+
+const englishAppBridgeTranslation = define([
+  "App Bridge",
+  "Add third-party applications to Gaming Mode with configurable compatibility profiles",
+  "Quick setup",
+  "Add Parsec or repair its Steam shortcut with the tested process-tracking profile",
+  "Add or repair Parsec",
+  "Add RustDesk or repair its Steam shortcut with the Gamescope/X11 compatibility profile",
+  "Add or repair RustDesk",
+  "Applications",
+  "Installed application",
+  "Reload installed applications",
+  "Shortcut name",
+  "Executable",
+  "Arguments",
+  "Working directory",
+  "Keep the Steam session attached to the process",
+  "Clear Steam preload variables",
+  "Force the Gamescope/X11 environment",
+  "Compatibility library path",
+  "Add or repair application",
+  "Profile and Steam shortcut are ready",
+]);
+
+const russianAppBridgeTranslation = define([
+  "App Bridge",
+  "Добавлять сторонние приложения в игровой режим через настраиваемые профили совместимости",
+  "Быстрая настройка",
+  "Добавить Parsec или исправить его ярлык Steam проверенным профилем с отслеживанием процесса",
+  "Добавить или исправить Parsec",
+  "Добавить RustDesk или исправить его ярлык Steam профилем совместимости Gamescope/X11",
+  "Добавить или исправить RustDesk",
+  "Приложения",
+  "Установленное приложение",
+  "Обновить список приложений",
+  "Название ярлыка",
+  "Исполняемый файл",
+  "Аргументы",
+  "Рабочая папка",
+  "Удерживать сессию Steam для процесса",
+  "Очистить переменные preload Steam",
+  "Принудительное окружение Gamescope/X11",
+  "Путь библиотек совместимости",
+  "Добавить или исправить приложение",
+  "Профиль и ярлык Steam готовы",
+]);
+
+const baseAppBridgeTranslations: Record<string, AppBridgeTranslation> = {
+  english: englishAppBridgeTranslation,
+  ...localizedAppBridgeTranslations,
+  russian: russianAppBridgeTranslation,
+};
+
+const popularTranslations: Record<SteamLanguage, string> = {
+  english: "Popular",
+  arabic: "الشائعة",
+  brazilian: "Populares",
+  bulgarian: "Популярни",
+  czech: "Oblíbené",
+  danish: "Populære",
+  dutch: "Populair",
+  finnish: "Suositut",
+  french: "Populaires",
+  german: "Beliebt",
+  greek: "Δημοφιλή",
+  hungarian: "Népszerű",
+  indonesian: "Populer",
+  italian: "Popolari",
+  japanese: "人気",
+  koreana: "인기",
+  latam: "Populares",
+  malay: "Popular",
+  norwegian: "Populære",
+  polish: "Popularne",
+  portuguese: "Populares",
+  romanian: "Populare",
+  russian: "Популярные",
+  schinese: "热门",
+  spanish: "Populares",
+  swedish: "Populära",
+  tchinese: "熱門",
+  thai: "ยอดนิยม",
+  turkish: "Popüler",
+  ukrainian: "Популярні",
+  vietnamese: "Phổ biến",
+};
+
+export const appBridgeTranslations: Record<string, AppBridgeTranslation> =
+  Object.fromEntries(
+    Object.entries(baseAppBridgeTranslations).map(([language, strings]) => [
+      language,
+      {
+        ...strings,
+        appBridgePopular: popularTranslations[language as SteamLanguage],
+      },
+    ]),
+  );

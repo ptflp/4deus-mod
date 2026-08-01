@@ -173,7 +173,7 @@ export const KeyboardPanel = ({ settings }: KeyboardPanelProps) => {
               { data: "alt-shift", label: "Alt + Shift" },
               { data: "ctrl-shift", label: "Ctrl + Shift" },
               { data: "meta-space", label: "Cmd + Space" },
-              { data: "native", label: "Steam (Default)" },
+              { data: "native", label: "★ Steam" },
             ]}
             selectedOption={keyboard.languageSwitchShortcut}
             onChange={({ data }) => settings.updateKeyboard({

@@ -182,9 +182,16 @@ const showMetricsToggleConfirmation = (
 };
 
 const formatDuration = (seconds: number): string => {
-  if (seconds < 60)
-    return `${seconds.toFixed(1)} s`;
-  return `${(seconds / 60).toFixed(1)} min`;
+  const [value, unit] = seconds < 60
+    ? [seconds, "second"] as const
+    : [seconds / 60, "minute"] as const;
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+    style: "unit",
+    unit,
+    unitDisplay: "short",
+  }).format(value);
 };
 
 const captureLabel = (

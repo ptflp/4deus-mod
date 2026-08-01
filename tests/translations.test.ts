@@ -2,9 +2,29 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import {
+  appBridgeFeatureTranslations,
+} from "../src/core/appBridgeFeatureTranslations.ts";
 import { appBridgeTranslations } from "../src/core/appBridgeTranslations.ts";
-import { nestedDesktopTranslations } from "../src/core/nestedDesktopTranslations.ts";
-import { systemToolsTranslations } from "../src/core/systemToolsTranslations.ts";
+import { commonTranslations } from "../src/core/commonTranslations.ts";
+import { developerTranslations } from "../src/core/developerTranslations.ts";
+import { keyboardTranslations } from "../src/core/keyboardTranslations.ts";
+import {
+  STEAM_LANGUAGE_ALIASES,
+  STEAM_LANGUAGES,
+} from "../src/core/locales.ts";
+import {
+  nestedDesktopControlTranslations,
+} from "../src/core/nestedDesktopControlTranslations.ts";
+import {
+  nestedDesktopTranslations,
+} from "../src/core/nestedDesktopTranslations.ts";
+import {
+  systemInputTranslations,
+} from "../src/core/systemInputTranslations.ts";
+import {
+  systemToolsTranslations,
+} from "../src/core/systemToolsTranslations.ts";
 
 const GETTING_STARTED_ANCHORS: Record<string, string> = {
   english: "en",
@@ -40,118 +60,85 @@ const GETTING_STARTED_ANCHORS: Record<string, string> = {
   vietnamese: "vi",
 };
 
-const APP_BRIDGE_KEYS = [
-  "addOrFixApplication",
-  "addOrFixParsec",
-  "addOrFixRustDesk",
-  "appBridge",
-  "appBridgeApplications",
-  "appBridgeArguments",
-  "appBridgeClearSteamRuntime",
-  "appBridgeEnabledDescription",
-  "appBridgeExecutable",
-  "appBridgeForceX11",
-  "appBridgeLibraryPath",
-  "appBridgeLoadApplications",
-  "appBridgeName",
-  "appBridgeParsecDescription",
-  "appBridgeQuickSetup",
-  "appBridgeReady",
-  "appBridgeRustDeskDescription",
-  "appBridgeSelectApplication",
-  "appBridgeTrackProcess",
-  "appBridgeWorkingDirectory",
+const TRANSLATION_MODULES = [
+  ["common UI", commonTranslations],
+  ["keyboard", keyboardTranslations],
+  ["developer tools", developerTranslations],
+  ["App Bridge", appBridgeTranslations],
+  ["App Bridge features", appBridgeFeatureTranslations],
+  ["System Tools", systemToolsTranslations],
+  ["system input", systemInputTranslations],
+  ["Nested Desktop", nestedDesktopTranslations],
+  ["Nested Desktop controls", nestedDesktopControlTranslations],
 ] as const;
 
-test("App Bridge has complete translations for every Steam locale", () => {
-  const expectedLanguages = [
-    "arabic", "brazilian", "bulgarian", "czech", "danish", "dutch",
-    "finnish", "french", "german", "greek", "hungarian", "indonesian",
-    "italian", "japanese", "koreana", "latam", "malay", "norwegian",
-    "polish", "portuguese", "romanian", "schinese", "spanish", "swedish",
-    "tchinese", "thai", "turkish", "ukrainian", "vietnamese",
-  ];
-  assert.deepEqual(
-    Object.keys(appBridgeTranslations).sort(),
-    expectedLanguages.sort(),
-  );
+const sortedSteamLanguages = (): string[] => [...STEAM_LANGUAGES].sort();
 
-  for (const [language, strings] of Object.entries(appBridgeTranslations)) {
-    for (const key of APP_BRIDGE_KEYS)
-      assert.ok(strings[key].trim(), `${language}.${key}`);
+const stringEntries = (value: object): Array<[string, string]> =>
+  Object.entries(value) as Array<[string, string]>;
+
+test("every UI module has the same complete set of Steam locales", () => {
+  for (const [moduleName, record] of TRANSLATION_MODULES) {
+    assert.deepEqual(
+      Object.keys(record).sort(),
+      sortedSteamLanguages(),
+      moduleName,
+    );
   }
 });
 
-const SYSTEM_TOOLS_KEYS = [
-  "systemTools",
-  "systemToolsDescription",
-  "systemToolsStatus",
-  "systemToolsLoading",
-  "mangoHudFix",
-  "mangoHudFixDescription",
-  "mangoHudFixInstalled",
-  "mangoHudFixNeedsRepair",
-  "mangoHudFixNotInstalled",
-  "mangoHudFixUnavailable",
-  "installOrRepairMangoHudFix",
-  "removeMangoHudFix",
-  "mangoHudFixApplied",
-  "mangoHudFixRemoved",
-  "steamOsApplication",
-  "steamOsApplicationDescription",
-  "addOrRepairSteamOsApplication",
-  "steamOsApplicationReady",
-  "nestedDesktopMouseBridge",
-  "nestedDesktopMouseBridgeDescription",
-  "nestedDesktopClipboard",
-  "nestedDesktopClipboardDescription",
-  "nestedDesktopClipboardFiles",
-  "nestedDesktopClipboardFilesDescription",
-  "nestedDesktopTrackpadInertia",
-  "nestedDesktopTrackpadInertiaDescription",
-  "nestedDesktopTouchscreen",
-  "nestedDesktopTouchscreenDescription",
-  "nestedDesktopTouchInertia",
-  "nestedDesktopTouchInertiaDescription",
-  "advancedSettings",
-  "advancedSettingsDescription",
-  "nestedDesktopTouchInertiaTuning",
-  "nestedDesktopTouchInertiaDuration",
-  "nestedDesktopTouchInertiaDurationDescription",
-  "nestedDesktopTouchInertiaStartSpeed",
-  "nestedDesktopTouchInertiaStartSpeedDescription",
-  "nestedDesktopTouchInertiaMinDistance",
-  "nestedDesktopTouchInertiaMinDistanceDescription",
-  "applyAdvancedSettings",
-  "resetAdvancedSettings",
-  "rustDeskPointerFix",
-  "rustDeskPointerFixDescription",
-  "rustDeskFocusOnInput",
-  "rustDeskFocusOnInputDescription",
-  "rustDeskScrollInertia",
-  "rustDeskScrollInertiaDescription",
-  "controller",
-  "trackpadAutoRecovery",
-  "trackpadAutoRecoveryDescription",
-] as const;
-
-test("System Tools has complete translations for every Steam locale", () => {
-  const expectedLanguages = [
-    "arabic", "brazilian", "bulgarian", "czech", "danish", "dutch",
-    "finnish", "french", "german", "greek", "hungarian", "indonesian",
-    "italian", "japanese", "koreana", "latam", "malay", "norwegian",
-    "polish", "portuguese", "romanian", "russian", "schinese", "spanish",
-    "swedish", "tchinese", "thai", "turkish", "ukrainian", "vietnamese",
-  ];
-  assert.deepEqual(
-    Object.keys(systemToolsTranslations).sort(),
-    expectedLanguages.sort(),
-  );
-
-  for (const [language, strings] of Object.entries(systemToolsTranslations)) {
-    for (const key of SYSTEM_TOOLS_KEYS)
-      assert.ok(strings[key].trim(), `${language}.${key}`);
+test("every locale has every key and no blank UI text", () => {
+  for (const [moduleName, record] of TRANSLATION_MODULES) {
+    const englishKeys = Object.keys(record.english).sort();
+    for (const language of STEAM_LANGUAGES) {
+      const strings = record[language];
+      assert.deepEqual(
+        Object.keys(strings).sort(),
+        englishKeys,
+        `${moduleName}.${language} keys`,
+      );
+      for (const [key, value] of stringEntries(strings)) {
+        assert.equal(typeof value, "string", `${language}.${key} type`);
+        assert.ok(value.trim(), `${language}.${key}`);
+      }
+    }
   }
+});
+
+test("translation modules own disjoint UI keys", () => {
+  const owners = new Map<string, string>();
+  for (const [moduleName, record] of TRANSLATION_MODULES) {
+    for (const key of Object.keys(record.english)) {
+      assert.equal(
+        owners.get(key),
+        undefined,
+        `${key} is duplicated by ${owners.get(key)} and ${moduleName}`,
+      );
+      owners.set(key, moduleName);
+    }
+  }
+});
+
+test("all composed locales expose one stable UI contract", () => {
+  const compose = (language: typeof STEAM_LANGUAGES[number]) =>
+    Object.assign(
+      {},
+      ...TRANSLATION_MODULES.map(([, record]) => record[language]),
+    ) as Record<string, string>;
+  const englishKeys = Object.keys(compose("english")).sort();
+
+  for (const language of STEAM_LANGUAGES) {
+    const strings = compose(language);
+    assert.deepEqual(Object.keys(strings).sort(), englishKeys, language);
+    assert.ok(
+      Object.values(strings).every((value) => value.trim().length > 0),
+      `${language} contains blank UI text`,
+    );
+  }
+
+  assert.deepEqual(STEAM_LANGUAGE_ALIASES, {
+    sc_schinese: "schinese",
+  });
 });
 
 test("RustDesk auto-focus warnings identify the Steam PIN bypass", () => {
@@ -170,37 +157,6 @@ test("RustDesk auto-focus warnings identify the Steam PIN bypass", () => {
   }
 });
 
-const NESTED_DESKTOP_KEYS = [
-  "nestedDesktopHotkeys",
-  "nestedDesktopHotkeysDescription",
-  "nestedDesktopHotkeysEnabled",
-  "nestedDesktopHotkeysEnabledDescription",
-  "resetNestedDesktopHotkeys",
-  "nestedDesktopHotkeysReset",
-] as const;
-
-test("Nested Desktop bindings have complete Steam locale translations", () => {
-  const expectedLanguages = [
-    "english", "arabic", "brazilian", "bulgarian", "czech", "danish",
-    "dutch", "finnish", "french", "german", "greek", "hungarian",
-    "indonesian", "italian", "japanese", "koreana", "latam", "malay",
-    "norwegian", "polish", "portuguese", "romanian", "russian", "schinese",
-    "spanish", "swedish", "tchinese", "thai", "turkish", "ukrainian",
-    "vietnamese",
-  ];
-  assert.deepEqual(
-    Object.keys(nestedDesktopTranslations).sort(),
-    expectedLanguages.sort(),
-  );
-
-  for (const [language, strings] of Object.entries(
-    nestedDesktopTranslations,
-  )) {
-    for (const key of NESTED_DESKTOP_KEYS)
-      assert.ok(strings[key].trim(), `${language}.${key}`);
-  }
-});
-
 test("Getting Started covers every Steam locale", () => {
   const guide = readFileSync(
     new URL("../docs/GETTING_STARTED.md", import.meta.url),
@@ -208,7 +164,7 @@ test("Getting Started covers every Steam locale", () => {
   );
   assert.deepEqual(
     Object.keys(GETTING_STARTED_ANCHORS).sort(),
-    ["english", ...Object.keys(systemToolsTranslations)].sort(),
+    sortedSteamLanguages(),
   );
 
   for (const anchor of Object.values(GETTING_STARTED_ANCHORS)) {
