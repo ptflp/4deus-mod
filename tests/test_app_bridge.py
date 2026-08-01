@@ -136,7 +136,7 @@ class AppBridgeTests(unittest.TestCase):
         )
         self.assertTrue(profile["sanitizeSteamOverlay"])
 
-    def test_chrome_profile_starts_flatpak_maximized(self):
+    def test_chrome_profile_fills_the_gamescope_canvas(self):
         with patch.object(
             self.manager,
             "_flatpak_installed",
@@ -161,6 +161,8 @@ class AppBridgeTests(unittest.TestCase):
                 "--arch=x86_64",
                 "--command=chrome",
                 "com.google.Chrome",
+                "--window-position=0,0",
+                "--window-size=1280,800",
                 "--start-maximized",
             ],
         )

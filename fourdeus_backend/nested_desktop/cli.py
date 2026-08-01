@@ -19,6 +19,8 @@ from .constants import (
     TOUCH_INERTIA_DEFAULT_START_SPEED,
 )
 from .clipboard_bridge import NestedDesktopClipboardBridge
+from .clipboard_klipper import KlipperClipboardMonitor
+from .clipboard_portal import DocumentPortalExporter, FileTransferPortal
 from .gamescope import (
     GamescopeCursorCompositor, GamescopePointerInterceptor,
 )
@@ -111,6 +113,9 @@ def run_worker(
         clipboard_bridge=(
             NestedDesktopClipboardBridge(
                 files_enabled=clipboard_files_enabled,
+                klipper_factory=KlipperClipboardMonitor,
+                portal_factory=FileTransferPortal,
+                document_portal_factory=DocumentPortalExporter,
             )
             if clipboard_enabled
             else None

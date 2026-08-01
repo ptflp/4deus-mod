@@ -152,7 +152,8 @@ class AppBridgeManager:
                 "executable": "/usr/bin/flatpak",
                 "arguments": (
                     "run --branch=stable --arch=x86_64 --command=chrome "
-                    f"{CHROME_APP_ID} --start-maximized"
+                    f"{CHROME_APP_ID} --window-position=0,0 "
+                    "--window-size=1280,800 --start-maximized"
                 ),
                 "workingDirectory": str(self.home),
                 "icon": (

@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import logging
 from typing import Iterable
 from urllib.parse import urlsplit, urlunsplit
 
 
 MAX_FILE_URI_COUNT = 4096
+PORTAL_FILE_TRANSFER_MIME = "application/vnd.portal.filetransfer"
+PORTAL_FILES_MIME = "application/vnd.portal.files"
+PLATFORM_FILE_MIME_TYPES = (
+    PORTAL_FILE_TRANSFER_MIME,
+    PORTAL_FILES_MIME,
+)
+LOGGER = logging.getLogger("4deus-nested-mouse")
 
 
 def _normalize_file_uri(value: str) -> str | None:
@@ -80,6 +88,7 @@ class ClipboardContent:
     image_mime: str | None = None
     image: bytes | None = None
     file_uris: tuple[str, ...] = ()
+    platform_file_formats: tuple[tuple[str, bytes], ...] = ()
 
     @property
     def byte_count(self) -> int:
@@ -87,7 +96,7 @@ class ClipboardContent:
             len(self.text.encode("utf-8")) if self.text is not None else 0
         ) + (len(self.image) if self.image is not None else 0) + len(
             encode_file_uri_list(self.file_uris)
-        )
+        ) + sum(len(payload) for _mime, payload in self.platform_file_formats)
 
     @property
     def formats(self) -> tuple[str, ...]:
@@ -98,6 +107,7 @@ class ClipboardContent:
             formats.append(self.image_mime)
         if self.file_uris:
             formats.append("text/uri-list")
+        formats.extend(mime for mime, _payload in self.platform_file_formats)
         return tuple(formats)
 
     @property
@@ -105,7 +115,7 @@ class ClipboardContent:
         return bool(self.formats)
 
     def without_files(self) -> ClipboardContent:
-        if not self.file_uris:
+        if not self.file_uris and not self.platform_file_formats:
             return self
         return ClipboardContent(
             text=self.text,
@@ -114,12 +124,67 @@ class ClipboardContent:
         )
 
 
+def normalize_content(
+    content: ClipboardContent,
+    *,
+    image_mimes: Iterable[str],
+    max_bytes: int,
+    max_text_bytes: int,
+    max_file_list_bytes: int,
+    platform_file_mimes: Iterable[str] = (),
+) -> ClipboardContent:
+    text = content.text if isinstance(content.text, str) else None
+    if text is not None and len(text.encode("utf-8")) > max_text_bytes:
+        LOGGER.warning(
+            "Clipboard text exceeds the %s-byte sharing limit",
+            max_text_bytes,
+        )
+        text = None
+    image = content.image if isinstance(content.image, bytes) else None
+    image_mime = (
+        content.image_mime
+        if content.image_mime in image_mimes
+        else None
+    )
+    if image is not None and len(image) > max_bytes:
+        LOGGER.warning("Clipboard image exceeds the %s-byte sharing limit", max_bytes)
+        image = None
+    if not image or image_mime is None:
+        image = None
+        image_mime = None
+    file_uris = normalize_file_uris(content.file_uris)
+    if file_uris and len(encode_file_uri_list(file_uris)) > max_file_list_bytes:
+        LOGGER.warning(
+            "Clipboard file list exceeds the %s-byte sharing limit",
+            max_file_list_bytes,
+        )
+        file_uris = ()
+    allowed_platform_mimes = set(platform_file_mimes)
+    platform_payloads = {
+        mime: payload
+        for mime, payload in content.platform_file_formats
+        if (
+            mime in allowed_platform_mimes
+            and isinstance(payload, bytes)
+            and 0 < len(payload) <= max_file_list_bytes
+        )
+    }
+    return ClipboardContent(
+        text=text,
+        image_mime=image_mime,
+        image=image,
+        file_uris=file_uris,
+        platform_file_formats=tuple(sorted(platform_payloads.items())),
+    )
+
+
 @dataclass
 class PendingClipboardContent:
     text: str | None = None
     image_mime: str | None = None
     image: bytes | None = None
     file_uris: tuple[str, ...] = ()
+    platform_file_formats: dict[str, bytes] = field(default_factory=dict)
 
     def freeze(self) -> ClipboardContent:
         return ClipboardContent(
@@ -127,4 +192,7 @@ class PendingClipboardContent:
             image_mime=self.image_mime,
             image=self.image,
             file_uris=self.file_uris,
+            platform_file_formats=tuple(sorted(
+                self.platform_file_formats.items()
+            )),
         )

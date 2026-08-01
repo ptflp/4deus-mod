@@ -102,6 +102,8 @@ def load_libraries() -> tuple[ctypes.CDLL, ctypes.CDLL]:
 def configure_libraries(x11: ctypes.CDLL, xfixes: ctypes.CDLL):
     x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
     x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XConnectionNumber.argtypes = [ctypes.c_void_p]
+    x11.XConnectionNumber.restype = ctypes.c_int
     x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
     x11.XDefaultRootWindow.restype = ctypes.c_ulong
     x11.XCreateSimpleWindow.argtypes = [

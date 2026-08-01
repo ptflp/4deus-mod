@@ -194,6 +194,10 @@ class NestedDesktopMouseRuntime(
         self.suspended = suspended
         self.remote_keyboard_dismiss_requested = False
         self.nested_desktop_focused = False
+        # Steam overlays temporarily own controller focus while the underlying
+        # Nested Desktop surface remains the focused Gamescope graphics app.
+        # Clipboard focus transitions must follow that stable graphics focus.
+        self.nested_desktop_gfx_focused = False
         self.next_rustdesk_focus_request = 0.0
         self.control_fd = control_fd
         self.control_buffer = b""
@@ -338,6 +342,7 @@ class NestedDesktopMouseRuntime(
                 and focused_gfx_app[0] == session.app_id
             ):
                 self.nested_desktop_focused = True
+                self.nested_desktop_gfx_focused = True
                 return
             current = outer_x11.cardinals(
                 "GAMESCOPECTRL_BASELAYER_APPID"
@@ -457,6 +462,12 @@ class NestedDesktopMouseRuntime(
             else None
         )
         gamescope_pointer_fd = self._gamescope_pointer_fileno()
+        clipboard_bridge = self.clipboard_bridge
+        clipboard_fds = (
+            clipboard_bridge.filenos()
+            if clipboard_bridge is not None
+            else ()
+        )
         descriptors = [
             descriptor
             for descriptor in (
@@ -466,6 +477,7 @@ class NestedDesktopMouseRuntime(
                 touchscreen_fd,
                 relay,
                 gamescope_pointer_fd,
+                *clipboard_fds,
             )
             if descriptor is not None
         ]
@@ -536,6 +548,11 @@ class NestedDesktopMouseRuntime(
             and gamescope_pointer_fd in readable
         ):
             self._read_gamescope_pointer_events()
+        if (
+            clipboard_bridge is not None
+            and any(descriptor in readable for descriptor in clipboard_fds)
+        ):
+            clipboard_bridge.dispatch()
         if include_remote:
             self._tick_rustdesk_scroll_inertia()
         self._tick_touchscreen_inertia()

@@ -12,11 +12,11 @@ from typing import Callable, Iterable
 from .clipboard_content import (
     ClipboardContent,
     PendingClipboardContent as _PendingClipboardContent,
-    encode_file_uri_list,
-    encode_gnome_copied_files,
-    normalize_file_uris,
+    PLATFORM_FILE_MIME_TYPES,
+    normalize_content,
     parse_file_uri_list,
 )
+from .clipboard_owner import X11ClipboardOwnerMixin
 from .clipboard_x11 import (
     PropertyValue as _PropertyValue,
     X11_CURRENT_TIME,
@@ -25,7 +25,6 @@ from .clipboard_x11 import (
     X11_PROPERTY_CHANGE_MASK,
     X11_PROPERTY_NEW_VALUE,
     X11_PROPERTY_NOTIFY,
-    X11_PROP_MODE_REPLACE,
     X11_SELECTION_NOTIFY,
     X11_SELECTION_REQUEST,
     X11_SUCCESS,
@@ -38,13 +37,10 @@ from .clipboard_x11 import (
     load_libraries,
     open_display,
     property_chunk_size,
-    write_property_bytes,
 )
-
-
 LOGGER = logging.getLogger("4deus-nested-mouse")
-
 CLIPBOARD_REQUEST_TIMEOUT = 5.0
+CLIPBOARD_OWNER_HANDOFF_TIMEOUT = 0.1
 CLIPBOARD_TEXT_MAX_BYTES = 4 * 1024 * 1024
 CLIPBOARD_MAX_BYTES = 64 * 1024 * 1024
 CLIPBOARD_TARGETS_MAX_BYTES = 64 * 1024
@@ -55,9 +51,8 @@ CLIPBOARD_IMAGE_MIME_TYPES = (
     "image/webp",
     "image/bmp",
 )
-
-
-class X11ClipboardEndpoint:
+CLIPBOARD_PLATFORM_FILE_MIME_TYPES = PLATFORM_FILE_MIME_TYPES
+class X11ClipboardEndpoint(X11ClipboardOwnerMixin):
     """Own, serve, and observe one X11 clipboard selection."""
 
     def __init__(
@@ -86,28 +81,21 @@ class X11ClipboardEndpoint:
         self.pending_content = _PendingClipboardContent()
         self.incremental_buffer: bytearray | None = None
         self.incremental_discard = False
-
         self.x11, self.xfixes = load_libraries()
         self.display = open_display(self.x11, display_name, xauthority)
         if not self.display:
             raise RuntimeError(f"Cannot open X display {display_name}")
+        self.connection_fd = int(
+            self.x11.XConnectionNumber(self.display)
+        )
         try:
             self.root = self.x11.XDefaultRootWindow(self.display)
-            self.window = self.x11.XCreateSimpleWindow(
-                self.display,
-                self.root,
-                -10,
-                -10,
-                1,
-                1,
-                0,
-                0,
-                0,
-            )
+            self.window = self._create_window()
             if not self.window:
                 raise RuntimeError(
                     f"Cannot create clipboard window on {display_name}"
                 )
+            self.owner_window = self.window
             self.selection = self._atom(selection_name)
             self.targets = self._atom("TARGETS")
             self.atom_type = self._atom("ATOM")
@@ -123,17 +111,27 @@ class X11ClipboardEndpoint:
             self.gnome_copied_files = self._atom(
                 "x-special/gnome-copied-files"
             )
+            self.kde_uri_list = self._atom("application/x-kde4-urilist")
             self.kde_cut_selection = self._atom(
                 "application/x-kde-cutselection"
             )
             self.file_targets = {
                 self.uri_list,
                 self.gnome_copied_files,
+                self.kde_uri_list,
             }
             self.preferred_file_targets = (
                 self.uri_list,
+                self.kde_uri_list,
                 self.gnome_copied_files,
             )
+            self.platform_file_atoms = {
+                mime: self._atom(mime)
+                for mime in CLIPBOARD_PLATFORM_FILE_MIME_TYPES
+            }
+            self.platform_file_mimes_by_atom = {
+                atom: mime for mime, atom in self.platform_file_atoms.items()
+            }
             self.image_atoms = {
                 mime: self._atom(mime)
                 for mime in CLIPBOARD_IMAGE_MIME_TYPES
@@ -199,7 +197,34 @@ class X11ClipboardEndpoint:
                 f"Cannot create X11 atom {name} on {self.display_name}"
             )
         return int(atom)
+    def _create_window(self) -> int:
+        return int(self.x11.XCreateSimpleWindow(
+            self.display,
+            self.root,
+            -10,
+            -10,
+            1,
+            1,
+            0,
+            0,
+            0,
+        ))
 
+    def _rotate_request_window(self):
+        new_window = self._create_window()
+        if not new_window:
+            raise RuntimeError(f"Cannot rotate clipboard window on {self.display_name}")
+        self.x11.XSelectInput(
+            self.display,
+            new_window,
+            X11_PROPERTY_CHANGE_MASK,
+        )
+        previous_window = self.window
+        self.window = new_window
+        if self.owner_window == previous_window:
+            self.owner_window = new_window
+        if previous_window:
+            self.x11.XDestroyWindow(self.display, previous_window)
     def _request_current(self):
         owner = self.x11.XGetSelectionOwner(
             self.display,
@@ -218,11 +243,15 @@ class X11ClipboardEndpoint:
             self.content = ClipboardContent()
             self.text = None
             return
-        if owner == self.window:
+        if owner == self.owner_window:
             return
         if self.request_pending:
             self.request_again = True
             self.discard_pending = True
+            self.request_deadline = min(
+                self.request_deadline,
+                self.clock() + CLIPBOARD_OWNER_HANDOFF_TIMEOUT,
+            )
             return
         self.request_pending = True
         self.pending_targets.clear()
@@ -252,7 +281,10 @@ class X11ClipboardEndpoint:
     def _target_limit(self, target: int | None) -> int:
         if target == self.targets:
             return CLIPBOARD_TARGETS_MAX_BYTES
-        if target in self.file_targets:
+        if (
+            target in self.file_targets
+            or target in self.platform_file_mimes_by_atom
+        ):
             return CLIPBOARD_FILE_LIST_MAX_BYTES
         if target in self.image_mimes_by_atom:
             return self.max_bytes
@@ -337,6 +369,10 @@ class X11ClipboardEndpoint:
     def _supported_targets(self, offered: Iterable[int]) -> deque[int]:
         offered_targets = set(offered)
         selected: deque[int] = deque()
+        for mime in CLIPBOARD_PLATFORM_FILE_MIME_TYPES:
+            platform_target = self.platform_file_atoms[mime]
+            if platform_target in offered_targets:
+                selected.append(platform_target)
         for file_target in self.preferred_file_targets:
             if file_target in offered_targets:
                 selected.append(file_target)
@@ -372,6 +408,14 @@ class X11ClipboardEndpoint:
             self.pending_content.file_uris = parse_file_uri_list(
                 value.bytes_value
             )
+        elif (
+            target in self.platform_file_mimes_by_atom
+            and value is not None
+            and value.format == 8
+        ):
+            self.pending_content.platform_file_formats[
+                self.platform_file_mimes_by_atom[target]
+            ] = value.bytes_value
         elif (
             target in self.image_mimes_by_atom
             and value is not None
@@ -497,134 +541,6 @@ class X11ClipboardEndpoint:
             return []
         return self._consume_target(target, value)
 
-    def _write_property_bytes(
-        self,
-        requestor: int,
-        property_atom: int,
-        type_atom: int,
-        payload: bytes,
-    ):
-        write_property_bytes(
-            self.x11,
-            self.display,
-            self.property_chunk_bytes,
-            requestor,
-            property_atom,
-            type_atom,
-            payload,
-        )
-
-    def _respond_to_request(self, request: _XSelectionRequestEvent):
-        response = _XSelectionEvent()
-        response.type = X11_SELECTION_NOTIFY
-        response.display = self.display
-        response.requestor = request.requestor
-        response.selection = request.selection
-        response.target = request.target
-        response.property = X11_NONE
-        response.time = request.time
-        property_atom = request.property or request.target
-        content = self.content
-
-        if request.selection == self.selection and content.available:
-            if request.target == self.targets:
-                available_targets = {self.targets}
-                if content.text is not None:
-                    available_targets.update(self.supported_text_targets)
-                if (
-                    content.image is not None
-                    and content.image_mime in self.image_atoms
-                ):
-                    available_targets.add(
-                        self.image_atoms[content.image_mime]
-                    )
-                if content.file_uris:
-                    available_targets.update(self.file_targets)
-                    available_targets.add(self.kde_cut_selection)
-                targets = (ctypes.c_ulong * len(available_targets))(
-                    *sorted(available_targets)
-                )
-                self.x11.XChangeProperty(
-                    self.display,
-                    request.requestor,
-                    property_atom,
-                    self.atom_type,
-                    32,
-                    X11_PROP_MODE_REPLACE,
-                    ctypes.cast(targets, ctypes.c_void_p),
-                    len(targets),
-                )
-                response.property = property_atom
-            elif content.file_uris and request.target == self.uri_list:
-                self._write_property_bytes(
-                    request.requestor,
-                    property_atom,
-                    request.target,
-                    encode_file_uri_list(content.file_uris),
-                )
-                response.property = property_atom
-            elif (
-                content.file_uris
-                and request.target == self.gnome_copied_files
-            ):
-                self._write_property_bytes(
-                    request.requestor,
-                    property_atom,
-                    request.target,
-                    encode_gnome_copied_files(content.file_uris),
-                )
-                response.property = property_atom
-            elif (
-                content.file_uris
-                and request.target == self.kde_cut_selection
-            ):
-                self._write_property_bytes(
-                    request.requestor,
-                    property_atom,
-                    request.target,
-                    b"0",
-                )
-                response.property = property_atom
-            elif (
-                content.image is not None
-                and content.image_mime in self.image_atoms
-                and request.target == self.image_atoms[content.image_mime]
-            ):
-                self._write_property_bytes(
-                    request.requestor,
-                    property_atom,
-                    request.target,
-                    content.image,
-                )
-                response.property = property_atom
-            elif (
-                content.text is not None
-                and request.target in self.supported_text_targets
-            ):
-                if request.target == self.string:
-                    payload = content.text.encode(
-                        "latin-1",
-                        errors="replace",
-                    )
-                else:
-                    payload = content.text.encode("utf-8")
-                self._write_property_bytes(
-                    request.requestor,
-                    property_atom,
-                    request.target,
-                    payload,
-                )
-                response.property = property_atom
-
-        self.x11.XSendEvent(
-            self.display,
-            request.requestor,
-            0,
-            0,
-            ctypes.byref(response),
-        )
-        self.x11.XFlush(self.display)
-
     def dispatch(self) -> list[ClipboardContent]:
         updates: list[ClipboardContent] = []
         event = (ctypes.c_long * X11_EVENT_LONGS)()
@@ -668,7 +584,7 @@ class X11ClipboardEndpoint:
                 ).contents
                 if (
                     notification.selection == self.selection
-                    and notification.owner != self.window
+                    and notification.owner != self.owner_window
                 ):
                     self._request_current()
 
@@ -676,58 +592,27 @@ class X11ClipboardEndpoint:
             self.request_pending
             and self.clock() >= self.request_deadline
         ):
-            target = self.pending_target
-            self.incremental_buffer = None
-            self.incremental_discard = False
-            if target is not None:
-                updates.extend(self._consume_target(target, None))
+            if self.request_again:
+                updates.extend(self._complete_request())
+            else:
+                target = self.pending_target
+                self.incremental_buffer = None
+                self.incremental_discard = False
+                if target is not None:
+                    updates.extend(self._consume_target(target, None))
         return updates
 
     def _normalize_content(
         self,
         content: ClipboardContent,
     ) -> ClipboardContent:
-        text = content.text if isinstance(content.text, str) else None
-        if (
-            text is not None
-            and len(text.encode("utf-8")) > self.max_text_bytes
-        ):
-            LOGGER.warning(
-                "Clipboard text exceeds the %s-byte sharing limit",
-                self.max_text_bytes,
-            )
-            text = None
-        image = content.image if isinstance(content.image, bytes) else None
-        image_mime = (
-            content.image_mime
-            if content.image_mime in self.image_atoms
-            else None
-        )
-        if image is not None and len(image) > self.max_bytes:
-            LOGGER.warning(
-                "Clipboard image exceeds the %s-byte sharing limit",
-                self.max_bytes,
-            )
-            image = None
-        if not image or image_mime is None:
-            image = None
-            image_mime = None
-        file_uris = normalize_file_uris(content.file_uris)
-        if (
-            file_uris
-            and len(encode_file_uri_list(file_uris))
-            > CLIPBOARD_FILE_LIST_MAX_BYTES
-        ):
-            LOGGER.warning(
-                "Clipboard file list exceeds the %s-byte sharing limit",
-                CLIPBOARD_FILE_LIST_MAX_BYTES,
-            )
-            file_uris = ()
-        return ClipboardContent(
-            text=text,
-            image_mime=image_mime,
-            image=image,
-            file_uris=file_uris,
+        return normalize_content(
+            content,
+            image_mimes=self.image_atoms,
+            max_bytes=self.max_bytes,
+            max_text_bytes=self.max_text_bytes,
+            max_file_list_bytes=CLIPBOARD_FILE_LIST_MAX_BYTES,
+            platform_file_mimes=CLIPBOARD_PLATFORM_FILE_MIME_TYPES,
         )
 
     def set_content(self, content: ClipboardContent) -> bool:
@@ -739,27 +624,47 @@ class X11ClipboardEndpoint:
         self.content = normalized
         self.text = normalized.text
         self.initialized = True
+        new_owner = self._create_window()
+        if not new_owner:
+            return False
         self.x11.XSetSelectionOwner(
             self.display,
             self.selection,
-            self.window,
+            new_owner,
             X11_CURRENT_TIME,
         )
         self.x11.XFlush(self.display)
-        return self.x11.XGetSelectionOwner(
+        owns_selection = self.x11.XGetSelectionOwner(
             self.display,
             self.selection,
-        ) == self.window
+        ) == new_owner
+        if not owns_selection:
+            self.x11.XDestroyWindow(self.display, new_owner)
+            return False
+        previous_owner = self.owner_window
+        self.owner_window = new_owner
+        if previous_owner and previous_owner != self.window:
+            self.x11.XDestroyWindow(self.display, previous_owner)
+        return True
 
     def set_text(self, text: str) -> bool:
         return self.set_content(ClipboardContent(text=text))
+
+    def fileno(self) -> int:
+        """Return the X11 socket used for event-driven clipboard wakeups."""
+        return int(getattr(self, "connection_fd", -1))
 
     def close(self):
         display = getattr(self, "display", None)
         if not display:
             return
         self.display = None
+        self.connection_fd = -1
         window = getattr(self, "window", None)
+        owner_window = getattr(self, "owner_window", None)
+        self.owner_window = None
+        if owner_window and owner_window != window:
+            self.x11.XDestroyWindow(display, owner_window)
         if window:
             self.window = None
             self.x11.XDestroyWindow(display, window)

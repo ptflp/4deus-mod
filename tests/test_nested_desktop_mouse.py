@@ -1,5 +1,6 @@
 from pathlib import Path
 import base64
+from collections import deque
 import json
 import os
 import socket
@@ -51,6 +52,7 @@ from nested_desktop_mouse import (
     RustDeskMouseTranslator,
     RustDeskRelayTranslator,
     RustDeskScrollInertia,
+    STEAM_UI_APP_ID,
     cursor_alpha_mask,
     decode_gamescope_display,
     encode_rustdesk_ipc_frame,
@@ -133,6 +135,73 @@ class NestedDesktopSupervisorTests(unittest.TestCase):
 
 
 class NestedDesktopClipboardTests(unittest.TestCase):
+    def test_owner_handoff_caps_only_the_stale_request_deadline(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.display = 1
+        endpoint.selection = 2
+        endpoint.owner_window = 10
+        endpoint.request_pending = True
+        endpoint.request_again = False
+        endpoint.discard_pending = False
+        endpoint.request_deadline = 50.0
+        endpoint.clock = MagicMock(return_value=20.0)
+        endpoint.x11 = MagicMock()
+        endpoint.x11.XGetSelectionOwner.return_value = 99
+
+        endpoint._request_current()
+
+        self.assertTrue(endpoint.request_again)
+        self.assertTrue(endpoint.discard_pending)
+        self.assertAlmostEqual(endpoint.request_deadline, 20.1)
+
+    def test_new_content_rotates_the_x11_selection_owner(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.display = 1
+        endpoint.selection = 2
+        endpoint.window = 10
+        endpoint.owner_window = 11
+        endpoint.request_pending = False
+        endpoint.x11 = MagicMock()
+        endpoint._create_window = MagicMock(return_value=12)
+        copied = ClipboardContent(text="new clipboard sequence")
+        endpoint._normalize_content = MagicMock(return_value=copied)
+        endpoint.x11.XGetSelectionOwner.return_value = 12
+
+        self.assertTrue(endpoint.set_content(copied))
+
+        endpoint.x11.XSetSelectionOwner.assert_called_once_with(
+            1,
+            2,
+            12,
+            0,
+        )
+        endpoint.x11.XDestroyWindow.assert_called_once_with(1, 11)
+        self.assertEqual(endpoint.owner_window, 12)
+        self.assertEqual(endpoint.content, copied)
+
+    def test_rotated_owner_is_not_mistaken_for_an_external_copy(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.display = 1
+        endpoint.selection = 2
+        endpoint.window = 10
+        endpoint.owner_window = 12
+        endpoint.x11 = MagicMock()
+        endpoint.x11.XGetSelectionOwner.return_value = 12
+
+        endpoint._request_current()
+
+        endpoint.x11.XConvertSelection.assert_not_called()
+
+    def test_endpoint_exposes_its_x11_connection_descriptor(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.display = 3
+        endpoint.connection_fd = 17
+
+        self.assertEqual(endpoint.fileno(), 17)
+
+        endpoint.connection_fd = -1
+        self.assertEqual(endpoint.fileno(), -1)
+
     def test_prefers_png_and_utf8_when_an_owner_offers_both(self):
         endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
         endpoint.image_atoms = {
@@ -143,6 +212,10 @@ class NestedDesktopClipboardTests(unittest.TestCase):
         }
         endpoint.preferred_file_targets = (30, 31)
         endpoint.preferred_text_targets = (10, 11)
+        endpoint.platform_file_atoms = {
+            "application/vnd.portal.filetransfer": 40,
+            "application/vnd.portal.files": 41,
+        }
 
         selected = endpoint._supported_targets((11, 21, 10, 20))
 
@@ -158,6 +231,10 @@ class NestedDesktopClipboardTests(unittest.TestCase):
         }
         endpoint.preferred_file_targets = (30, 31)
         endpoint.preferred_text_targets = (10, 11)
+        endpoint.platform_file_atoms = {
+            "application/vnd.portal.filetransfer": 40,
+            "application/vnd.portal.files": 41,
+        }
 
         selected = endpoint._supported_targets((11, 30, 20, 10))
 
@@ -193,8 +270,11 @@ class NestedDesktopClipboardTests(unittest.TestCase):
         endpoint.targets = 3
         endpoint.uri_list = 4
         endpoint.gnome_copied_files = 5
+        endpoint.kde_uri_list = 10
         endpoint.kde_cut_selection = 6
         endpoint.file_targets = {4, 5}
+        endpoint.platform_file_atoms = {}
+        endpoint.platform_file_mimes_by_atom = {}
         endpoint.supported_text_targets = set()
         endpoint.image_atoms = {}
         endpoint.x11 = MagicMock()
@@ -236,6 +316,36 @@ class NestedDesktopClipboardTests(unittest.TestCase):
 
         self.assertEqual(normalized, ClipboardContent(text="kept"))
 
+    def test_normalization_keeps_only_bounded_platform_file_formats(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.max_text_bytes = 16
+        endpoint.max_bytes = 64
+        endpoint.image_atoms = {}
+
+        normalized = endpoint._normalize_content(ClipboardContent(
+            platform_file_formats=(
+                ("application/vnd.portal.filetransfer", b"token"),
+                ("application/x-unsafe", b"ignored"),
+            ),
+        ))
+
+        self.assertEqual(
+            normalized.platform_file_formats,
+            (("application/vnd.portal.filetransfer", b"token"),),
+        )
+
+    def test_platform_file_formats_are_removed_with_file_sharing(self):
+        content = ClipboardContent(
+            text="kept",
+            file_uris=("file:///tmp/copied",),
+            platform_file_formats=((
+                "application/vnd.portal.filetransfer",
+                b"token",
+            ),),
+        )
+
+        self.assertEqual(content.without_files(), ClipboardContent(text="kept"))
+
     def test_serves_large_payload_in_x11_safe_property_chunks(self):
         endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
         endpoint.x11 = MagicMock()
@@ -261,6 +371,7 @@ class NestedDesktopClipboardTests(unittest.TestCase):
         endpoint.targets = 5
         endpoint.file_targets = set()
         endpoint.image_mimes_by_atom = {20: "image/png"}
+        endpoint.platform_file_mimes_by_atom = {}
         endpoint.clock = MagicMock(return_value=1.0)
         endpoint.x11 = MagicMock()
         endpoint.display = 3
@@ -282,6 +393,74 @@ class NestedDesktopClipboardTests(unittest.TestCase):
         target, value = endpoint._consume_target.call_args.args
         self.assertEqual(target, 20)
         self.assertEqual(value.bytes_value, b"PNG-")
+
+    def test_preserves_portal_file_transfer_for_sandboxed_apps(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.targets = 1
+        endpoint.file_targets = {2}
+        endpoint.platform_file_mimes_by_atom = {
+            3: "application/vnd.portal.filetransfer",
+        }
+        endpoint.image_mimes_by_atom = {}
+        endpoint.supported_text_targets = set()
+        endpoint.pending_content = MagicMock()
+        endpoint.pending_content.platform_file_formats = {}
+        endpoint.pending_targets = deque()
+        endpoint._complete_request = MagicMock(return_value=[])
+
+        endpoint._consume_target(
+            3,
+            SimpleNamespace(format=8, bytes_value=b"portal-token"),
+        )
+
+        self.assertEqual(
+            endpoint.pending_content.platform_file_formats,
+            {"application/vnd.portal.filetransfer": b"portal-token"},
+        )
+
+    def test_serves_portal_file_transfer_token_unchanged(self):
+        endpoint = X11ClipboardEndpoint.__new__(X11ClipboardEndpoint)
+        endpoint.display = 1
+        endpoint.selection = 2
+        endpoint.targets = 3
+        endpoint.uri_list = 4
+        endpoint.kde_uri_list = 5
+        endpoint.gnome_copied_files = 6
+        endpoint.kde_cut_selection = 7
+        endpoint.file_targets = {4, 5, 6}
+        endpoint.platform_file_atoms = {
+            "application/vnd.portal.filetransfer": 8,
+        }
+        endpoint.platform_file_mimes_by_atom = {
+            8: "application/vnd.portal.filetransfer",
+        }
+        endpoint.supported_text_targets = set()
+        endpoint.image_atoms = {}
+        endpoint.x11 = MagicMock()
+        endpoint.content = ClipboardContent(
+            file_uris=("file:///tmp/copied",),
+            platform_file_formats=((
+                "application/vnd.portal.filetransfer",
+                b"portal-token",
+            ),),
+        )
+        endpoint._write_property_bytes = MagicMock()
+        request = SimpleNamespace(
+            requestor=9,
+            selection=2,
+            target=8,
+            property=10,
+            time=11,
+        )
+
+        endpoint._respond_to_request(request)
+
+        endpoint._write_property_bytes.assert_called_once_with(
+            9,
+            10,
+            8,
+            b"portal-token",
+        )
 
     def test_forwards_new_text_in_both_directions(self):
         endpoints = []
@@ -312,6 +491,7 @@ class NestedDesktopClipboardTests(unittest.TestCase):
 
         bridge = NestedDesktopClipboardBridge(
             endpoint_factory=Endpoint,
+            outer_display=":0",
         )
         session = NestedDesktopSession(
             pid=1,
@@ -364,6 +544,7 @@ class NestedDesktopClipboardTests(unittest.TestCase):
 
         bridge = NestedDesktopClipboardBridge(
             endpoint_factory=Endpoint,
+            outer_display=":0",
             files_enabled=False,
         )
         bridge.set_session(NestedDesktopSession(
@@ -385,6 +566,190 @@ class NestedDesktopClipboardTests(unittest.TestCase):
             [ClipboardContent(text="still shared")],
         )
         bridge.close()
+
+    def test_inner_files_receive_a_bridge_owned_portal_token(self):
+        endpoints = []
+
+        class Endpoint:
+            def __init__(self, _display_name, _xauthority):
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                endpoints.append(self)
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                return True
+
+            def close(self):
+                pass
+
+        portal = MagicMock()
+        portal.replace.return_value = b"bridge-token"
+        bridge = NestedDesktopClipboardBridge(
+            endpoint_factory=Endpoint,
+            outer_display=":0",
+            portal_factory=lambda _address: portal,
+        )
+        bridge.set_session(NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        ))
+        endpoints[1].updates.append(ClipboardContent(
+            file_uris=("file:///tmp/copied.pdf",),
+            platform_file_formats=((
+                "application/vnd.portal.filetransfer",
+                b"dolphin-token",
+            ),),
+        ))
+
+        bridge.dispatch()
+
+        portal.replace.assert_called_once_with(("file:///tmp/copied.pdf",))
+        self.assertEqual(
+            endpoints[0].received,
+            [ClipboardContent(
+                file_uris=("file:///tmp/copied.pdf",),
+                platform_file_formats=(
+                    (
+                        "application/vnd.portal.filetransfer",
+                        b"bridge-token",
+                    ),
+                    (
+                        "application/vnd.portal.files",
+                        b"bridge-token",
+                    ),
+                ),
+            )],
+        )
+        bridge.close()
+        portal.close.assert_called_once_with()
+
+    def test_klipper_files_bypass_inner_x11_without_stealing_its_owner(self):
+        endpoints = []
+
+        class Endpoint:
+            def __init__(self, _display_name, _xauthority):
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                endpoints.append(self)
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                return True
+
+            def fileno(self):
+                return -1
+
+            def close(self):
+                pass
+
+        monitor = MagicMock()
+        monitor.fileno.return_value = -1
+        monitor.dispatch.return_value = [ClipboardContent(
+            file_uris=("file:///tmp/copied.pdf",),
+        )]
+        portal = MagicMock()
+        portal.replace.return_value = b"bridge-token"
+        bridge = NestedDesktopClipboardBridge(
+            endpoint_factory=Endpoint,
+            outer_display=":0",
+            portal_factory=lambda _address: portal,
+            klipper_factory=lambda _address: monitor,
+        )
+        bridge.set_session(NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        ))
+
+        bridge.dispatch()
+
+        self.assertEqual(len(endpoints[0].received), 1)
+        self.assertEqual(endpoints[1].received, [])
+        self.assertEqual(
+            endpoints[0].received[0].platform_file_formats,
+            (
+                ("application/vnd.portal.filetransfer", b"bridge-token"),
+                ("application/vnd.portal.files", b"bridge-token"),
+            ),
+        )
+        bridge.close()
+        monitor.close.assert_called_once_with()
+
+    def test_inner_files_use_document_portal_uris_for_outer_sandboxes(self):
+        endpoints = []
+
+        class Endpoint:
+            def __init__(self, _display_name, _xauthority):
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                endpoints.append(self)
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                return True
+
+            def close(self):
+                pass
+
+        exporter = MagicMock()
+        exporter.export.return_value = (
+            "file:///run/user/1000/doc/abc/copied.pdf",
+        )
+        portal = MagicMock()
+        portal.replace.return_value = b"bridge-token"
+        bridge = NestedDesktopClipboardBridge(
+            endpoint_factory=Endpoint,
+            outer_display=":0",
+            portal_factory=lambda _address: portal,
+            document_portal_factory=lambda _address: exporter,
+        )
+        bridge.set_session(NestedDesktopSession(
+            pid=1,
+            app_id=2,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        ))
+        source_uris = ("file:///tmp/copied.pdf",)
+        endpoints[1].updates.append(ClipboardContent(file_uris=source_uris))
+
+        bridge.dispatch()
+
+        exporter.export.assert_called_once_with(source_uris)
+        portal.replace.assert_called_once_with(source_uris)
+        self.assertEqual(
+            endpoints[0].received[0].file_uris,
+            ("file:///run/user/1000/doc/abc/copied.pdf",),
+        )
+        bridge.close()
+        exporter.close.assert_called_once_with()
 
     def test_forwards_an_image_and_its_text_representation_together(self):
         endpoints = []
@@ -411,7 +776,10 @@ class NestedDesktopClipboardTests(unittest.TestCase):
             def close():
                 return None
 
-        bridge = NestedDesktopClipboardBridge(endpoint_factory=Endpoint)
+        bridge = NestedDesktopClipboardBridge(
+            endpoint_factory=Endpoint,
+            outer_display=":0",
+        )
         bridge.set_session(
             NestedDesktopSession(
                 pid=1,
@@ -439,6 +807,137 @@ class NestedDesktopClipboardTests(unittest.TestCase):
             endpoints[1].received[0].byte_count,
             len(copied.text.encode("utf-8")) + len(copied.image),
         )
+
+    def test_synchronizes_both_gamescope_xwayland_clipboards(self):
+        endpoints = {}
+
+        class Endpoint:
+            def __init__(self, display_name, _xauthority):
+                self.display_name = display_name
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                self.closed = False
+                endpoints[display_name] = self
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                self.text = value.text
+                return True
+
+            def close(self):
+                self.closed = True
+
+        bridge = NestedDesktopClipboardBridge(endpoint_factory=Endpoint)
+        bridge.set_session(
+            NestedDesktopSession(
+                pid=1,
+                app_id=2,
+                display=":2",
+                xauthority=Path("/tmp/xauth"),
+                dbus_address="unix:path=/tmp/dbus",
+            )
+        )
+        copied = ClipboardContent(
+            text="copied in Chrome",
+            image_mime="image/png",
+            image=b"png-image",
+        )
+
+        endpoints[":1"].updates.append(copied)
+        bridge.dispatch()
+
+        self.assertEqual(endpoints[":0"].received, [copied])
+        self.assertEqual(endpoints[":2"].received, [copied])
+        self.assertEqual(bridge.current_text(), "copied in Chrome")
+
+        nested_text = ClipboardContent(text="copied in desktop")
+        endpoints[":2"].updates.append(nested_text)
+        bridge.dispatch()
+
+        self.assertEqual(endpoints[":0"].received[-1], nested_text)
+        self.assertEqual(endpoints[":1"].received[-1], nested_text)
+        bridge.close()
+        self.assertTrue(all(endpoint.closed for endpoint in endpoints.values()))
+
+    def test_optional_gamescope_clipboard_may_be_unavailable(self):
+        endpoints = {}
+
+        class Endpoint:
+            def __init__(self, display_name, _xauthority):
+                if display_name == ":1":
+                    raise RuntimeError("display is not running")
+                self.updates = []
+                self.received = []
+                self.initialized = True
+                self.text = None
+                endpoints[display_name] = self
+
+            def dispatch(self):
+                updates = list(self.updates)
+                self.updates.clear()
+                return updates
+
+            def set_content(self, value):
+                self.received.append(value)
+                return True
+
+            @staticmethod
+            def close():
+                return None
+
+        bridge = NestedDesktopClipboardBridge(endpoint_factory=Endpoint)
+        bridge.set_session(
+            NestedDesktopSession(
+                pid=1,
+                app_id=2,
+                display=":2",
+                xauthority=Path("/tmp/xauth"),
+                dbus_address="unix:path=/tmp/dbus",
+            )
+        )
+        copied = ClipboardContent(text="fallback")
+        endpoints[":0"].updates.append(copied)
+
+        bridge.dispatch()
+
+        self.assertEqual(endpoints[":2"].received, [copied])
+        bridge.close()
+
+    def test_bridge_exposes_every_live_clipboard_descriptor(self):
+        endpoints = []
+
+        class Endpoint:
+            def __init__(self, _display_name, _xauthority):
+                self.descriptor = 20 + len(endpoints)
+                endpoints.append(self)
+
+            def fileno(self):
+                return self.descriptor
+
+            @staticmethod
+            def close():
+                return None
+
+        bridge = NestedDesktopClipboardBridge(endpoint_factory=Endpoint)
+        bridge.set_session(
+            NestedDesktopSession(
+                pid=1,
+                app_id=2,
+                display=":2",
+                xauthority=Path("/tmp/xauth"),
+                dbus_address="unix:path=/tmp/dbus",
+            )
+        )
+
+        self.assertEqual(bridge.filenos(), (20, 21, 22))
+        bridge.close()
 
 
 def trackpad_state(
@@ -1858,6 +2357,150 @@ class GamescopeFocusTests(unittest.TestCase):
 
 
 class RuntimeSuspensionTests(unittest.TestCase):
+    def test_focus_exit_requests_one_lazy_clipboard_flush(self):
+        class InnerEis:
+            ready = False
+            keyboard_ready = False
+            touch_ready = False
+
+            @staticmethod
+            def dispatch():
+                pass
+
+        clipboard = MagicMock()
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            clipboard_bridge=clipboard,
+        )
+        runtime.inner_eis = InnerEis()
+        runtime.outer_x11 = MagicMock()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=22,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+        runtime.nested_desktop_focused = True
+        runtime.nested_desktop_gfx_focused = True
+        runtime._gamescope_focus_snapshot = MagicMock(return_value=(
+            (31,),
+            (31,),
+            tuple(packed_display(":1")),
+            (),
+        ))
+        for method_name in (
+            "_set_touch_forwarding",
+            "_set_remote_forwarding",
+            "_set_remote_relaying",
+            "_set_remote_button_forwarding",
+            "_set_forwarding",
+            "_set_binding_forwarding",
+            "_set_cursor_overlay",
+            "_set_gamescope_pointer_intercepted",
+        ):
+            setattr(runtime, method_name, MagicMock())
+
+        runtime._refresh_forwarding()
+        runtime._refresh_forwarding()
+
+        clipboard.release_inner_focus.assert_called_once_with()
+
+    def test_steam_overlay_keeps_clipboard_focus_until_real_app_exit(self):
+        class InnerEis:
+            ready = False
+            keyboard_ready = False
+            touch_ready = False
+
+            @staticmethod
+            def dispatch():
+                pass
+
+        clipboard = MagicMock()
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            clipboard_bridge=clipboard,
+        )
+        runtime.inner_eis = InnerEis()
+        runtime.outer_x11 = MagicMock()
+        runtime.session = NestedDesktopSession(
+            pid=1,
+            app_id=22,
+            display=":2",
+            xauthority=Path("/tmp/xauth"),
+            dbus_address="unix:path=/tmp/dbus",
+        )
+        runtime.nested_desktop_focused = True
+        runtime.nested_desktop_gfx_focused = True
+        snapshots = iter((
+            (
+                (STEAM_UI_APP_ID,),
+                (22,),
+                tuple(packed_display(":0")),
+                (),
+            ),
+            (
+                (31,),
+                (31,),
+                tuple(packed_display(":1")),
+                (),
+            ),
+        ))
+        runtime._gamescope_focus_snapshot = MagicMock(
+            side_effect=lambda _now: next(snapshots)
+        )
+        for method_name in (
+            "_set_touch_forwarding",
+            "_set_remote_forwarding",
+            "_set_remote_relaying",
+            "_set_remote_button_forwarding",
+            "_set_forwarding",
+            "_set_binding_forwarding",
+            "_set_cursor_overlay",
+            "_set_gamescope_pointer_intercepted",
+        ):
+            setattr(runtime, method_name, MagicMock())
+
+        runtime._refresh_forwarding()
+
+        clipboard.release_inner_focus.assert_not_called()
+        self.assertFalse(runtime.nested_desktop_focused)
+        self.assertTrue(runtime.nested_desktop_gfx_focused)
+
+        runtime._refresh_forwarding()
+
+        clipboard.release_inner_focus.assert_called_once_with()
+        self.assertFalse(runtime.nested_desktop_gfx_focused)
+
+    def test_clipboard_socket_wakes_the_auxiliary_event_loop(self):
+        read_fd, write_fd = os.pipe()
+
+        class Clipboard:
+            dispatches = 0
+
+            @staticmethod
+            def filenos():
+                return (read_fd,)
+
+            def dispatch(self):
+                os.read(read_fd, 1)
+                self.dispatches += 1
+
+        clipboard = Clipboard()
+        runtime = NestedDesktopMouseRuntime(
+            threading.Event(),
+            clipboard_bridge=clipboard,
+        )
+        try:
+            os.write(write_fd, b"x")
+
+            runtime._read_auxiliary_events(0.5)
+
+            self.assertEqual(clipboard.dispatches, 1)
+        finally:
+            os.close(write_fd)
+            os.close(read_fd)
+
     def test_idle_trackpad_sampling_accelerates_while_touched(self):
         class InnerEis:
             @staticmethod

@@ -50,6 +50,7 @@ class RuntimeFocusMixin:
         )
         if discovered_session != self.session:
             self.nested_desktop_focused = False
+            self.nested_desktop_gfx_focused = False
             self._set_cursor_overlay(False)
             self._set_gamescope_pointer_intercepted(False)
             self._close_cursor_overlay()
@@ -294,6 +295,7 @@ class RuntimeFocusMixin:
             or self.session is None
         ):
             self.nested_desktop_focused = False
+            self.nested_desktop_gfx_focused = False
             self._set_cursor_overlay(False)
             self._set_gamescope_pointer_intercepted(False)
             self._set_remote_forwarding(False)
@@ -313,12 +315,31 @@ class RuntimeFocusMixin:
                 mouse_focus_display,
                 proton_app_ids,
             ) = snapshot
+            was_nested_desktop_gfx_focused = (
+                self.nested_desktop_gfx_focused
+            )
             self.nested_desktop_focused = bool(
                 focused_app
                 and focused_app[0] == app_id
                 and focused_gfx_app
                 and focused_gfx_app[0] == app_id
             )
+            self.nested_desktop_gfx_focused = bool(
+                focused_gfx_app
+                and focused_gfx_app[0] == app_id
+            )
+            if (
+                was_nested_desktop_gfx_focused
+                and not self.nested_desktop_gfx_focused
+                and self.clipboard_bridge is not None
+            ):
+                release_inner_focus = getattr(
+                    self.clipboard_bridge,
+                    "release_inner_focus",
+                    None,
+                )
+                if callable(release_inner_focus):
+                    release_inner_focus()
             pointer_needs_bridge = should_forward_pointer(
                 app_id,
                 focused_app,

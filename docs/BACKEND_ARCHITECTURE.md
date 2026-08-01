@@ -50,11 +50,12 @@ the supervisor. Its implementation lives in
   detaching physical devices;
 - `gamescope.py`, `x11.py`, `cursor.py`, and `eis.py` wrap their respective
   native APIs;
-- `clipboard.py` and `clipboard_x11.py` own event-driven X11 selection I/O,
+- `clipboard.py`, `clipboard_owner.py`, and `clipboard_x11.py` own
+  event-driven X11 selection observation, ownership, and low-level I/O,
   including chunked and `INCR` transfers;
 - `clipboard_content.py` validates bounded text, image, and local file-URI
-  payloads; `clipboard_bridge.py` synchronizes them without reading file
-  contents or polling;
+  payloads; `clipboard_klipper.py` observes native Wayland copy events through
+  Klipper; `clipboard_bridge.py` synchronizes them without polling;
 - `runtime_*.py` separate lifecycle, focus transitions, remote input, and HID
   ingestion;
 - `supervisor.py` owns the worker subprocess and restart policy.
@@ -113,7 +114,26 @@ Clipboard sharing is independently gated and disabled by default. File and
 folder sharing forwards only local `file://` references because Gamescope and
 Nested Desktop use the same filesystem. It deliberately normalizes file-manager
 cut metadata to copy semantics, so a cross-session paste cannot move or delete
-the original. No file bytes are duplicated by the bridge.
+the original. A source application's portal token is ownership-scoped and is
+never replayed. For sandboxed destinations, the bridge opens the selected
+regular files or directories without reading them, registers their descriptors
+in its own `org.freedesktop.portal.FileTransfer` session, and publishes the new
+bounded `application/vnd.portal.filetransfer` token alongside the URI list.
+The receiving application obtains access through the desktop portal. The
+session is retired when clipboard ownership changes or the bridge closes.
+Disabling file sharing removes both URI and portal formats.
+
+Dolphin publishes its MIME data immediately, but KWin deliberately exposes a
+native Wayland selection to XWayland only while an X11/XWayland window is
+active. This focus gate prevents background X clients from snooping the
+clipboard. When Gamescope takes focus away from Nested Desktop, the bridge
+briefly releases the inner active window and reads the materialized selection
+through Klipper. This is a bounded, transition-triggered operation rather than
+continuous polling. Klipper's `clipboardHistoryUpdated` signal remains the
+normal fast path for text and local file URIs: a sleeping D-Bus listener wakes
+the worker's existing `select()` loop through a pipe only on updates. The X11
+path remains the compatibility fallback and carries images, custom targets,
+and systems without Klipper; equivalent late X11 updates are deduplicated.
 
 The root supervisor opens the protected physical touchscreen without grabbing
 it and passes only that file descriptor to the regular-user worker. The worker
