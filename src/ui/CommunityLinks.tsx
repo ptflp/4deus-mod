@@ -4,7 +4,11 @@ import {
   PanelSectionRow,
 } from "@decky/ui";
 import type { ReactNode } from "react";
-import { FaDiscord, FaTelegramPlane } from "react-icons/fa";
+import {
+  FaDiscord,
+  FaGithub,
+  FaTelegramPlane,
+} from "react-icons/fa";
 
 import { COMMUNITY_LINKS } from "./communityLinks";
 
@@ -49,7 +53,7 @@ const CommunityButton = ({
 );
 
 export const CommunityLinks = () => (
-  <PanelSection title="Discord · Telegram">
+  <PanelSection title="Discord · Telegram · GitHub">
     <CommunityButton
       icon={<FaDiscord color="#5865F2" size={24} />}
       label={COMMUNITY_LINKS.discord.label}
@@ -59,6 +63,11 @@ export const CommunityLinks = () => (
       icon={<FaTelegramPlane color="#229ED9" size={24} />}
       label={COMMUNITY_LINKS.telegram.label}
       url={COMMUNITY_LINKS.telegram.url}
+    />
+    <CommunityButton
+      icon={<FaGithub color="#FFFFFF" size={24} />}
+      label={COMMUNITY_LINKS.github.label}
+      url={COMMUNITY_LINKS.github.url}
     />
   </PanelSection>
 );
