@@ -102,6 +102,10 @@ class TrackpadMetricsMonitor(
             "left": _TrackpadGesture(),
             "right": _TrackpadGesture(),
         }
+        self.recovery_abnormal_onset_times = {
+            "left": deque(),
+            "right": deque(),
+        }
         self.recovery_armed_at: float | None = None
         self.recovery_armed_pad = ""
         self.recovery_saw_release = False
@@ -190,6 +194,7 @@ class TrackpadMetricsMonitor(
             if not recovery_enabled:
                 self.raw_latest = None
                 self._clear_recovery_arm()
+                self._clear_abnormal_onset_history()
         if metrics_enabled or recovery_enabled:
             self.start()
             if not metrics_enabled:

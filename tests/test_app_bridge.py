@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -50,6 +51,7 @@ class AppBridgeTests(unittest.TestCase):
         self.assertEqual(profile["command"], ["/usr/bin/true"])
         self.assertTrue(profile["clearSteamPreload"])
         self.assertTrue(profile["forceX11"])
+        self.assertFalse(profile["useNestedDesktopRuntime"])
 
         environment = {"HOME": str(self.home), "PATH": "/usr/bin:/bin"}
         completed = subprocess.run(
@@ -249,6 +251,67 @@ class AppBridgeTests(unittest.TestCase):
         self.assertNotIn("LD_PRELOAD", environment)
         self.assertNotIn("LD_AUDIT", environment)
 
+    def test_runner_uses_the_active_nested_desktop_runtime(self):
+        runtime_root = self.home / "run/user/1000"
+        nested_runtime = runtime_root / "nested-desktop.session"
+        nested_runtime.mkdir(parents=True)
+        authority = nested_runtime / "xauth_test"
+        authority.touch()
+        wayland_path = nested_runtime / "wayland-0"
+        wayland_socket = socket.socket(socket.AF_UNIX)
+        wayland_socket.bind(str(wayland_path))
+        self.addCleanup(wayland_socket.close)
+
+        with patch.dict(
+            os.environ,
+            {
+                "DISPLAY": ":2",
+                "WAYLAND_DISPLAY": "wayland-0",
+                "XAUTHORITY": str(authority),
+                "XDG_RUNTIME_DIR": str(runtime_root),
+                "XDG_CURRENT_DESKTOP": "gamescope",
+                "XDG_SESSION_DESKTOP": "gamescope",
+                "XDG_SESSION_TYPE": "x11",
+            },
+            clear=True,
+        ):
+            environment = RUNNER["build_environment"](
+                {
+                    "forceX11": True,
+                    "useNestedDesktopRuntime": True,
+                }
+            )
+
+        self.assertEqual(environment["XDG_RUNTIME_DIR"], str(nested_runtime))
+        self.assertEqual(environment["XDG_CURRENT_DESKTOP"], "KDE")
+        self.assertEqual(environment["XDG_SESSION_DESKTOP"], "gamescope")
+        self.assertEqual(environment["XDG_SESSION_TYPE"], "x11")
+        self.assertEqual(environment["DISPLAY"], ":2")
+
+    def test_runner_rejects_an_invalid_nested_desktop_runtime(self):
+        runtime_root = self.home / "run/user/1000"
+        nested_runtime = runtime_root / "nested-desktop.stale"
+        nested_runtime.mkdir(parents=True)
+        authority = nested_runtime / "xauth_test"
+        authority.touch()
+        (nested_runtime / "wayland-0").touch()
+
+        with patch.dict(
+            os.environ,
+            {
+                "WAYLAND_DISPLAY": "wayland-0",
+                "XAUTHORITY": str(authority),
+                "XDG_RUNTIME_DIR": str(runtime_root),
+            },
+            clear=True,
+        ):
+            environment = RUNNER["build_environment"](
+                {"useNestedDesktopRuntime": True}
+            )
+
+        self.assertEqual(environment["XDG_RUNTIME_DIR"], str(runtime_root))
+        self.assertNotIn("XDG_CURRENT_DESKTOP", environment)
+
     def test_rustdesk_profile_replaces_the_legacy_wrapper(self):
         application_directory = (
             self.home / "Applications/RustDesk/usr/share/rustdesk"
@@ -270,6 +333,7 @@ class AppBridgeTests(unittest.TestCase):
         self.assertEqual(profile["workingDirectory"], str(application_directory))
         self.assertTrue(profile["clearSteamPreload"])
         self.assertTrue(profile["forceX11"])
+        self.assertTrue(profile["useNestedDesktopRuntime"])
         self.assertEqual(
             profile["libraryPath"],
             str(application_directory / "compat-libs"),

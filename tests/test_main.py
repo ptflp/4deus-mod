@@ -34,6 +34,21 @@ class RecordingKeyboard:
         self.closed = True
 
 
+class PreparedRecordingKeyboard(RecordingKeyboard):
+    def __init__(self):
+        super().__init__()
+        self.prepare_calls = 0
+
+    def prepare(self):
+        self.prepare_calls += 1
+        return self.prepare_calls == 1
+
+
+class FailingKeyboard(RecordingKeyboard):
+    def write_key(self, key_code, value):
+        raise OSError("detached uinput device")
+
+
 class EntrypointTests(unittest.TestCase):
     def test_decky_entrypoint_exports_the_backend_plugin(self):
         self.assertIs(decky_entrypoint.Plugin, plugin_backend.Plugin)
@@ -214,6 +229,100 @@ class RecordingTrackpadMetrics:
 
 
 class SendSystemKeyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_first_chord_prepares_a_hotplugged_keyboard(self):
+        plugin = plugin_backend.Plugin()
+        keyboard = PreparedRecordingKeyboard()
+        plugin.keyboard = keyboard
+
+        sleep = AsyncMock()
+        with patch.object(plugin_backend.asyncio, "sleep", sleep):
+            sent = await plugin.send_system_key("KEY_ESC")
+
+        self.assertTrue(sent)
+        self.assertEqual(keyboard.prepare_calls, 1)
+        self.assertEqual(sleep.await_count, 2)
+
+    async def test_detached_keyboard_is_recreated_and_retried(self):
+        plugin = plugin_backend.Plugin()
+        failed = FailingKeyboard()
+        replacement = RecordingKeyboard()
+        plugin.keyboard = failed
+
+        with (
+            patch.object(
+                plugin_backend,
+                "VirtualKeyboard",
+                return_value=replacement,
+            ),
+            patch.object(plugin_backend.asyncio, "sleep", AsyncMock()),
+            self.assertLogs(plugin_backend.logger, level="ERROR"),
+        ):
+            sent = await plugin.send_system_key("KEY_ESC")
+
+        self.assertTrue(sent)
+        self.assertTrue(failed.closed)
+        self.assertIs(plugin.keyboard, replacement)
+        self.assertEqual(
+            replacement.events,
+            [
+                (plugin_backend.KEY_CODES["KEY_ESC"], 1),
+                (plugin_backend.KEY_CODES["KEY_ESC"], 0),
+            ],
+        )
+
+    async def test_retry_request_id_is_idempotent(self):
+        plugin = plugin_backend.Plugin()
+        keyboard = RecordingKeyboard()
+        plugin.keyboard = keyboard
+
+        with patch.object(plugin_backend.asyncio, "sleep", AsyncMock()):
+            first = await plugin.send_system_key(
+                "KEY_LEFTSHIFT",
+                with_alt=True,
+                request_id="frontend-session-1",
+            )
+            retry = await plugin.send_system_key(
+                "KEY_LEFTSHIFT",
+                with_alt=True,
+                request_id="frontend-session-1",
+            )
+
+        self.assertTrue(first)
+        self.assertTrue(retry)
+        self.assertEqual(
+            keyboard.events,
+            [
+                (plugin_backend.KEY_LEFTALT, 1),
+                (plugin_backend.KEY_LEFTSHIFT, 1),
+                (plugin_backend.KEY_LEFTSHIFT, 0),
+                (plugin_backend.KEY_LEFTALT, 0),
+            ],
+        )
+
+    async def test_recreated_keyboard_restores_held_modifiers(self):
+        plugin = plugin_backend.Plugin()
+        failed = RecordingKeyboard()
+        replacement = RecordingKeyboard()
+        plugin.keyboard = failed
+        plugin.held_key_codes.add(plugin_backend.KEY_LEFTCTRL)
+
+        with (
+            patch.object(
+                plugin_backend,
+                "VirtualKeyboard",
+                return_value=replacement,
+            ),
+            patch.object(plugin_backend.asyncio, "sleep", AsyncMock()),
+        ):
+            recreated = await plugin._recreate_system_keyboard(failed)
+
+        self.assertTrue(recreated)
+        self.assertTrue(failed.closed)
+        self.assertEqual(
+            replacement.events,
+            [(plugin_backend.KEY_LEFTCTRL, 1)],
+        )
+
     async def test_alt_shift_emits_a_complete_chord(self):
         plugin = plugin_backend.Plugin()
         keyboard = RecordingKeyboard()

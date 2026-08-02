@@ -1,6 +1,7 @@
 """Decky plugin lifecycle and system-key orchestration."""
 
 import asyncio
+from collections import deque
 import os
 from pathlib import Path
 import pwd
@@ -31,6 +32,10 @@ from .keyboard import (
     KEY_LEFTSHIFT,
     VirtualKeyboard,
 )
+
+
+KEYBOARD_SETTLE_SECONDS = 0.03
+SYSTEM_KEY_REQUEST_CACHE_SIZE = 128
 
 
 class Plugin(
@@ -140,6 +145,8 @@ class Plugin(
         self.nested_desktop_keyboard_visible = False
         self.input_lock = asyncio.Lock()
         self.held_key_codes = set()
+        self.completed_system_key_requests = set()
+        self.completed_system_key_request_order = deque()
         self.app_bridge = (
             AppBridgeManager(
                 home=user_home,
@@ -197,8 +204,17 @@ class Plugin(
                 )
         try:
             self.keyboard = VirtualKeyboard()
+            await self._prepare_system_keyboard(self.keyboard)
             logger.info("Created 4deus Mod uinput keyboard")
         except Exception:
+            if self.keyboard is not None:
+                try:
+                    self.keyboard.close()
+                except Exception:
+                    logger.exception(
+                        "Failed to close the incomplete uinput keyboard"
+                    )
+                self.keyboard = None
             logger.exception("Failed to create 4deus Mod uinput keyboard")
         if (
             self.nested_desktop_module_enabled
@@ -237,9 +253,20 @@ class Plugin(
             await asyncio.to_thread(self.trackpad_metrics.stop)
         if self.nested_desktop_mouse is not None:
             await asyncio.to_thread(self.nested_desktop_mouse.stop)
-        if self.keyboard is not None:
-            self.keyboard.close()
+        async with self.input_lock:
+            keyboard = self.keyboard
             self.keyboard = None
+            if keyboard is not None:
+                for key_code in tuple(self.held_key_codes):
+                    try:
+                        keyboard.write_key(key_code, 0)
+                    except Exception:
+                        logger.exception(
+                            "Failed to release a held key during unload"
+                        )
+                        break
+                self.held_key_codes.clear()
+                keyboard.close()
         self.event_loop = None
 
     async def _uninstall(self):
@@ -266,65 +293,193 @@ class Plugin(
         with_alt: bool = False,
         with_shift: bool = False,
         with_meta: bool = False,
+        request_id: str | None = None,
     ):
         key_code = KEY_CODES.get(key_name)
-        keyboard = self.keyboard
-        if keyboard is None or key_code is None:
+        if key_code is None:
             logger.error("Cannot send system key: %s", key_name)
             return False
 
         async with self.input_lock:
-            chord_modifiers = [
-                (with_control, KEY_LEFTCTRL),
-                (with_alt, KEY_LEFTALT),
-                (with_shift, KEY_LEFTSHIFT),
-                (with_meta, KEY_LEFTMETA),
-            ]
-            pressed_modifiers = []
-            target_was_held = key_code in self.held_key_codes
-            try:
-                for enabled, modifier in chord_modifiers:
-                    if enabled and modifier not in self.held_key_codes:
-                        keyboard.write_key(modifier, 1)
-                        pressed_modifiers.append(modifier)
-                keyboard.write_key(key_code, 1)
-                await asyncio.sleep(0.03)
+            normalized_request_id = self._normalize_system_key_request_id(
+                request_id
+            )
+            if (
+                normalized_request_id is not None
+                and normalized_request_id
+                in self.completed_system_key_requests
+            ):
                 return True
-            except Exception:
-                logger.exception("Failed to send system key: %s", key_name)
-                return False
-            finally:
+            for attempt in range(2):
+                keyboard = self.keyboard
+                if keyboard is None:
+                    if attempt or not await self._recreate_system_keyboard(
+                        None
+                    ):
+                        logger.error("Cannot send system key: %s", key_name)
+                        return False
+                    continue
                 try:
-                    if not target_was_held:
-                        keyboard.write_key(key_code, 0)
-                    for modifier in reversed(pressed_modifiers):
-                        keyboard.write_key(modifier, 0)
+                    cleanup_failed = await self._send_system_key_once(
+                        keyboard,
+                        key_code,
+                        with_control=with_control,
+                        with_alt=with_alt,
+                        with_shift=with_shift,
+                        with_meta=with_meta,
+                    )
+                    self._remember_system_key_request(normalized_request_id)
+                    if cleanup_failed:
+                        logger.warning(
+                            "Recreating virtual keyboard after a key-release "
+                            "failure"
+                        )
+                        await self._recreate_system_keyboard(keyboard)
+                    return True
                 except Exception:
-                    logger.exception("Failed to release virtual keyboard keys")
+                    logger.exception(
+                        "Failed to send system key: %s (attempt %s)",
+                        key_name,
+                        attempt + 1,
+                    )
+                    if attempt or not await self._recreate_system_keyboard(
+                        keyboard
+                    ):
+                        return False
+            return False
 
     async def set_system_key_state(self, key_name: str, pressed: bool):
         key_code = KEY_CODES.get(key_name)
-        keyboard = self.keyboard
-        if keyboard is None or key_code is None:
+        if key_code is None:
             logger.error("Cannot set system key state: %s", key_name)
             return False
 
         async with self.input_lock:
+            for attempt in range(2):
+                keyboard = self.keyboard
+                if keyboard is None:
+                    if attempt or not await self._recreate_system_keyboard(
+                        None
+                    ):
+                        logger.error(
+                            "Cannot set system key state: %s", key_name
+                        )
+                        return False
+                    continue
+                try:
+                    await self._prepare_system_keyboard(keyboard)
+                    if pressed and key_code not in self.held_key_codes:
+                        keyboard.write_key(key_code, 1)
+                        self.held_key_codes.add(key_code)
+                    elif not pressed and key_code in self.held_key_codes:
+                        keyboard.write_key(key_code, 0)
+                        self.held_key_codes.remove(key_code)
+                    return True
+                except Exception:
+                    logger.exception(
+                        "Failed to set system key state: %s=%s (attempt %s)",
+                        key_name,
+                        pressed,
+                        attempt + 1,
+                    )
+                    if attempt or not await self._recreate_system_keyboard(
+                        keyboard
+                    ):
+                        return False
+            return False
+
+    async def _prepare_system_keyboard(self, keyboard):
+        prepare = getattr(keyboard, "prepare", None)
+        if callable(prepare) and prepare():
+            await asyncio.sleep(KEYBOARD_SETTLE_SECONDS)
+
+    async def _send_system_key_once(
+        self,
+        keyboard,
+        key_code: int,
+        *,
+        with_control: bool,
+        with_alt: bool,
+        with_shift: bool,
+        with_meta: bool,
+    ) -> bool:
+        await self._prepare_system_keyboard(keyboard)
+        chord_modifiers = [
+            (with_control, KEY_LEFTCTRL),
+            (with_alt, KEY_LEFTALT),
+            (with_shift, KEY_LEFTSHIFT),
+            (with_meta, KEY_LEFTMETA),
+        ]
+        pressed_modifiers = []
+        target_was_held = key_code in self.held_key_codes
+        cleanup_failed = False
+        try:
+            for enabled, modifier in chord_modifiers:
+                if enabled and modifier not in self.held_key_codes:
+                    keyboard.write_key(modifier, 1)
+                    pressed_modifiers.append(modifier)
+            keyboard.write_key(key_code, 1)
+            await asyncio.sleep(KEYBOARD_SETTLE_SECONDS)
+        finally:
             try:
-                if pressed and key_code not in self.held_key_codes:
-                    keyboard.write_key(key_code, 1)
-                    self.held_key_codes.add(key_code)
-                elif not pressed and key_code in self.held_key_codes:
+                if not target_was_held:
                     keyboard.write_key(key_code, 0)
-                    self.held_key_codes.remove(key_code)
-                return True
+                for modifier in reversed(pressed_modifiers):
+                    keyboard.write_key(modifier, 0)
             except Exception:
-                logger.exception(
-                    "Failed to set system key state: %s=%s",
-                    key_name,
-                    pressed,
-                )
-                return False
+                cleanup_failed = True
+                logger.exception("Failed to release virtual keyboard keys")
+        return cleanup_failed
+
+    async def _recreate_system_keyboard(self, failed_keyboard) -> bool:
+        if failed_keyboard is not None:
+            try:
+                failed_keyboard.close()
+            except Exception:
+                logger.exception("Failed to close the broken virtual keyboard")
+        self.keyboard = None
+        try:
+            self.keyboard = VirtualKeyboard()
+            await self._prepare_system_keyboard(self.keyboard)
+            for key_code in sorted(self.held_key_codes):
+                self.keyboard.write_key(key_code, 1)
+            logger.warning("Recreated the 4deus Mod uinput keyboard")
+            return True
+        except Exception:
+            logger.exception("Failed to recreate the 4deus Mod uinput keyboard")
+            if self.keyboard is not None:
+                try:
+                    self.keyboard.close()
+                except Exception:
+                    logger.exception(
+                        "Failed to close the replacement virtual keyboard"
+                    )
+                self.keyboard = None
+            return False
+
+    @staticmethod
+    def _normalize_system_key_request_id(request_id) -> str | None:
+        if not isinstance(request_id, str):
+            return None
+        request_id = request_id.strip()
+        if not request_id or len(request_id) > 128:
+            return None
+        return request_id
+
+    def _remember_system_key_request(self, request_id: str | None):
+        if (
+            request_id is None
+            or request_id in self.completed_system_key_requests
+        ):
+            return
+        self.completed_system_key_requests.add(request_id)
+        self.completed_system_key_request_order.append(request_id)
+        while (
+            len(self.completed_system_key_request_order)
+            > SYSTEM_KEY_REQUEST_CACHE_SIZE
+        ):
+            expired = self.completed_system_key_request_order.popleft()
+            self.completed_system_key_requests.discard(expired)
 
     async def log_keyboard_diagnostics(self, payload: str):
         if not isinstance(payload, str):

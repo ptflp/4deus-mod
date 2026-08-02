@@ -912,6 +912,110 @@ class TrackpadMetricsMonitorTests(unittest.TestCase):
 
             self.assertEqual(requests, [1])
 
+    def test_repeated_abnormal_touch_onsets_trigger_safe_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            requests = []
+            monitor = self.make_monitor(
+                directory,
+                recovery_enabled=True,
+                recovery_request_callback=(
+                    lambda request_id: requests.append(request_id) or True
+                ),
+            )
+            monitor.record_report(make_report(), monotonic_time=0)
+            for started_at in (0.1, 0.5, 0.9):
+                monitor.record_report(
+                    make_report(
+                        right_touched=True,
+                        right_pressure=5_200,
+                    ),
+                    monotonic_time=started_at,
+                )
+                monitor.record_report(
+                    make_report(),
+                    monotonic_time=started_at + 0.1,
+                )
+
+            self.assertTrue(monitor.recovery_status()["armed"])
+            self.assertTrue(monitor.recovery_confirmed)
+            self.assertEqual(requests, [])
+
+            monitor.record_report(make_report(), monotonic_time=2.01)
+
+            self.assertEqual(requests, [1])
+
+    def test_normal_touch_breaks_abnormal_onset_sequence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            monitor = self.make_monitor(
+                directory,
+                recovery_enabled=True,
+            )
+            monitor.record_report(make_report(), monotonic_time=0)
+
+            def touch(started_at, pressure):
+                monitor.record_report(
+                    make_report(
+                        right_touched=True,
+                        right_pressure=pressure,
+                    ),
+                    monotonic_time=started_at,
+                )
+                monitor.record_report(
+                    make_report(),
+                    monotonic_time=started_at + 0.1,
+                )
+
+            touch(0.1, 5_200)
+            touch(0.5, 5_300)
+            touch(0.9, 0)
+            touch(1.3, 5_400)
+            touch(1.7, 5_500)
+
+            self.assertFalse(monitor.recovery_status()["armed"])
+
+    def test_physical_press_breaks_abnormal_onset_sequence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            monitor = self.make_monitor(
+                directory,
+                recovery_enabled=True,
+            )
+            monitor.record_report(make_report(), monotonic_time=0)
+            for started_at in (0.1, 0.5):
+                monitor.record_report(
+                    make_report(
+                        right_touched=True,
+                        right_pressure=5_200,
+                    ),
+                    monotonic_time=started_at,
+                )
+                monitor.record_report(
+                    make_report(),
+                    monotonic_time=started_at + 0.1,
+                )
+            monitor.record_report(
+                make_report(
+                    right_touched=True,
+                    right_pressed=True,
+                    right_pressure=9_000,
+                ),
+                monotonic_time=0.9,
+            )
+            monitor.record_report(make_report(), monotonic_time=1.0)
+            for started_at in (1.3, 1.7):
+                monitor.record_report(
+                    make_report(
+                        right_touched=True,
+                        right_pressure=5_200,
+                    ),
+                    monotonic_time=started_at,
+                )
+                monitor.record_report(
+                    make_report(),
+                    monotonic_time=started_at + 0.1,
+                )
+
+            self.assertFalse(monitor.recovery_status()["armed"])
+
     def test_physical_press_is_not_mistaken_for_stuck_pressure(self):
         with tempfile.TemporaryDirectory() as directory:
             monitor = self.make_monitor(

@@ -11,6 +11,9 @@ from .constants import (
     AUTO_CAPTURE_TOUCHES,
     AUTO_CAPTURE_WINDOW_SECONDS,
     CLICK_PRESSURE_THRESHOLD,
+    RECOVERY_ABNORMAL_ONSET_PRESSURE,
+    RECOVERY_ABNORMAL_ONSET_TOUCHES,
+    RECOVERY_ABNORMAL_ONSET_WINDOW_SECONDS,
     RECOVERY_ABNORMAL_PRESSURE,
     RECOVERY_ARM_TIMEOUT_SECONDS,
     RECOVERY_COOLDOWN_SECONDS,
@@ -119,6 +122,14 @@ class TrackpadRecoveryMixin:
             ):
                 self.recovery_confirmed = True
 
+        left_onset_confirmed = self._observe_abnormal_onset(
+            "left",
+            bool(previous and previous.left_touched),
+            sample.left_touched,
+            sample.left_pressed,
+            sample.left_pressure,
+            now,
+        )
         left_risky, left_confirmed = self._update_recovery_gesture(
             "left",
             sample.left_touched,
@@ -129,15 +140,28 @@ class TrackpadRecoveryMixin:
             now,
         )
         if left_risky or (
-            left_confirmed
+            (left_confirmed or left_onset_confirmed)
             and self.recovery_armed_at is None
             and self.recovery_pending_request_id is None
         ):
             self._arm_recovery(
                 now,
                 "left",
-                confirmed=left_confirmed,
+                confirmed=(left_confirmed or left_onset_confirmed),
+                reason=(
+                    "repeated abnormal touch pressure"
+                    if left_onset_confirmed
+                    else ""
+                ),
             )
+        right_onset_confirmed = self._observe_abnormal_onset(
+            "right",
+            bool(previous and previous.right_touched),
+            sample.right_touched,
+            sample.right_pressed,
+            sample.right_pressure,
+            now,
+        )
         right_risky, right_confirmed = self._update_recovery_gesture(
             "right",
             sample.right_touched,
@@ -148,16 +172,51 @@ class TrackpadRecoveryMixin:
             now,
         )
         if right_risky or (
-            right_confirmed
+            (right_confirmed or right_onset_confirmed)
             and self.recovery_armed_at is None
             and self.recovery_pending_request_id is None
         ):
             self._arm_recovery(
                 now,
                 "right",
-                confirmed=right_confirmed,
+                confirmed=(right_confirmed or right_onset_confirmed),
+                reason=(
+                    "repeated abnormal touch pressure"
+                    if right_onset_confirmed
+                    else ""
+                ),
             )
         return self._advance_recovery(now)
+
+    def _observe_abnormal_onset(
+        self,
+        pad_name: str,
+        previously_touched: bool,
+        touched: bool,
+        pressed: bool,
+        pressure: int,
+        now: float,
+    ) -> bool:
+        history = self.recovery_abnormal_onset_times[pad_name]
+        if pressed:
+            history.clear()
+            return False
+        if not touched or previously_touched:
+            return False
+        if pressure < RECOVERY_ABNORMAL_ONSET_PRESSURE:
+            history.clear()
+            return False
+        history.append(now)
+        while (
+            history
+            and now - history[0]
+            > RECOVERY_ABNORMAL_ONSET_WINDOW_SECONDS
+        ):
+            history.popleft()
+        if len(history) < RECOVERY_ABNORMAL_ONSET_TOUCHES:
+            return False
+        history.clear()
+        return True
 
     def _update_recovery_gesture(
         self,
@@ -238,6 +297,7 @@ class TrackpadRecoveryMixin:
         pad_name: str,
         *,
         confirmed: bool = False,
+        reason: str = "",
     ):
         if self.recovery_pending_request_id is not None:
             return
@@ -246,9 +306,12 @@ class TrackpadRecoveryMixin:
                 "Trackpad recovery armed after %s-pad %s",
                 pad_name,
                 (
-                    "sustained abnormal pressure"
-                    if confirmed
-                    else "swipe and click"
+                    reason
+                    or (
+                        "sustained abnormal pressure"
+                        if confirmed
+                        else "swipe and click"
+                    )
                 ),
             )
             self.recovery_armed_at = now
@@ -336,6 +399,10 @@ class TrackpadRecoveryMixin:
         self.recovery_saw_release = False
         self.recovery_confirmed = False
         self.recovery_idle_since = None
+
+    def _clear_abnormal_onset_history(self):
+        for history in self.recovery_abnormal_onset_times.values():
+            history.clear()
 
     def _complete_automatic_capture(self):
         with self.lock:

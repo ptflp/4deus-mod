@@ -54,7 +54,7 @@ import {
 export default definePlugin(() => {
   const settings = new SettingsStore();
   const sendSystemKey = callable<
-    [string, boolean, boolean, boolean, boolean],
+    [string, boolean, boolean, boolean, boolean, string],
     boolean
   >(
     "send_system_key",

@@ -195,6 +195,7 @@ class AppBridgeManager:
                 "waitForProcess": str(executable),
                 "clearSteamPreload": True,
                 "forceX11": True,
+                "useNestedDesktopRuntime": True,
                 "libraryPath": str(application_directory / "compat-libs"),
             }
         )
@@ -295,6 +296,9 @@ class AppBridgeManager:
                 and not clear_steam_preload
             ),
             "forceX11": bool(raw.get("forceX11")),
+            "useNestedDesktopRuntime": bool(
+                raw.get("useNestedDesktopRuntime")
+            ),
             "libraryPath": _clean_text(raw.get("libraryPath")),
         }
 

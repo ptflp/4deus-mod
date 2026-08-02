@@ -89,6 +89,12 @@ KEY_LEFTCTRL = 29
 KEY_LEFTALT = 56
 KEY_LEFTSHIFT = 42
 KEY_LEFTMETA = 125
+MODIFIER_KEY_CODES = (
+    KEY_LEFTCTRL,
+    KEY_LEFTALT,
+    KEY_LEFTSHIFT,
+    KEY_LEFTMETA,
+)
 
 EV_SYN = 0
 EV_KEY = 1
@@ -104,6 +110,7 @@ UI_SET_KEYBIT = (1 << 30) | (4 << 16) | (ord("U") << 8) | 101
 
 class VirtualKeyboard:
     def __init__(self):
+        self.prepared = False
         self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         try:
             fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
@@ -126,6 +133,16 @@ class VirtualKeyboard:
             os.close(self.fd)
             raise
 
+    def prepare(self) -> bool:
+        """Neutralize a newly hot-plugged keyboard before its first chord."""
+        if self.prepared:
+            return False
+        for key_code in MODIFIER_KEY_CODES:
+            self._write_event(EV_KEY, key_code, 0)
+        self._write_event(EV_SYN, SYN_REPORT, 0)
+        self.prepared = True
+        return True
+
     def write_key(self, key_code: int, value: int):
         self._write_event(EV_KEY, key_code, value)
         self._write_event(EV_SYN, SYN_REPORT, 0)
@@ -138,6 +155,7 @@ class VirtualKeyboard:
         finally:
             os.close(self.fd)
             self.fd = None
+            self.prepared = False
 
     def _write_event(self, event_type: int, code: int, value: int):
         os.write(

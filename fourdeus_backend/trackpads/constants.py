@@ -35,6 +35,13 @@ RECOVERY_ARM_TIMEOUT_SECONDS = 20
 RECOVERY_COOLDOWN_SECONDS = 30
 RECOVERY_ABNORMAL_PRESSURE = 6_000
 RECOVERY_SUSTAINED_PRESSURE_SECONDS = 0.75
+# A healthy pad reports touch before its pressure ramps up. A pad calibrated
+# while a finger is resting on it instead starts several consecutive touches
+# with a large non-zero pressure. Requiring repeated high-pressure onsets keeps
+# an isolated hard tap from power-cycling the controller.
+RECOVERY_ABNORMAL_ONSET_PRESSURE = 4_500
+RECOVERY_ABNORMAL_ONSET_TOUCHES = 3
+RECOVERY_ABNORMAL_ONSET_WINDOW_SECONDS = 5.0
 RECOVERY_RESULT_TIMEOUT_SECONDS = 15
 MONITOR_MAINTENANCE_INTERVAL_SECONDS = 0.25
 # Metrics are retained at 20 Hz, so polling an idle stream faster only

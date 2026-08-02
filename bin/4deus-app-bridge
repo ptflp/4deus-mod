@@ -102,6 +102,55 @@ def sanitize_steam_overlay_preload(
         environment.pop("LD_PRELOAD", None)
 
 
+def nested_desktop_runtime(
+    environment: dict[str, str],
+) -> Path | None:
+    authority_value = environment.get("XAUTHORITY")
+    current_runtime_value = environment.get("XDG_RUNTIME_DIR")
+    if not authority_value or not current_runtime_value:
+        return None
+
+    authority = Path(authority_value)
+    current_runtime = Path(current_runtime_value)
+    if not authority.is_absolute() or not current_runtime.is_absolute():
+        return None
+
+    runtime = authority.parent
+    if (
+        not runtime.name.startswith("nested-desktop.")
+        or runtime not in (current_runtime, current_runtime / runtime.name)
+    ):
+        return None
+
+    try:
+        if (
+            not authority.is_file()
+            or not runtime.is_dir()
+            or authority.stat().st_uid != os.getuid()
+            or runtime.stat().st_uid != os.getuid()
+        ):
+            return None
+    except OSError:
+        return None
+
+    wayland_display = environment.get("WAYLAND_DISPLAY")
+    if wayland_display:
+        display_path = Path(wayland_display)
+        if display_path.is_absolute():
+            socket_path = display_path
+        elif len(display_path.parts) == 1:
+            socket_path = runtime / display_path
+        else:
+            return None
+        try:
+            if socket_path.parent != runtime or not socket_path.is_socket():
+                return None
+        except OSError:
+            return None
+
+    return runtime
+
+
 def build_environment(profile: dict) -> dict[str, str]:
     environment = os.environ.copy()
     if profile.get("clearSteamPreload"):
@@ -123,6 +172,11 @@ def build_environment(profile: dict) -> dict[str, str]:
         environment["XDG_SESSION_TYPE"] = "x11"
         environment["XDG_CURRENT_DESKTOP"] = "gamescope"
         environment["XDG_SESSION_DESKTOP"] = "gamescope"
+    if profile.get("useNestedDesktopRuntime"):
+        runtime = nested_desktop_runtime(environment)
+        if runtime is not None:
+            environment["XDG_RUNTIME_DIR"] = str(runtime)
+            environment["XDG_CURRENT_DESKTOP"] = "KDE"
     return environment
 
 
@@ -168,10 +222,19 @@ def run(profile_id: str) -> int:
             file=log,
             flush=True,
         )
+        environment = build_environment(profile)
+        if profile.get("useNestedDesktopRuntime"):
+            runtime = nested_desktop_runtime(environment)
+            status = str(runtime) if runtime is not None else "not detected"
+            print(
+                f"nested desktop runtime: {status}",
+                file=log,
+                flush=True,
+            )
         launcher = subprocess.Popen(
             profile["command"],
             cwd=working_directory,
-            env=build_environment(profile),
+            env=environment,
             stdout=log,
             stderr=subprocess.STDOUT,
         )

@@ -29,6 +29,7 @@ import { DeckButtonBindingView } from "./DeckButtonBindingView";
 import { HoldHintView } from "./HoldHintView";
 import { LanguageSwitchMenu } from "./LanguageSwitchMenu";
 import { PRESSED_KEY_CLASS, SystemKeyView } from "./SystemKeyView";
+import { SystemInputQueue } from "./SystemInputQueue";
 import { activateQwertyKeyboardLayout } from "./steamLayouts";
 
 const LONG_PRESS_MS = 550;
@@ -60,6 +61,7 @@ export type SystemKeySender = (
   withAlt: boolean,
   withShift: boolean,
   withMeta: boolean,
+  requestId: string,
 ) => Promise<boolean>;
 
 export type SystemKeyStateSender = (
@@ -215,7 +217,7 @@ export class SystemKeyLayer {
   private languageMenuGamepadKey?: HTMLElement;
   private keyboardHelpCancelActive = false;
   private steamKeyboardController?: SteamKeyboardController;
-  private inputQueue = Promise.resolve();
+  private readonly inputQueue = new SystemInputQueue();
   private readonly heldBoundKeys = new Map<number, string>();
   private readonly activeBoundButtons = new Set<number>();
   private readonly pressedBoundKeyElements = new Map<number, HTMLElement>();
@@ -223,6 +225,11 @@ export class SystemKeyLayer {
   private readonly boundVisualKeyCache = new Map<string, HTMLElement>();
   private boundVisualKeyCacheLayer = -1;
   private lastSystemKey?: string;
+  private readonly systemInputSession = [
+    Date.now().toString(36),
+    Math.random().toString(36).slice(2),
+  ].join("-");
+  private systemInputSequence = 0;
 
   constructor(
     private readonly sendSystemKey: SystemKeySender,
@@ -278,6 +285,7 @@ export class SystemKeyLayer {
     this.keyboardHelp.close();
     this.keyboardHelpCancelActive = false;
     this.clearHold();
+    this.inputQueue.reset();
     this.releaseHeldBoundKeys();
     this.controlActive = false;
     this.altActive = false;
@@ -1182,6 +1190,7 @@ export class SystemKeyLayer {
     withShift: boolean,
     withMeta = false,
   ): void {
+    const requestId = this.nextSystemInputRequestId();
     this.lastSystemKey = [
       withControl ? "Ctrl" : undefined,
       withAlt ? "Alt" : undefined,
@@ -1189,19 +1198,24 @@ export class SystemKeyLayer {
       withMeta ? "Meta" : undefined,
       keyName.replace("KEY_", ""),
     ].filter((part) => part !== undefined).join("+");
-    this.inputQueue = this.inputQueue
-      .then(() =>
-        this.sendSystemKey(
-          keyName,
-          withControl,
-          withAlt,
-          withShift,
-          withMeta,
-        ))
-      .then(() => undefined)
-      .catch((error) => {
-        console.error("[4deus Mod] Failed to send system key", error);
-      });
+    void this.inputQueue.enqueue(() =>
+      this.sendSystemKey(
+        keyName,
+        withControl,
+        withAlt,
+        withShift,
+        withMeta,
+        requestId,
+      ),
+    ).then((succeeded) => {
+      if (!succeeded)
+        console.error("[4deus Mod] System key failover was exhausted");
+    });
+  }
+
+  private nextSystemInputRequestId(): string {
+    this.systemInputSequence += 1;
+    return `${this.systemInputSession}-${this.systemInputSequence.toString(36)}`;
   }
 
   private isSystemKey(key: HTMLElement): boolean {
@@ -1396,12 +1410,15 @@ export class SystemKeyLayer {
   }
 
   private queueBoundKeyState(keyName: string, pressed: boolean): void {
-    this.inputQueue = this.inputQueue
-      .then(() => this.setSystemKeyState(keyName, pressed))
-      .then(() => undefined)
-      .catch((error) => {
-        console.error("[4deus Mod] Failed to set system key state", error);
-      });
+    void this.inputQueue.enqueue(() =>
+      this.setSystemKeyState(keyName, pressed)
+    ).then((succeeded) => {
+      if (!succeeded) {
+        console.error(
+          "[4deus Mod] System key-state failover was exhausted",
+        );
+      }
+    });
   }
 
   private pressBoundKeyVisual(
