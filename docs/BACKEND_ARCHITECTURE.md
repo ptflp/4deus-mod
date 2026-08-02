@@ -10,7 +10,8 @@ Decky RPC methods are grouped by feature under
 `fourdeus_backend/endpoints/`:
 
 - `developer.py` — developer mode and diagnostics;
-- `controller.py` — Controller module lifecycle and recovery operations;
+- `controller.py` - legacy Controller RPC compatibility and manual recovery
+  operations;
 - `nested_desktop.py` — Nested Desktop module lifecycle and RustDesk settings;
 - `system_tools.py` — managed App Bridge, MangoHud, and SteamOS integrations.
 
@@ -29,12 +30,11 @@ Implementation lives in `fourdeus_backend/trackpads/`:
 - `recovery.py` contains the anomaly/recovery state machine;
 - `persistence.py` owns captures and the append-only rolling journal.
 
-Recovery and metrics share the same HID stream, but persistence and controller
-mutation remain outside the hot report parser.
-
-The Controller master switch gates both automatic recovery and developer
-metrics. Their saved child preferences are retained while the monitor is
-stopped.
+Recovery analysis and metrics share the same HID stream, but persistence and
+controller mutation remain outside the hot report parser. Automatic controller
+recovery is disabled and its former UI switch is removed. Legacy saved values
+are normalized to disabled, while developer trackpad metrics remain available
+independently through Plugin Settings.
 
 ## Nested Desktop
 

@@ -177,14 +177,10 @@ class DeveloperEndpointsMixin:
         if monitor is None:
             return
         metrics_enabled = (
-            self.controller_module_enabled
-            and self.developer_mode
+            self.developer_mode
             and self.trackpad_metrics_enabled
         )
-        recovery_enabled = (
-            self.controller_module_enabled
-            and self.trackpad_auto_recovery_enabled
-        )
+        recovery_enabled = False
         configure = getattr(monitor, "configure", None)
         if configure is not None:
             configure(

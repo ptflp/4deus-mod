@@ -1130,7 +1130,7 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DeveloperSettingTests(unittest.IsolatedAsyncioTestCase):
-    def test_controller_module_gate_stops_developer_metrics(self):
+    def test_removed_controller_module_does_not_gate_developer_metrics(self):
         plugin = plugin_backend.Plugin()
         monitor = RecordingTrackpadMetrics()
         plugin.trackpad_metrics = monitor
@@ -1141,7 +1141,7 @@ class DeveloperSettingTests(unittest.IsolatedAsyncioTestCase):
 
         plugin._sync_trackpad_metrics()
 
-        self.assertEqual(monitor.configurations, [(False, False)])
+        self.assertEqual(monitor.configurations, [(True, False)])
 
     async def test_metrics_require_developer_mode_and_persist(self):
         plugin = plugin_backend.Plugin()

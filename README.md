@@ -56,14 +56,6 @@ Install the latest release directly from Decky Loader using the
 Secondary labels are visual only. Steam remains responsible for the active
 layout and text input.
 
-## Controller module
-
-- Monitors the built-in Steam Deck trackpads for the stuck calibration state.
-- Optionally power-cycles the controller automatically after the guarded
-  recovery checks succeed.
-- Keeps recovery and developer metrics behind one module lifecycle so disabling
-  Controller stops all HID monitoring without deleting either preference.
-
 ## App Bridge module
 
 - Scans installed Flatpak and desktop applications without modifying Steam's
@@ -79,6 +71,9 @@ layout and text input.
 - Includes a quick **Add / Fix RustDesk** action with Steam runtime cleanup,
   RustDesk compatibility libraries, the Gamescope/X11 environment, and
   automatic installation of the Nested Desktop pointer hook.
+- Runs the unpacked Arch Linux RustDesk package against the active Nested
+  Desktop runtime. The unsupported Flatpak package is detected and rejected so
+  Steam cannot launch the wrong build or enable incompatible RustDesk fixes.
 - Updates existing shortcuts in place to preserve their Steam app ID,
   controller layout, and play history.
 - Refreshes branded portrait, grid, hero, and logo artwork for Parsec and
@@ -102,6 +97,8 @@ layout and text input.
   controller layout, and play history.
 - Refreshes all four Steam artwork slots from the bundled branded SteamOS
   artwork whenever Add / Repair runs.
+- Shows a red warning and forces all RustDesk-specific switches off while the
+  unsupported RustDesk Flatpak package is installed.
 - Restores right-trackpad and right-stick cursor control, configurable clicks,
   and left-pad scrolling in Nested Desktop while another Game Mode application
   is running.
