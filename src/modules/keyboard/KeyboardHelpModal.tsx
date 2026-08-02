@@ -2,12 +2,18 @@ import {
   ConfirmModal,
   showModal,
 } from "@decky/ui";
-import type { ReactNode } from "react";
+import {
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+} from "react";
 
 import { useStrings } from "../../core/localization";
+import { EMOJI_KEY, findNamedKey } from "./systemKeys";
 
 interface KeyboardHelpModalProps {
   closeModal(): void;
+  emojiGlyph?: Element;
 }
 
 interface HelpStepProps {
@@ -16,6 +22,96 @@ interface HelpStepProps {
   description: string;
   title: string;
 }
+
+interface KeyboardHelpOptions {
+  keyboard?: HTMLElement;
+  onClosed?: () => void;
+  parent?: EventTarget;
+}
+
+const SMILE_GLYPH_PLACEHOLDER = "☺";
+
+const cloneEmojiGlyph = (
+  keyboard: HTMLElement | undefined,
+): Element | undefined => {
+  const nativeKey = keyboard ? findNamedKey(keyboard, EMOJI_KEY) : null;
+  const glyph = nativeKey?.firstElementChild?.querySelector("svg, img")
+    ?? nativeKey?.querySelector("svg, img");
+  return glyph?.cloneNode(true) as Element | undefined;
+};
+
+const NativeEmojiGlyph = ({ glyph }: { glyph?: Element }) => {
+  const hostRef = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host || !glyph)
+      return;
+    const clone = host.ownerDocument.importNode(glyph, true);
+    clone.setAttribute("aria-hidden", "true");
+    clone.setAttribute("focusable", "false");
+    clone.setAttribute("height", "16");
+    clone.setAttribute("width", "16");
+    clone.setAttribute(
+      "style",
+      "display:block;height:16px;width:16px;color:currentColor",
+    );
+    host.replaceChildren(clone);
+    return () => host.replaceChildren();
+  }, [glyph]);
+
+  return (
+    <span
+      ref={hostRef}
+      aria-hidden="true"
+      style={{
+        alignItems: "center",
+        display: "inline-flex",
+        height: "16px",
+        justifyContent: "center",
+        width: "16px",
+      }}
+    >
+      {glyph ? null : SMILE_GLYPH_PLACEHOLDER}
+    </span>
+  );
+};
+
+const HoldEmojiBadge = ({
+  glyph,
+  label,
+}: {
+  glyph?: Element;
+  label: string;
+}) => {
+  const parts = label.split(SMILE_GLYPH_PLACEHOLDER);
+  return (
+    <span
+      style={{
+        alignItems: "center",
+        display: "inline-flex",
+        gap: "2px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {parts.map((part, index) => (
+        <span
+          key={`${index}-${part}`}
+          style={{
+            alignItems: "center",
+            display: "inline-flex",
+            gap: "2px",
+          }}
+        >
+          {part ? <span>{part}</span> : null}
+          {index < parts.length - 1
+            ? <NativeEmojiGlyph glyph={glyph} />
+            : null}
+        </span>
+      ))}
+    </span>
+  );
+};
 
 const HelpStep = ({
   badge,
@@ -87,6 +183,7 @@ const MenuButtonGlyph = ({ label }: { label: string }) => (
 
 const KeyboardHelpModal = ({
   closeModal,
+  emojiGlyph,
 }: KeyboardHelpModalProps) => {
   const strings = useStrings();
   return (
@@ -106,7 +203,12 @@ const KeyboardHelpModal = ({
           }}
         >
           <HelpStep
-            badge={strings.keyboardHelpHoldCtrlBadge}
+            badge={(
+              <HoldEmojiBadge
+                glyph={emojiGlyph}
+                label={strings.keyboardHelpHoldCtrlBadge}
+              />
+            )}
             title={strings.systemKeyLayer}
             description={strings.keyboardHelpSystemLayerDescription}
           />
@@ -137,12 +239,14 @@ const KeyboardHelpModal = ({
   );
 };
 
-export const showKeyboardHelp = (
-  parent?: EventTarget,
-  onClosed?: () => void,
-): (() => void) => {
+export const showKeyboardHelp = ({
+  keyboard,
+  onClosed,
+  parent,
+}: KeyboardHelpOptions): (() => void) => {
   let modal: ReturnType<typeof showModal> | undefined;
   let closed = false;
+  const emojiGlyph = cloneEmojiGlyph(keyboard);
   const notifyClosed = (): void => {
     if (closed)
       return;
@@ -156,7 +260,7 @@ export const showKeyboardHelp = (
     notifyClosed();
   };
   modal = showModal(
-    <KeyboardHelpModal closeModal={close} />,
+    <KeyboardHelpModal closeModal={close} emojiGlyph={emojiGlyph} />,
     parent,
     {
       bHideMainWindowForPopouts: false,

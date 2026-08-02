@@ -105,6 +105,35 @@ test("every locale has every key and no blank UI text", () => {
   }
 });
 
+test("keyboard hold badges keep system and language hints explicit", () => {
+  assert.equal(
+    keyboardTranslations.english.keyboardHelpHoldCtrlBadge,
+    "Press and hold Ctrl/☺",
+  );
+  assert.equal(
+    keyboardTranslations.english.keyboardHelpHoldLanguageBadge,
+    "Press and hold 🌐",
+  );
+
+  for (const [language, strings] of Object.entries(keyboardTranslations)) {
+    assert.match(
+      strings.keyboardHelpHoldCtrlBadge,
+      /Ctrl\/☺/u,
+      `${language}.keyboardHelpHoldCtrlBadge`,
+    );
+    assert.match(
+      strings.keyboardHelpHoldLanguageBadge,
+      /🌐/u,
+      `${language}.keyboardHelpHoldLanguageBadge`,
+    );
+    assert.match(
+      strings.keyboardHelpSystemLayerDescription,
+      /Ctrl\/☺/u,
+      `${language}.keyboardHelpSystemLayerDescription`,
+    );
+  }
+});
+
 test("translation modules own disjoint UI keys", () => {
   const owners = new Map<string, string>();
   for (const [moduleName, record] of TRANSLATION_MODULES) {

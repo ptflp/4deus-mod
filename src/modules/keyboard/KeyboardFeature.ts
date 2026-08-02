@@ -493,13 +493,14 @@ export class KeyboardFeature implements ModModule {
   private openKeyboardHelp(): void {
     this.closeKeyboardHelp();
     let close: (() => void) | undefined;
-    close = showKeyboardHelp(
-      this.keyboardElement?.ownerDocument.defaultView ?? undefined,
-      () => {
+    close = showKeyboardHelp({
+      keyboard: this.keyboardElement,
+      onClosed: () => {
         if (this.keyboardHelpCloser === close)
           this.keyboardHelpCloser = undefined;
       },
-    );
+      parent: this.keyboardElement?.ownerDocument.defaultView ?? undefined,
+    });
     this.keyboardHelpCloser = close;
   }
 

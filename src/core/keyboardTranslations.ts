@@ -281,7 +281,7 @@ Record<SteamLanguage, KeyboardTranslation> = {
     "Keep open after Enter",
     "Do not dismiss the keyboard after pressing Enter",
     "System keys by default",
-    "Show Ctrl, Fn, Esc, Delete, and F1–F12 on open. Hold the lower-left Steam-symbol key to switch layers.",
+    "Show Ctrl, Fn, Esc, Delete, and F1–F12 on open. Hold the 🌐 key to switch layers.",
     "Secondary key labels",
     "Show letters from another enabled Steam layout",
     "Secondary layout",
@@ -482,7 +482,7 @@ Record<SteamLanguage, KeyboardTranslation> = {
     "Оставяне отворена след Enter",
     "Клавиатурата да не се затваря след натискане на Enter",
     "Системни клавиши по подразбиране",
-    "Показване на Ctrl, Fn, Esc, Delete и F1–F12 при отваряне; задръжте клавиша за Steam предмети за смяна на слоя",
+    "Показване на Ctrl, Fn, Esc, Delete и F1–F12 при отваряне; задръжте клавиша 🌐 за смяна на слоя",
     "Вторични надписи",
     "Показване на букви от друга включена Steam подредба",
     "Вторична подредба",
@@ -1755,7 +1755,7 @@ Record<SteamLanguage, KeyboardTranslation> = {
     "Не закрывать после Enter",
     "Оставлять клавиатуру открытой после нажатия Enter",
     "Системные клавиши по умолчанию",
-    "Сразу показывать Ctrl, Fn, Esc, Delete и F1–F12. Для смены слоя удерживайте нижнюю левую клавишу с символом Steam.",
+    "Сразу показывать Ctrl, Fn, Esc, Delete и F1–F12. Для смены слоя удерживайте клавишу 🌐.",
     "Вторые подписи клавиш",
     "Показывать буквы из другой включённой раскладки Steam",
     "Вторая раскладка",
@@ -2385,6 +2385,137 @@ const holdBadgeTranslations: Record<SteamLanguage, string> = {
   vietnamese: "Nhấn giữ",
 };
 
+const systemKeyLayerDescriptionOverrides: Record<SteamLanguage, string> = {
+  english:
+    "Show Ctrl, Fn, Esc, Delete, and F1–F12 on open. Hold Ctrl/☺ to switch layers.",
+  arabic:
+    "إظهار Ctrl وFn وEsc وDelete وF1–F12 عند الفتح؛ اضغط مطولًا على Ctrl/☺ للتبديل بين الطبقات",
+  brazilian:
+    "Exibir Ctrl, Fn, Esc, Delete e F1–F12 ao abrir; mantenha pressionado Ctrl/☺ para alternar entre as camadas",
+  bulgarian:
+    "Показване на Ctrl, Fn, Esc, Delete и F1–F12 при отваряне; задръжте Ctrl/☺ за смяна на слоя",
+  czech:
+    "Po otevření zobrazit Ctrl, Fn, Esc, Delete a F1–F12; podržením Ctrl/☺ přepnete vrstvu",
+  danish:
+    "Vis Ctrl, Fn, Esc, Delete og F1–F12 ved åbning; hold Ctrl/☺ nede for at skifte lag",
+  dutch:
+    "Ctrl, Fn, Esc, Delete en F1–F12 direct tonen; houd Ctrl/☺ ingedrukt om van laag te wisselen",
+  finnish:
+    "Näytä Ctrl, Fn, Esc, Delete ja F1–F12 avattaessa; vaihda tasoa pitämällä Ctrl/☺ painettuna",
+  french:
+    "Afficher Ctrl, Fn, Échap, Suppr et F1–F12 à l’ouverture ; maintenez Ctrl/☺ pour changer de couche",
+  german:
+    "Ctrl, Fn, Esc, Delete und F1–F12 sofort anzeigen; halten Sie Ctrl/☺, um die Ebene zu wechseln",
+  greek:
+    "Εμφάνιση Ctrl, Fn, Esc, Delete και F1–F12 κατά το άνοιγμα· κρατήστε πατημένο το Ctrl/☺ για αλλαγή επιπέδου",
+  hungarian:
+    "A Ctrl, Fn, Esc, Delete és F1–F12 azonnali megjelenítése; a rétegváltáshoz tartsa nyomva a Ctrl/☺ billentyűt",
+  indonesian:
+    "Tampilkan Ctrl, Fn, Esc, Delete, dan F1–F12 saat dibuka; tahan Ctrl/☺ untuk mengganti lapisan",
+  italian:
+    "Mostra Ctrl, Fn, Esc, Canc e F1–F12 all’apertura; tieni premuto Ctrl/☺ per cambiare livello",
+  japanese:
+    "起動時にCtrl、Fn、Esc、Delete、F1～F12を表示します。Ctrl/☺ を長押ししてレイヤーを切り替えます",
+  koreana:
+    "열 때 Ctrl, Fn, Esc, Delete 및 F1–F12를 표시합니다. Ctrl/☺을 길게 눌러 레이어를 전환합니다",
+  latam:
+    "Mostrar Ctrl, Fn, Esc, Supr y F1–F12 al abrir; mantén presionado Ctrl/☺ para cambiar de capa",
+  malay:
+    "Paparkan Ctrl, Fn, Esc, Delete dan F1–F12 semasa dibuka; tahan Ctrl/☺ untuk menukar lapisan",
+  norwegian:
+    "Vis Ctrl, Fn, Esc, Delete og F1–F12 ved åpning; hold Ctrl/☺ for å bytte lag",
+  polish:
+    "Pokazuj Ctrl, Fn, Esc, Delete i F1–F12 po otwarciu; przytrzymaj Ctrl/☺, aby zmienić warstwę",
+  portuguese:
+    "Mostrar Ctrl, Fn, Esc, Delete e F1–F12 ao abrir; mantenha premida Ctrl/☺ para mudar de camada",
+  romanian:
+    "Afișează Ctrl, Fn, Esc, Delete și F1–F12 la deschidere; ține apăsat Ctrl/☺ pentru a schimba stratul",
+  russian:
+    "Сразу показывать Ctrl, Fn, Esc, Delete и F1–F12. Для смены слоя удерживайте Ctrl/☺.",
+  schinese:
+    "打开时显示 Ctrl、Fn、Esc、Delete 和 F1–F12；长按 Ctrl/☺ 切换按键层",
+  spanish:
+    "Mostrar Ctrl, Fn, Esc, Supr y F1–F12 al abrir; mantén pulsado Ctrl/☺ para cambiar de capa",
+  swedish:
+    "Visa Ctrl, Fn, Esc, Delete och F1–F12 direkt; håll Ctrl/☺ för att byta lager",
+  tchinese:
+    "開啟時顯示 Ctrl、Fn、Esc、Delete 與 F1–F12；長按 Ctrl/☺ 切換按鍵層",
+  thai:
+    "แสดง Ctrl, Fn, Esc, Delete และ F1–F12 เมื่อเปิด; กด Ctrl/☺ ค้างไว้เพื่อสลับชั้น",
+  turkish:
+    "Açılışta Ctrl, Fn, Esc, Delete ve F1–F12’yi göster; katman değiştirmek için Ctrl/☺ tuşunu basılı tutun",
+  ukrainian:
+    "Одразу показувати Ctrl, Fn, Esc, Delete і F1–F12; утримуйте Ctrl/☺ для зміни шару",
+  vietnamese:
+    "Hiển thị Ctrl, Fn, Esc, Delete và F1–F12 khi mở; giữ Ctrl/☺ để đổi lớp",
+};
+
+const keyboardHelpSystemLayerDescriptionOverrides:
+Record<SteamLanguage, string> = {
+  english:
+    "Hold Ctrl/☺ to switch between regular and system keys.",
+  arabic:
+    "اضغط مطولًا على Ctrl/☺ للتبديل بين المفاتيح العادية ومفاتيح النظام.",
+  brazilian:
+    "Segure Ctrl/☺ para alternar entre as teclas normais e as teclas do sistema.",
+  bulgarian:
+    "Задръжте Ctrl/☺, за да превключвате между обикновени и системни клавиши.",
+  czech:
+    "Podržením Ctrl/☺ můžete přepínat mezi běžnými a systémovými klávesami.",
+  danish:
+    "Hold Ctrl/☺ nede for at skifte mellem almindelige og systemtaster.",
+  dutch:
+    "Houd Ctrl/☺ ingedrukt om te schakelen tussen gewone toetsen en systeemtoetsen.",
+  finnish:
+    "Pidä Ctrl/☺ painettuna vaihtaaksesi tavallisten ja järjestelmänäppäinten välillä.",
+  french:
+    "Maintenez Ctrl/☺ enfoncé pour basculer entre les touches normales et système.",
+  german:
+    "Halten Sie Ctrl/☺ gedrückt, um zwischen regulären und Systemtasten zu wechseln.",
+  greek:
+    "Κρατήστε πατημένο το Ctrl/☺ για εναλλαγή μεταξύ των κανονικών κλειδιών και των κλειδιών συστήματος.",
+  hungarian:
+    "Tartsa lenyomva a Ctrl/☺ billentyűt a normál és a rendszerbillentyűk közötti váltáshoz.",
+  indonesian:
+    "Tahan Ctrl/☺ untuk beralih antara tombol biasa dan sistem.",
+  italian:
+    "Tieni premuto Ctrl/☺ per passare dai tasti normali a quelli di sistema.",
+  japanese:
+    "Ctrl/☺ を長押しして、通常キーとシステムキーを切り替えます。",
+  koreana:
+    "Ctrl/☺을 길게 눌러 일반 키와 시스템 키 사이를 전환하세요.",
+  latam:
+    "Mantén presionado Ctrl/☺ para alternar entre las teclas normales y del sistema.",
+  malay:
+    "Tahan Ctrl/☺ untuk bertukar antara kekunci biasa dan kekunci sistem.",
+  norwegian:
+    "Hold Ctrl/☺ for å bytte mellom vanlige og systemtaster.",
+  polish:
+    "Przytrzymaj Ctrl/☺, aby przełączać się między klawiszami zwykłymi i systemowymi.",
+  portuguese:
+    "Mantenha premido Ctrl/☺ para alternar entre as teclas normais e do sistema.",
+  romanian:
+    "Țineți apăsat Ctrl/☺ pentru a comuta între tastele obișnuite și de sistem.",
+  russian:
+    "Удерживайте Ctrl/☺ для переключения между обычными и системными клавишами.",
+  schinese:
+    "按住 Ctrl/☺ 键可在常规键和系统键之间切换。",
+  spanish:
+    "Mantén pulsado Ctrl/☺ para alternar entre las teclas normales y del sistema.",
+  swedish:
+    "Håll ned Ctrl/☺ för att växla mellan vanliga tangenter och systemtangenter.",
+  tchinese:
+    "按住 Ctrl/☺ 鍵可在常規鍵和系統鍵之間切換。",
+  thai:
+    "กด Ctrl/☺ ค้างไว้เพื่อสลับระหว่างปุ่มปกติและปุ่มระบบ",
+  turkish:
+    "Normal ve sistem tuşları arasında geçiş yapmak için Ctrl/☺ tuşunu basılı tutun.",
+  ukrainian:
+    "Утримуйте Ctrl/☺, щоб переключатися між звичайними та системними клавішами.",
+  vietnamese:
+    "Giữ Ctrl/☺ để chuyển giữa phím thông thường và phím hệ thống.",
+};
+
 export const keyboardTranslations:
 Record<SteamLanguage, KeyboardTranslation> = Object.fromEntries(
   Object.entries(rawKeyboardTranslations).map(([language, strings]) => {
@@ -2394,8 +2525,14 @@ Record<SteamLanguage, KeyboardTranslation> = Object.fromEntries(
       {
         ...strings,
         holdBadge: hold,
+        systemKeyLayerDescription:
+          systemKeyLayerDescriptionOverrides[language as SteamLanguage],
         keyboardHelpAutoBadge: strings.automatic,
-        keyboardHelpHoldCtrlBadge: `${hold} Ctrl`,
+        keyboardHelpHoldCtrlBadge: `${hold} Ctrl/☺`,
+        keyboardHelpSystemLayerDescription:
+          keyboardHelpSystemLayerDescriptionOverrides[
+            language as SteamLanguage
+          ],
         keyboardHelpHoldLanguageBadge: `${hold} 🌐`,
       },
     ];
