@@ -56,6 +56,7 @@ import {
   KEYBOARD_SETTINGS_ROUTE,
   NESTED_DESKTOP_SETTINGS_ROUTE,
 } from "./routes";
+import { CommunityLinks } from "./CommunityLinks";
 
 interface ModsPanelProps {
   appBridgeApi: AppBridgeApi;
@@ -300,16 +301,19 @@ export const ModsPanel = ({
   );
   const moduleList = useMemo(
     () => (
-      <PanelSection title="4deus Mod">
-        {moduleDefinitions.map((definition) => (
-          <ModuleField
-            key={definition.id}
-            definition={definition}
-            modules={modules}
-            snapshot={snapshot}
-          />
-        ))}
-      </PanelSection>
+      <>
+        <PanelSection title="4deus Mod">
+          {moduleDefinitions.map((definition) => (
+            <ModuleField
+              key={definition.id}
+              definition={definition}
+              modules={modules}
+              snapshot={snapshot}
+            />
+          ))}
+        </PanelSection>
+        <CommunityLinks />
+      </>
     ),
     [moduleDefinitions, modules, snapshot],
   );

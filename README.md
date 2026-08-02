@@ -1,4 +1,7 @@
-4deus Mod
+# 4deus Mod
+
+[![Discord — join the 4deus community](https://img.shields.io/badge/Discord-Join_the_community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/83eanusuRU)
+[![Telegram — follow 4deus](https://img.shields.io/badge/Telegram-Follow_4deus-229ED9?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/the4deus)
 
 `4deus Mod` is a modular Decky Loader plugin for Steam Deck fixes and
 customizations.
