@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="4deus" width="180">
+</p>
+
 # 4deus Mod
 
 [![Discord — join the 4deus community](https://img.shields.io/badge/Discord-Join_the_community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/83eanusuRU)
