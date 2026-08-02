@@ -18,7 +18,6 @@ import {
   FaCubes,
   FaCog,
   FaDesktop,
-  FaGamepad,
   FaKeyboard,
   FaPlus,
   FaProjectDiagram,
@@ -35,8 +34,6 @@ import {
   AppBridgePopularPanel,
 } from "../modules/appBridge/AppBridgePopularPanel";
 import type { AppBridgeApi } from "../modules/appBridge/types";
-import { ControllerPanel } from "../modules/controller/ControllerPanel";
-import type { ControllerApi } from "../modules/controller/types";
 import {
   KeyboardQuickPanel,
 } from "../modules/keyboard/KeyboardPanel";
@@ -52,7 +49,6 @@ import type {
 } from "../modules/nestedDesktop/types";
 import {
   APP_BRIDGE_SETTINGS_ROUTE,
-  CONTROLLER_SETTINGS_ROUTE,
   KEYBOARD_SETTINGS_ROUTE,
   NESTED_DESKTOP_SETTINGS_ROUTE,
 } from "./routes";
@@ -60,7 +56,6 @@ import { CommunityLinks } from "./CommunityLinks";
 
 interface ModsPanelProps {
   appBridgeApi: AppBridgeApi;
-  controllerApi: ControllerApi;
   mangoHudApi: MangoHudApi;
   modules: ModuleRegistry;
   nestedDesktopApi: NestedDesktopApi;
@@ -112,13 +107,6 @@ const definitions = (strings: Strings): ModuleDefinition[] => [
     id: "keyboard",
     route: KEYBOARD_SETTINGS_ROUTE,
     title: strings.keyboard,
-  },
-  {
-    description: strings.trackpadAutoRecoveryDescription,
-    icon: <FaGamepad />,
-    id: "controller",
-    route: CONTROLLER_SETTINGS_ROUTE,
-    title: strings.controller,
   },
   {
     description: strings.nestedDesktopHotkeysDescription,
@@ -206,7 +194,6 @@ const SettingsLink = ({
 
 interface ModuleTabProps {
   appBridgeApi: AppBridgeApi;
-  controllerApi: ControllerApi;
   definition: ModuleDefinition;
   mangoHudApi: MangoHudApi;
   nestedDesktopApi: NestedDesktopApi;
@@ -217,7 +204,6 @@ interface ModuleTabProps {
 
 const ModuleTab = ({
   appBridgeApi,
-  controllerApi,
   definition,
   mangoHudApi,
   nestedDesktopApi,
@@ -234,9 +220,6 @@ const ModuleTab = ({
     />
     {definition.id === "keyboard" && (
       <KeyboardQuickPanel settings={settings} />
-    )}
-    {definition.id === "controller" && (
-      <ControllerPanel api={controllerApi} />
     )}
     {definition.id === "nestedDesktop" && (
       <>
@@ -258,7 +241,6 @@ const ModuleTab = ({
 
 export const ModsPanel = ({
   appBridgeApi,
-  controllerApi,
   mangoHudApi,
   modules,
   nestedDesktopApi,
@@ -330,7 +312,6 @@ export const ModsPanel = ({
         content: (
           <ModuleTab
             appBridgeApi={appBridgeApi}
-            controllerApi={controllerApi}
             definition={definition}
             mangoHudApi={mangoHudApi}
             nestedDesktopApi={nestedDesktopApi}
@@ -343,7 +324,6 @@ export const ModsPanel = ({
     ],
     [
       appBridgeApi,
-      controllerApi,
       enabledDefinitions,
       mangoHudApi,
       moduleList,

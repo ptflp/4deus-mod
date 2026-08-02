@@ -201,6 +201,23 @@ test("RustDesk auto-focus warnings identify the Steam PIN bypass", () => {
   }
 });
 
+test("RustDesk Flatpak warnings name the supported package path", () => {
+  for (const [language, strings] of Object.entries(
+    systemToolsTranslations,
+  )) {
+    assert.match(
+      strings.rustDeskFlatpakUnsupported,
+      /Flatpak/u,
+      `${language}.rustDeskFlatpakUnsupported Flatpak`,
+    );
+    assert.match(
+      strings.rustDeskFlatpakUnsupported,
+      /Arch Linux/u,
+      `${language}.rustDeskFlatpakUnsupported Arch Linux`,
+    );
+  }
+});
+
 test("Getting Started covers every Steam locale", () => {
   const guide = readFileSync(
     new URL("../docs/GETTING_STARTED.md", import.meta.url),

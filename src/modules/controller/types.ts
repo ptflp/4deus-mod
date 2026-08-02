@@ -17,7 +17,4 @@ export interface ControllerApi {
   setControllerModuleEnabled(
     enabled: boolean,
   ): Promise<ControllerStatus>;
-  setTrackpadAutoRecoveryEnabled(
-    enabled: boolean,
-  ): Promise<ControllerStatus>;
 }

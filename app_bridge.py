@@ -17,6 +17,7 @@ CHROME_APP_ID = "com.google.Chrome"
 CHROME_PROFILE_ID = "chrome"
 PARSEC_APP_ID = "com.parsecgaming.parsec"
 PARSEC_PROFILE_ID = "parsec"
+RUSTDESK_FLATPAK_APP_ID = "com.rustdesk.RustDesk"
 RUSTDESK_PROFILE_ID = "rustdesk"
 TERMINAL_EXECUTABLE = Path("/usr/bin/konsole")
 TERMINAL_PROFILE_ID = "terminal"
@@ -73,7 +74,6 @@ class AppBridgeManager:
         self.terminal_executable = Path(terminal_executable)
 
     def status(self) -> dict[str, Any]:
-        rustdesk_executable = self._rustdesk_directory() / "rustdesk"
         return {
             "launcherInstalled": self._runner_is_current(),
             "launcherPath": str(self.runner_path),
@@ -85,7 +85,10 @@ class AppBridgeManager:
             "parsecProfileInstalled": (
                 self.profile_dir / f"{PARSEC_PROFILE_ID}.json"
             ).is_file(),
-            "rustdeskInstalled": rustdesk_executable.is_file(),
+            "rustdeskFlatpakInstalled": (
+                self.rustdesk_flatpak_installed()
+            ),
+            "rustdeskInstalled": self.rustdesk_unpacked_installed(),
             "rustdeskProfileInstalled": (
                 self.profile_dir / f"{RUSTDESK_PROFILE_ID}.json"
             ).is_file(),
@@ -175,6 +178,11 @@ class AppBridgeManager:
         }
 
     def prepare_rustdesk(self) -> dict[str, Any]:
+        if self.rustdesk_flatpak_installed():
+            raise RuntimeError(
+                "RustDesk Flatpak is unsupported; remove it and install "
+                "the unpacked Arch Linux package"
+            )
         application_directory = self._rustdesk_directory()
         executable = application_directory / "rustdesk"
         if not executable.is_file():
@@ -341,6 +349,12 @@ class AppBridgeManager:
     def _rustdesk_directory(self) -> Path:
         return self.home / "Applications/RustDesk/usr/share/rustdesk"
 
+    def rustdesk_flatpak_installed(self) -> bool:
+        return self._flatpak_files_installed(RUSTDESK_FLATPAK_APP_ID)
+
+    def rustdesk_unpacked_installed(self) -> bool:
+        return (self._rustdesk_directory() / "rustdesk").is_file()
+
     def _runner_is_current(self) -> bool:
         if not self.runner_source.is_file() or not self.runner_path.is_file():
             return False
@@ -365,14 +379,7 @@ class AppBridgeManager:
         return environment
 
     def _flatpak_installed(self, application_id: str) -> bool:
-        exported_desktop_files = [
-            self.home
-            / ".local/share/flatpak/exports/share/applications"
-            / f"{application_id}.desktop",
-            Path("/var/lib/flatpak/exports/share/applications")
-            / f"{application_id}.desktop",
-        ]
-        if any(path.is_file() for path in exported_desktop_files):
+        if self._flatpak_files_installed(application_id):
             return True
         try:
             result = subprocess.run(
@@ -386,6 +393,18 @@ class AppBridgeManager:
         except (OSError, subprocess.SubprocessError):
             return False
         return result.returncode == 0
+
+    def _flatpak_files_installed(self, application_id: str) -> bool:
+        installation_paths = [
+            self.home
+            / ".local/share/flatpak/exports/share/applications"
+            / f"{application_id}.desktop",
+            Path("/var/lib/flatpak/exports/share/applications")
+            / f"{application_id}.desktop",
+            self.home / ".local/share/flatpak/app" / application_id,
+            Path("/var/lib/flatpak/app") / application_id,
+        ]
+        return any(path.exists() for path in installation_paths)
 
     def _collect_flatpaks(
         self,

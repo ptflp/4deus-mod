@@ -59,10 +59,12 @@ export interface NestedDesktopMouseStatus {
   clipboardFilesEnabled: boolean;
   enabled: boolean;
   error?: string;
+  errorCode?: string;
   gamescopePointerRelayEnabled: boolean;
   inertiaEnabled: boolean;
   moduleEnabled: boolean;
   rustDeskFocusOnInputEnabled: boolean;
+  rustDeskFlatpakInstalled: boolean;
   rustDeskPointerFixEnabled: boolean;
   rustDeskScrollInertiaEnabled: boolean;
   running: boolean;

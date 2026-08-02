@@ -45,7 +45,6 @@ import { PluginTitle } from "./ui/PluginTitle";
 import { ModsPanel } from "./ui/ModsPanel";
 import {
   APP_BRIDGE_SETTINGS_ROUTE,
-  CONTROLLER_SETTINGS_ROUTE,
   KEYBOARD_SETTINGS_ROUTE,
   NESTED_DESKTOP_SETTINGS_ROUTE,
   PLUGIN_SETTINGS_ROUTE,
@@ -191,10 +190,6 @@ export default definePlugin(() => {
       [boolean],
       ControllerStatus
     >("set_controller_module_enabled"),
-    setTrackpadAutoRecoveryEnabled: callable<
-      [boolean],
-      ControllerStatus
-    >("set_trackpad_auto_recovery_enabled"),
   };
   const developerApi: DeveloperApi = {
     getStatus: callable<[], DeveloperSettingsStatus>(
@@ -247,7 +242,6 @@ export default definePlugin(() => {
   const settingsRoute = (initialPage: string) => (
     <ModSettingsRoute
       appBridgeApi={appBridgeApi}
-      controllerApi={controllerApi}
       developerApi={developerApi}
       initialPage={initialPage}
       mangoHudApi={mangoHudApi}
@@ -256,7 +250,6 @@ export default definePlugin(() => {
     />
   );
   const KeyboardRoute = () => settingsRoute("keyboard");
-  const ControllerRoute = () => settingsRoute("controller");
   const NestedDesktopRoute = () => settingsRoute("nested-desktop");
   const AppBridgeRoute = () => settingsRoute("app-bridge");
   const PluginSettings = () => settingsRoute("plugin-settings");
@@ -264,9 +257,6 @@ export default definePlugin(() => {
     exact: true,
   });
   routerHook.addRoute(APP_BRIDGE_SETTINGS_ROUTE, AppBridgeRoute, {
-    exact: true,
-  });
-  routerHook.addRoute(CONTROLLER_SETTINGS_ROUTE, ControllerRoute, {
     exact: true,
   });
   routerHook.addRoute(
@@ -286,7 +276,6 @@ export default definePlugin(() => {
     content: (
       <ModsPanel
         appBridgeApi={appBridgeApi}
-        controllerApi={controllerApi}
         mangoHudApi={mangoHudApi}
         modules={modules}
         nestedDesktopApi={nestedDesktopApi}
@@ -301,7 +290,6 @@ export default definePlugin(() => {
       );
       routerHook.removeRoute(PLUGIN_SETTINGS_ROUTE);
       routerHook.removeRoute(NESTED_DESKTOP_SETTINGS_ROUTE);
-      routerHook.removeRoute(CONTROLLER_SETTINGS_ROUTE);
       routerHook.removeRoute(APP_BRIDGE_SETTINGS_ROUTE);
       routerHook.removeRoute(KEYBOARD_SETTINGS_ROUTE);
       modules.stop();

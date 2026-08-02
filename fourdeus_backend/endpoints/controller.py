@@ -46,9 +46,10 @@ class ControllerEndpointsMixin:
             await asyncio.to_thread(
                 self._save_controller_settings,
                 enabled,
-                self.trackpad_auto_recovery_enabled,
+                False,
             )
             self.controller_module_enabled = enabled
+            self.trackpad_auto_recovery_enabled = False
             await asyncio.to_thread(self._sync_trackpad_metrics)
             logger.info(
                 "Controller module %s",
@@ -72,14 +73,11 @@ class ControllerEndpointsMixin:
             await asyncio.to_thread(
                 self._save_controller_settings,
                 self.controller_module_enabled,
-                enabled,
+                False,
             )
-            self.trackpad_auto_recovery_enabled = enabled
+            self.trackpad_auto_recovery_enabled = False
             await asyncio.to_thread(self._sync_trackpad_metrics)
-            logger.info(
-                "Trackpad auto-recovery %s",
-                "enabled" if enabled else "disabled",
-            )
+            logger.info("Trackpad auto-recovery remains disabled")
             return await self.get_controller_status()
         except Exception as error:
             logger.exception("Failed to change trackpad auto-recovery")
@@ -132,7 +130,7 @@ class ControllerEndpointsMixin:
             )
             return (
                 payload.get("moduleEnabled", True) is not False,
-                payload.get("trackpadAutoRecoveryEnabled", False) is True,
+                False,
             )
         except FileNotFoundError:
             return True, False
@@ -143,7 +141,7 @@ class ControllerEndpointsMixin:
     def _save_controller_settings(
         self,
         module_enabled: bool,
-        auto_recovery_enabled: bool,
+        _auto_recovery_enabled: bool,
     ):
         path = self.controller_settings_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +150,7 @@ class ControllerEndpointsMixin:
             json.dumps(
                 {
                     "moduleEnabled": module_enabled,
-                    "trackpadAutoRecoveryEnabled": auto_recovery_enabled,
+                    "trackpadAutoRecoveryEnabled": False,
                 },
                 indent=2,
             )

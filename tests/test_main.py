@@ -928,6 +928,74 @@ class NestedDesktopMouseSettingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["rustDeskPointerFixEnabled"])
         manager.install.assert_called_once_with(restart=True)
 
+    async def test_rustdesk_flatpak_disables_and_persists_every_option(self):
+        plugin = plugin_backend.Plugin()
+        bridge = RecordingMouseBridge()
+        plugin.nested_desktop_mouse = bridge
+        plugin.app_bridge = types.SimpleNamespace(
+            rustdesk_flatpak_installed=MagicMock(return_value=True),
+        )
+        pointer_fix = types.SimpleNamespace(remove=MagicMock())
+        plugin.rustdesk_pointer_fix = pointer_fix
+        plugin.rustdesk_pointer_fix_enabled = True
+        plugin.rustdesk_scroll_inertia_enabled = True
+        plugin.rustdesk_focus_on_input_enabled = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings_path = Path(directory) / "nested-desktop-mouse.json"
+            plugin.nested_desktop_mouse_settings_path = settings_path
+
+            result = await plugin.get_nested_desktop_mouse_status()
+
+            self.assertTrue(result["rustDeskFlatpakInstalled"])
+            self.assertFalse(result["rustDeskPointerFixEnabled"])
+            self.assertFalse(result["rustDeskScrollInertiaEnabled"])
+            self.assertFalse(result["rustDeskFocusOnInputEnabled"])
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["rustDeskPointerFixEnabled"])
+            self.assertFalse(payload["rustDeskScrollInertiaEnabled"])
+            self.assertFalse(payload["rustDeskFocusOnInputEnabled"])
+
+        self.assertEqual(bridge.rustdesk_pointer_fix_values, [False])
+        self.assertEqual(bridge.rustdesk_scroll_inertia_values, [False])
+        self.assertEqual(bridge.rustdesk_focus_on_input_values, [False])
+        pointer_fix.remove.assert_called_once_with()
+
+    async def test_rustdesk_flatpak_rejects_every_enable_rpc(self):
+        setters = (
+            "set_rustdesk_pointer_fix_enabled",
+            "set_rustdesk_scroll_inertia_enabled",
+            "set_rustdesk_focus_on_input_enabled",
+        )
+        for setter_name in setters:
+            with self.subTest(setter=setter_name):
+                plugin = plugin_backend.Plugin()
+                bridge = RecordingMouseBridge()
+                plugin.nested_desktop_mouse = bridge
+                plugin.app_bridge = types.SimpleNamespace(
+                    rustdesk_flatpak_installed=MagicMock(
+                        return_value=True
+                    ),
+                )
+                plugin.rustdesk_pointer_fix = types.SimpleNamespace(
+                    remove=MagicMock(),
+                )
+
+                with tempfile.TemporaryDirectory() as directory:
+                    plugin.nested_desktop_mouse_settings_path = (
+                        Path(directory) / "nested-desktop-mouse.json"
+                    )
+                    result = await getattr(plugin, setter_name)(True)
+
+                self.assertEqual(
+                    result["errorCode"],
+                    "rustdesk_flatpak_unsupported",
+                )
+                self.assertIn("unpacked Arch Linux package", result["error"])
+                self.assertNotIn(True, bridge.rustdesk_pointer_fix_values)
+                self.assertNotIn(True, bridge.rustdesk_scroll_inertia_values)
+                self.assertNotIn(True, bridge.rustdesk_focus_on_input_values)
+
     async def test_rustdesk_scroll_inertia_defaults_off_and_can_be_enabled(
         self,
     ):
@@ -1152,7 +1220,7 @@ class DeveloperSettingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_module_switch_preserves_recovery_preference(self):
+    async def test_module_switch_keeps_removed_recovery_disabled(self):
         plugin = plugin_backend.Plugin()
         monitor = RecordingTrackpadMetrics()
         plugin.trackpad_metrics = monitor
@@ -1165,25 +1233,25 @@ class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
             disabled = await plugin.set_controller_module_enabled(False)
 
             self.assertFalse(disabled["moduleEnabled"])
-            self.assertTrue(disabled["autoRecoveryEnabled"])
+            self.assertFalse(disabled["autoRecoveryEnabled"])
             self.assertFalse(disabled["monitoring"])
             self.assertEqual(monitor.configurations[-1], (False, False))
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
                 {
                     "moduleEnabled": False,
-                    "trackpadAutoRecoveryEnabled": True,
+                    "trackpadAutoRecoveryEnabled": False,
                 },
             )
 
             enabled = await plugin.set_controller_module_enabled(True)
 
             self.assertTrue(enabled["moduleEnabled"])
-            self.assertTrue(enabled["autoRecoveryEnabled"])
-            self.assertTrue(enabled["monitoring"])
-            self.assertEqual(monitor.configurations[-1], (False, True))
+            self.assertFalse(enabled["autoRecoveryEnabled"])
+            self.assertFalse(enabled["monitoring"])
+            self.assertEqual(monitor.configurations[-1], (False, False))
 
-    async def test_auto_recovery_defaults_off_and_persists(self):
+    async def test_removed_auto_recovery_cannot_be_reenabled(self):
         plugin = plugin_backend.Plugin()
         monitor = RecordingTrackpadMetrics()
         plugin.trackpad_metrics = monitor
@@ -1192,10 +1260,16 @@ class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             settings_path = Path(directory) / "controller-settings.json"
             plugin.controller_settings_path = settings_path
-            self.assertEqual(
-                plugin._load_controller_settings(),
-                (True, False),
+            settings_path.write_text(
+                json.dumps(
+                    {
+                        "moduleEnabled": True,
+                        "trackpadAutoRecoveryEnabled": True,
+                    }
+                ),
+                encoding="utf-8",
             )
+            self.assertEqual(plugin._load_controller_settings(), (True, False))
 
             disabled = await plugin.set_trackpad_auto_recovery_enabled(False)
 
@@ -1215,15 +1289,15 @@ class ControllerSettingTests(unittest.IsolatedAsyncioTestCase):
 
             enabled = await plugin.set_trackpad_auto_recovery_enabled(True)
 
-            self.assertTrue(enabled["autoRecoveryEnabled"])
-            self.assertTrue(enabled["monitoring"])
+            self.assertFalse(enabled["autoRecoveryEnabled"])
+            self.assertFalse(enabled["monitoring"])
             self.assertEqual(
                 plugin._load_controller_settings(),
-                (True, True),
+                (True, False),
             )
             self.assertEqual(
                 monitor.configurations[-1],
-                (False, True),
+                (False, False),
             )
 
     async def test_confirmed_recovery_power_cycles_the_usb_controller(self):

@@ -10,8 +10,6 @@ import {
   AppBridgePopularPanel,
 } from "../modules/appBridge/AppBridgePopularPanel";
 import type { AppBridgeApi } from "../modules/appBridge/types";
-import { ControllerPanel } from "../modules/controller/ControllerPanel";
-import type { ControllerApi } from "../modules/controller/types";
 import { DeveloperModePanel } from "../modules/developer/DeveloperModePanel";
 import { TrackpadMetricsPanel } from "../modules/developer/TrackpadMetricsPanel";
 import type { DeveloperApi } from "../modules/developer/types";
@@ -37,7 +35,6 @@ import type {
 
 interface ModSettingsRouteProps {
   appBridgeApi: AppBridgeApi;
-  controllerApi: ControllerApi;
   developerApi: DeveloperApi;
   initialPage: string;
   mangoHudApi: MangoHudApi;
@@ -47,7 +44,6 @@ interface ModSettingsRouteProps {
 
 export const ModSettingsRoute = ({
   appBridgeApi,
-  controllerApi,
   developerApi,
   initialPage,
   mangoHudApi,
@@ -69,20 +65,6 @@ export const ModSettingsRoute = ({
         identifier: "keyboard-hotkeys",
         title: strings.hotkeys,
         content: <KeyboardShortcutsPanel settings={settings} />,
-      },
-    ];
-    break;
-  case "controller":
-    pages = [
-      {
-        identifier: "controller",
-        title: strings.controller,
-        content: <ControllerPanel api={controllerApi} />,
-      },
-      {
-        identifier: "trackpad-metrics",
-        title: strings.trackpadMetrics,
-        content: <TrackpadMetricsPanel api={developerApi} />,
       },
     ];
     break;
@@ -137,11 +119,18 @@ export const ModSettingsRoute = ({
     ];
     break;
   default:
-    pages = [{
-      identifier: "plugin-settings",
-      title: strings.pluginSettings,
-      content: <DeveloperModePanel api={developerApi} />,
-    }];
+    pages = [
+      {
+        identifier: "plugin-settings",
+        title: strings.pluginSettings,
+        content: <DeveloperModePanel api={developerApi} />,
+      },
+      {
+        identifier: "trackpad-metrics",
+        title: strings.trackpadMetrics,
+        content: <TrackpadMetricsPanel api={developerApi} />,
+      },
+    ];
   }
 
   return (

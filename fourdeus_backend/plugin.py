@@ -54,6 +54,20 @@ class Plugin(
                 user_home / ".config/4deus-mod",
             )
         )
+        self.app_bridge = (
+            AppBridgeManager(
+                home=user_home,
+                plugin_root=PLUGIN_ROOT,
+            )
+            if AppBridgeManager is not None
+            else None
+        )
+        self.rustdesk_flatpak_installed = bool(
+            self.app_bridge
+            and self.app_bridge.rustdesk_flatpak_installed()
+        )
+        self._rustdesk_flatpak_reconciled = False
+        self._rustdesk_flatpak_settings_dirty = False
         self.nested_desktop_mouse_settings_path = (
             settings_directory / "nested-desktop-mouse.json"
         )
@@ -99,6 +113,17 @@ class Plugin(
             self.nested_desktop_touch_inertia_enabled,
             self.nested_desktop_touch_inertia_config,
         ) = self._load_nested_desktop_mouse_settings()
+        if self.rustdesk_flatpak_installed:
+            self._rustdesk_flatpak_settings_dirty = any(
+                (
+                    self.rustdesk_pointer_fix_enabled,
+                    self.rustdesk_scroll_inertia_enabled,
+                    self.rustdesk_focus_on_input_enabled,
+                )
+            )
+            self.rustdesk_pointer_fix_enabled = False
+            self.rustdesk_scroll_inertia_enabled = False
+            self.rustdesk_focus_on_input_enabled = False
         self.event_loop = None
         self.nested_desktop_mouse = (
             NestedDesktopMouseSupervisor(
@@ -147,14 +172,6 @@ class Plugin(
         self.held_key_codes = set()
         self.completed_system_key_requests = set()
         self.completed_system_key_request_order = deque()
-        self.app_bridge = (
-            AppBridgeManager(
-                home=user_home,
-                plugin_root=PLUGIN_ROOT,
-            )
-            if AppBridgeManager is not None
-            else None
-        )
         self.mangohud_fix = (
             MangoHudFixManager(
                 home=user_home,
@@ -194,6 +211,7 @@ class Plugin(
 
     async def _main(self):
         self.event_loop = asyncio.get_running_loop()
+        await self._refresh_rustdesk_flatpak_status()
         reconciler = reconcile_steam_deck_controller_authorization
         if reconciler is not None:
             try:

@@ -109,6 +109,42 @@ class AppBridgeTests(unittest.TestCase):
 
         self.assertTrue(self.manager._flatpak_installed("com.example.App"))
 
+    def test_rustdesk_status_distinguishes_flatpak_and_unpacked_packages(self):
+        flatpak_launcher = (
+            self.home
+            / ".local/share/flatpak/exports/share/applications"
+            / "com.rustdesk.RustDesk.desktop"
+        )
+        flatpak_launcher.parent.mkdir(parents=True)
+        flatpak_launcher.touch()
+        unpacked_executable = (
+            self.home
+            / "Applications/RustDesk/usr/share/rustdesk/rustdesk"
+        )
+        unpacked_executable.parent.mkdir(parents=True)
+        unpacked_executable.touch()
+
+        status = self.manager.status()
+
+        self.assertTrue(status["rustdeskFlatpakInstalled"])
+        self.assertTrue(status["rustdeskInstalled"])
+
+    def test_rustdesk_flatpak_blocks_profile_even_with_unpacked_package(self):
+        flatpak_installation = (
+            self.home
+            / ".local/share/flatpak/app/com.rustdesk.RustDesk"
+        )
+        flatpak_installation.mkdir(parents=True)
+        unpacked_executable = (
+            self.home
+            / "Applications/RustDesk/usr/share/rustdesk/rustdesk"
+        )
+        unpacked_executable.parent.mkdir(parents=True)
+        unpacked_executable.touch()
+
+        with self.assertRaisesRegex(RuntimeError, "Flatpak is unsupported"):
+            self.manager.prepare_rustdesk()
+
     def test_parsec_profile_tracks_real_daemon(self):
         prepared = self.manager.prepare_parsec()
         profile = json.loads(

@@ -28,6 +28,7 @@ export interface SystemToolsTranslation extends TouchInertiaTranslation {
   nestedDesktopTrackpadInertiaDescription: string;
   nestedDesktopTouchscreen: string;
   nestedDesktopTouchscreenDescription: string;
+  rustDeskFlatpakUnsupported: string;
   rustDeskPointerFix: string;
   rustDeskPointerFixDescription: string;
   rustDeskFocusOnInput: string;
@@ -41,6 +42,7 @@ export interface SystemToolsTranslation extends TouchInertiaTranslation {
 
 type BaseSystemToolsTranslation = Omit<
   SystemToolsTranslation,
+  | "rustDeskFlatpakUnsupported"
   | "rustDeskFocusOnInput"
   | "rustDeskFocusOnInputDescription"
   | "rustDeskScrollInertia"
@@ -788,6 +790,40 @@ Record<string, RustDeskOptionsTranslation> = {
   },
 };
 
+const rustDeskFlatpakUnsupportedTranslations: Record<string, string> = {
+  english: "The RustDesk Flatpak is not supported by these fixes. Remove it and install the unpacked Arch Linux package to enable RustDesk options.",
+  arabic: "إصدار RustDesk من Flatpak غير مدعوم بهذه الإصلاحات. أزله وثبّت حزمة Arch Linux المفكوكة لتمكين خيارات RustDesk.",
+  brazilian: "O RustDesk via Flatpak não é compatível com estas correções. Remova-o e instale o pacote descompactado do Arch Linux para ativar as opções do RustDesk.",
+  bulgarian: "RustDesk от Flatpak не се поддържа от тези корекции. Премахнете го и инсталирайте разархивирания пакет за Arch Linux, за да включите опциите на RustDesk.",
+  czech: "RustDesk z Flatpaku tyto opravy nepodporují. Odeberte jej a nainstalujte rozbalený balíček pro Arch Linux, abyste mohli zapnout možnosti RustDesk.",
+  danish: "RustDesk fra Flatpak understøttes ikke af disse rettelser. Fjern den, og installer den udpakkede Arch Linux-pakke for at aktivere RustDesk-indstillingerne.",
+  dutch: "RustDesk via Flatpak wordt niet door deze oplossingen ondersteund. Verwijder deze versie en installeer het uitgepakte Arch Linux-pakket om de RustDesk-opties in te schakelen.",
+  finnish: "Nämä korjaukset eivät tue RustDeskin Flatpak-versiota. Poista se ja asenna purettu Arch Linux -paketti, jotta voit ottaa RustDesk-asetukset käyttöön.",
+  french: "La version Flatpak de RustDesk n’est pas prise en charge par ces correctifs. Supprimez-la et installez le paquet Arch Linux décompressé pour activer les options RustDesk.",
+  german: "Die Flatpak-Version von RustDesk wird von diesen Korrekturen nicht unterstützt. Entferne sie und installiere das entpackte Arch Linux-Paket, um die RustDesk-Optionen zu aktivieren.",
+  greek: "Η έκδοση Flatpak του RustDesk δεν υποστηρίζεται από αυτές τις διορθώσεις. Αφαιρέστε την και εγκαταστήστε το αποσυμπιεσμένο πακέτο Arch Linux για να ενεργοποιήσετε τις επιλογές RustDesk.",
+  hungarian: "A RustDesk Flatpak-verzióját ezek a javítások nem támogatják. Távolítsd el, majd telepítsd a kibontott Arch Linux-csomagot a RustDesk beállításainak engedélyezéséhez.",
+  indonesian: "RustDesk versi Flatpak tidak didukung oleh perbaikan ini. Hapus versi tersebut lalu pasang paket Arch Linux yang telah diekstrak untuk mengaktifkan opsi RustDesk.",
+  italian: "La versione Flatpak di RustDesk non è supportata da queste correzioni. Rimuovila e installa il pacchetto Arch Linux estratto per abilitare le opzioni RustDesk.",
+  japanese: "RustDesk の Flatpak 版はこれらの修正ではサポートされません。RustDesk のオプションを有効にするには削除し、展開済みの Arch Linux パッケージをインストールしてください。",
+  koreana: "RustDesk Flatpak 버전은 이 수정 기능에서 지원되지 않습니다. 제거한 뒤 압축을 푼 Arch Linux 패키지를 설치해야 RustDesk 옵션을 활성화할 수 있습니다.",
+  latam: "La versión Flatpak de RustDesk no es compatible con estas correcciones. Elimínala e instala el paquete de Arch Linux descomprimido para activar las opciones de RustDesk.",
+  malay: "RustDesk versi Flatpak tidak disokong oleh pembaikan ini. Buangnya dan pasang pakej Arch Linux yang telah diekstrak untuk mengaktifkan pilihan RustDesk.",
+  norwegian: "Flatpak-versjonen av RustDesk støttes ikke av disse rettelsene. Fjern den og installer den utpakkede Arch Linux-pakken for å aktivere RustDesk-alternativene.",
+  polish: "Wersja Flatpak programu RustDesk nie jest obsługiwana przez te poprawki. Usuń ją i zainstaluj rozpakowany pakiet Arch Linux, aby włączyć opcje RustDesk.",
+  portuguese: "A versão Flatpak do RustDesk não é suportada por estas correções. Remova-a e instale o pacote Arch Linux descompactado para ativar as opções do RustDesk.",
+  romanian: "Versiunea Flatpak a RustDesk nu este acceptată de aceste remedieri. Eliminați-o și instalați pachetul Arch Linux despachetat pentru a activa opțiunile RustDesk.",
+  russian: "RustDesk из Flatpak не поддерживается этими исправлениями. Удалите Flatpak-версию и установите распакованный пакет Arch Linux, чтобы включить параметры RustDesk.",
+  schinese: "这些修复不支持 RustDesk 的 Flatpak 版本。请将其移除并安装解压后的 Arch Linux 软件包，然后再启用 RustDesk 选项。",
+  spanish: "La versión Flatpak de RustDesk no es compatible con estas correcciones. Elimínala e instala el paquete de Arch Linux descomprimido para activar las opciones de RustDesk.",
+  swedish: "Flatpak-versionen av RustDesk stöds inte av dessa korrigeringar. Ta bort den och installera det uppackade Arch Linux-paketet för att aktivera RustDesk-alternativen.",
+  tchinese: "這些修正不支援 RustDesk 的 Flatpak 版本。請將其移除並安裝解壓縮後的 Arch Linux 套件，然後再啟用 RustDesk 選項。",
+  thai: "การแก้ไขเหล่านี้ไม่รองรับ RustDesk เวอร์ชัน Flatpak โปรดลบออกแล้วติดตั้งแพ็กเกจ Arch Linux ที่แตกไฟล์แล้วเพื่อเปิดใช้ตัวเลือก RustDesk",
+  turkish: "RustDesk’in Flatpak sürümü bu düzeltmeler tarafından desteklenmez. RustDesk seçeneklerini etkinleştirmek için sürümü kaldırın ve ayıklanmış Arch Linux paketini kurun.",
+  ukrainian: "Версія RustDesk із Flatpak не підтримується цими виправленнями. Видаліть її та встановіть розпакований пакет Arch Linux, щоб увімкнути параметри RustDesk.",
+  vietnamese: "Các bản sửa lỗi này không hỗ trợ RustDesk bản Flatpak. Hãy gỡ bản đó và cài gói Arch Linux đã giải nén để bật các tùy chọn RustDesk.",
+};
+
 type ControllerOptionsTranslation = Pick<
   SystemToolsTranslation,
   | "controller"
@@ -959,6 +995,8 @@ Record<string, SystemToolsTranslation> = Object.fromEntries(
         ...touchscreenOptionsTranslations[language],
         ...touchInertiaTranslations[language],
         ...rustDeskOptionsTranslations[language],
+        rustDeskFlatpakUnsupported:
+          rustDeskFlatpakUnsupportedTranslations[language],
         ...controllerOptionsTranslations[language],
       },
     ],
@@ -997,6 +1035,8 @@ const englishSystemToolsTranslation: SystemToolsTranslation = {
   nestedDesktopTrackpadInertiaDescription: "Continue cursor and scroll movement after a fast swipe. Disable to stop immediately when the trackpad is released.",
   removeMangoHudFix: "Remove fix",
   resetAdvancedSettings: "Restore defaults",
+  rustDeskFlatpakUnsupported:
+    rustDeskFlatpakUnsupportedTranslations.english,
   rustDeskFocusOnInput: "Focus Nested Desktop on RustDesk input",
   rustDeskFocusOnInputDescription: "⚠ Bring Nested Desktop to the foreground on RustDesk pointer or keyboard input. This bypasses Steam's PIN lock screen. Disabled by default; enabling it means you accept this risk.",
   rustDeskPointerFix: "RustDesk pointer fix",

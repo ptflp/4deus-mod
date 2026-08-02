@@ -17,9 +17,17 @@ from ..dependencies import (
 from .nested_desktop_clipboard import (
     NestedDesktopClipboardEndpointsMixin,
 )
+from .rustdesk_flatpak import (
+    RUSTDESK_FLATPAK_ERROR,
+    RUSTDESK_FLATPAK_ERROR_CODE,
+    RustDeskFlatpakSupportMixin,
+)
 
 
-class NestedDesktopEndpointsMixin(NestedDesktopClipboardEndpointsMixin):
+class NestedDesktopEndpointsMixin(
+    RustDeskFlatpakSupportMixin,
+    NestedDesktopClipboardEndpointsMixin,
+):
     def _on_nested_desktop_action(self, action: str):
         if action not in {"HIDE_KEYBOARD", "SHOW_KEYBOARD"}:
             return
@@ -33,7 +41,15 @@ class NestedDesktopEndpointsMixin(NestedDesktopClipboardEndpointsMixin):
 
         loop.call_soon_threadsafe(dispatch)
 
+    async def _rustdesk_flatpak_error_status(self):
+        return {
+            **await self.get_nested_desktop_mouse_status(),
+            "error": RUSTDESK_FLATPAK_ERROR,
+            "errorCode": RUSTDESK_FLATPAK_ERROR_CODE,
+        }
+
     async def get_nested_desktop_mouse_status(self):
+        await self._refresh_rustdesk_flatpak_status()
         bridge = self.nested_desktop_mouse
         touchscreen_available = getattr(
             bridge,
@@ -76,6 +92,9 @@ class NestedDesktopEndpointsMixin(NestedDesktopClipboardEndpointsMixin):
             ),
             "rustDeskFocusOnInputEnabled": (
                 self.rustdesk_focus_on_input_enabled
+            ),
+            "rustDeskFlatpakInstalled": (
+                self.rustdesk_flatpak_installed
             ),
             "running": bridge.running() if bridge is not None else False,
             "suspended": self.nested_desktop_keyboard_visible,
@@ -349,6 +368,8 @@ class NestedDesktopEndpointsMixin(NestedDesktopClipboardEndpointsMixin):
                 **await self.get_nested_desktop_mouse_status(),
                 "error": "RustDesk pointer fix enabled must be a boolean",
             }
+        if enabled and await self._refresh_rustdesk_flatpak_status():
+            return await self._rustdesk_flatpak_error_status()
 
         try:
             await asyncio.to_thread(
@@ -387,6 +408,8 @@ class NestedDesktopEndpointsMixin(NestedDesktopClipboardEndpointsMixin):
                     "RustDesk scroll inertia enabled must be a boolean"
                 ),
             }
+        if enabled and await self._refresh_rustdesk_flatpak_status():
+            return await self._rustdesk_flatpak_error_status()
 
         try:
             await asyncio.to_thread(
@@ -423,6 +446,8 @@ class NestedDesktopEndpointsMixin(NestedDesktopClipboardEndpointsMixin):
                     "RustDesk focus on input enabled must be a boolean"
                 ),
             }
+        if enabled and await self._refresh_rustdesk_flatpak_status():
+            return await self._rustdesk_flatpak_error_status()
 
         try:
             await asyncio.to_thread(

@@ -20,6 +20,7 @@ export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {
   const [status, setStatus] = useState<NestedDesktopMouseStatus>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const flatpakUnsupported = status?.rustDeskFlatpakInstalled ?? false;
 
   useEffect(() => {
     api.getNestedDesktopMouseStatus()
@@ -37,7 +38,9 @@ export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {
     try {
       const nextStatus = await action();
       setStatus(nextStatus);
-      if (nextStatus.error)
+      if (nextStatus.errorCode === "rustdesk_flatpak_unsupported")
+        setMessage(strings.rustDeskFlatpakUnsupported);
+      else if (nextStatus.error)
         setMessage(nextStatus.error);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -48,12 +51,30 @@ export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {
 
   return (
     <PanelSection title="RustDesk">
+      {(flatpakUnsupported || message) && (
+        <PanelSectionRow>
+          <div
+            role="alert"
+            style={{
+              color: "#ff5c5c",
+              fontWeight: 600,
+              lineHeight: 1.35,
+            }}
+          >
+            {flatpakUnsupported
+              ? strings.rustDeskFlatpakUnsupported
+              : message}
+          </div>
+        </PanelSectionRow>
+      )}
       <PanelSectionRow>
         <ToggleField
           label={strings.rustDeskPointerFix}
           description={strings.rustDeskPointerFixDescription}
-          checked={status?.rustDeskPointerFixEnabled ?? true}
-          disabled={busy || !status?.available}
+          checked={flatpakUnsupported
+            ? false
+            : status?.rustDeskPointerFixEnabled ?? false}
+          disabled={busy || !status?.available || flatpakUnsupported}
           onChange={(enabled) =>
             void update(() => api.setRustDeskPointerFixEnabled(enabled))}
         />
@@ -62,8 +83,10 @@ export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {
         <ToggleField
           label={strings.rustDeskFocusOnInput}
           description={strings.rustDeskFocusOnInputDescription}
-          checked={status?.rustDeskFocusOnInputEnabled ?? false}
-          disabled={busy || !status?.available}
+          checked={flatpakUnsupported
+            ? false
+            : status?.rustDeskFocusOnInputEnabled ?? false}
+          disabled={busy || !status?.available || flatpakUnsupported}
           onChange={(enabled) =>
             void update(
               () => api.setRustDeskFocusOnInputEnabled(enabled),
@@ -74,10 +97,13 @@ export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {
         <ToggleField
           label={strings.rustDeskScrollInertia}
           description={strings.rustDeskScrollInertiaDescription}
-          checked={status?.rustDeskScrollInertiaEnabled ?? false}
+          checked={flatpakUnsupported
+            ? false
+            : status?.rustDeskScrollInertiaEnabled ?? false}
           disabled={
             busy
             || !status?.available
+            || flatpakUnsupported
             || !status.rustDeskPointerFixEnabled
           }
           onChange={(enabled) =>
@@ -86,11 +112,6 @@ export const RustDeskPanel = ({ api }: RustDeskPanelProps) => {
             )}
         />
       </PanelSectionRow>
-      {message && (
-        <PanelSectionRow>
-          <div>{message}</div>
-        </PanelSectionRow>
-      )}
     </PanelSection>
   );
 };
