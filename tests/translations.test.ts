@@ -105,7 +105,8 @@ test("every locale has every key and no blank UI text", () => {
   }
 });
 
-test("keyboard hold badges keep system and language hints explicit", () => {
+test("keyboard hold badges stay compact while help remains explicit", () => {
+  assert.equal(keyboardTranslations.english.holdBadge, "Hold");
   assert.equal(
     keyboardTranslations.english.keyboardHelpHoldCtrlBadge,
     "Press and hold Ctrl/☺",
@@ -116,6 +117,15 @@ test("keyboard hold badges keep system and language hints explicit", () => {
   );
 
   for (const [language, strings] of Object.entries(keyboardTranslations)) {
+    assert.doesNotMatch(
+      strings.holdBadge,
+      /\s/u,
+      `${language}.holdBadge must remain a single compact word`,
+    );
+    assert.ok(
+      Array.from(strings.holdBadge.normalize("NFC")).length <= 10,
+      `${language}.holdBadge must not contain long help copy`,
+    );
     assert.match(
       strings.keyboardHelpHoldCtrlBadge,
       /Ctrl\/☺/u,
@@ -130,6 +140,11 @@ test("keyboard hold badges keep system and language hints explicit", () => {
       strings.keyboardHelpSystemLayerDescription,
       /Ctrl\/☺/u,
       `${language}.keyboardHelpSystemLayerDescription`,
+    );
+    assert.match(
+      strings.systemKeyLayerDescription,
+      /Ctrl\/☺/u,
+      `${language}.systemKeyLayerDescription`,
     );
   }
 });

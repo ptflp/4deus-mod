@@ -281,7 +281,7 @@ Record<SteamLanguage, KeyboardTranslation> = {
     "Keep open after Enter",
     "Do not dismiss the keyboard after pressing Enter",
     "System keys by default",
-    "Show Ctrl, Fn, Esc, Delete, and F1–F12 on open. Hold the 🌐 key to switch layers.",
+    "Show Ctrl, Fn, Esc, Delete, and F1–F12 on open. Hold the lower-left Steam-symbol key to switch layers.",
     "Secondary key labels",
     "Show letters from another enabled Steam layout",
     "Secondary layout",
@@ -482,7 +482,7 @@ Record<SteamLanguage, KeyboardTranslation> = {
     "Оставяне отворена след Enter",
     "Клавиатурата да не се затваря след натискане на Enter",
     "Системни клавиши по подразбиране",
-    "Показване на Ctrl, Fn, Esc, Delete и F1–F12 при отваряне; задръжте клавиша 🌐 за смяна на слоя",
+    "Показване на Ctrl, Fn, Esc, Delete и F1–F12 при отваряне; задръжте клавиша за Steam предмети за смяна на слоя",
     "Вторични надписи",
     "Показване на букви от друга включена Steam подредба",
     "Вторична подредба",
@@ -1755,7 +1755,7 @@ Record<SteamLanguage, KeyboardTranslation> = {
     "Не закрывать после Enter",
     "Оставлять клавиатуру открытой после нажатия Enter",
     "Системные клавиши по умолчанию",
-    "Сразу показывать Ctrl, Fn, Esc, Delete и F1–F12. Для смены слоя удерживайте клавишу 🌐.",
+    "Сразу показывать Ctrl, Fn, Esc, Delete и F1–F12. Для смены слоя удерживайте нижнюю левую клавишу с символом Steam.",
     "Вторые подписи клавиш",
     "Показывать буквы из другой включённой раскладки Steam",
     "Вторая раскладка",
@@ -2351,7 +2351,41 @@ Record<SteamLanguage, KeyboardTranslation> = {
   ]),
 };
 
-const holdBadgeTranslations: Record<SteamLanguage, string> = {
+const compactHoldBadgeTranslations: Record<SteamLanguage, string> = {
+  english: "Hold",
+  arabic: "ثبّت",
+  brazilian: "Segure",
+  bulgarian: "Задръж",
+  czech: "Podrž",
+  danish: "Hold",
+  dutch: "Houd",
+  finnish: "Pidä",
+  french: "Maintenir",
+  german: "Halten",
+  greek: "Κράτα",
+  hungarian: "Tartsd",
+  indonesian: "Tahan",
+  italian: "Tieni",
+  japanese: "長押し",
+  koreana: "길게",
+  latam: "Mantén",
+  malay: "Tahan",
+  norwegian: "Hold",
+  polish: "Trzymaj",
+  portuguese: "Manter",
+  romanian: "Ține",
+  russian: "Удерживать",
+  schinese: "长按",
+  spanish: "Mantén",
+  swedish: "Håll",
+  tchinese: "長按",
+  thai: "ค้าง",
+  turkish: "Tut",
+  ukrainian: "Утримувати",
+  vietnamese: "Giữ",
+};
+
+const keyboardHelpHoldTranslations: Record<SteamLanguage, string> = {
   english: "Press and hold",
   arabic: "اضغط مطولًا",
   brazilian: "Mantenha pressionado",
@@ -2519,21 +2553,21 @@ Record<SteamLanguage, string> = {
 export const keyboardTranslations:
 Record<SteamLanguage, KeyboardTranslation> = Object.fromEntries(
   Object.entries(rawKeyboardTranslations).map(([language, strings]) => {
-    const hold = holdBadgeTranslations[language as SteamLanguage];
+    const steamLanguage = language as SteamLanguage;
+    const hold = compactHoldBadgeTranslations[steamLanguage];
+    const helpHold = keyboardHelpHoldTranslations[steamLanguage];
     return [
       language,
       {
         ...strings,
         holdBadge: hold,
         systemKeyLayerDescription:
-          systemKeyLayerDescriptionOverrides[language as SteamLanguage],
+          systemKeyLayerDescriptionOverrides[steamLanguage],
         keyboardHelpAutoBadge: strings.automatic,
-        keyboardHelpHoldCtrlBadge: `${hold} Ctrl/☺`,
+        keyboardHelpHoldCtrlBadge: `${helpHold} Ctrl/☺`,
         keyboardHelpSystemLayerDescription:
-          keyboardHelpSystemLayerDescriptionOverrides[
-            language as SteamLanguage
-          ],
-        keyboardHelpHoldLanguageBadge: `${hold} 🌐`,
+          keyboardHelpSystemLayerDescriptionOverrides[steamLanguage],
+        keyboardHelpHoldLanguageBadge: `${helpHold} 🌐`,
       },
     ];
   }),
