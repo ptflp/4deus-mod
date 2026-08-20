@@ -51,14 +51,33 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
         self.assertEqual(profile["icon"], str(self.assets / "icon.png"))
         self.assertTrue(profile["current"])
         self.assertTrue(os.access(profile["wrapperPath"], os.X_OK))
+        contents = Path(profile["wrapperPath"]).read_text(encoding="utf-8")
+        self.assertIn("unset SRT_URLOPEN_PREFER_STEAM", contents)
         self.assertIn(
             f'exec {self.launcher} "$@"',
-            Path(profile["wrapperPath"]).read_text(encoding="utf-8"),
+            contents,
         )
         self.assertNotIn(
             "KWIN_FORCE_SW_CURSOR",
-            Path(profile["wrapperPath"]).read_text(encoding="utf-8"),
+            contents,
         )
+
+    def test_refresh_adds_desktop_url_routing_to_current_wrapper(self):
+        previous_wrapper = self.manager._wrapper_contents(
+            unset_steam_url_preference=False
+        )
+        self.manager.wrapper_path.parent.mkdir(parents=True)
+        self.manager.wrapper_path.write_text(
+            previous_wrapper,
+            encoding="utf-8",
+        )
+
+        self.assertTrue(self.manager.refresh_installed_wrapper())
+        self.assertIn(
+            "unset SRT_URLOPEN_PREFER_STEAM",
+            self.manager.wrapper_path.read_text(encoding="utf-8"),
+        )
+        self.assertFalse(self.manager.refresh_installed_wrapper())
 
     def test_refresh_migrates_only_the_previous_managed_wrapper(self):
         self.manager.wrapper_path.parent.mkdir(parents=True)

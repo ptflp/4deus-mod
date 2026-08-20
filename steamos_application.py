@@ -70,9 +70,15 @@ class SteamOsApplicationManager:
             return False
         if current == self._wrapper_contents():
             return False
+        previous_wrapper = self._wrapper_contents(
+            unset_steam_url_preference=False
+        )
         if (
-            "KWIN_FORCE_SW_CURSOR=1" not in current
-            or str(self.nested_desktop) not in current
+            current != previous_wrapper
+            and (
+                "KWIN_FORCE_SW_CURSOR=1" not in current
+                or str(self.nested_desktop) not in current
+            )
         ):
             return False
         self._write_wrapper()
@@ -104,11 +110,23 @@ class SteamOsApplicationManager:
             overwrite=True,
         )
 
-    def _wrapper_contents(self) -> str:
+    def _wrapper_contents(
+        self,
+        *,
+        unset_steam_url_preference: bool = True,
+    ) -> str:
         launcher = shlex.quote(str(self.nested_desktop))
+        url_environment = ""
+        if unset_steam_url_preference:
+            url_environment = (
+                "# Keep links in the nested desktop's default browser.\n"
+                "unset SRT_URLOPEN_PREFER_STEAM\n"
+                "\n"
+            )
         return (
             "#!/bin/sh\n"
             "\n"
+            f"{url_environment}"
             "unset LC_ALL\n"
             "export LANG=en_US.utf8\n"
             "export LC_CTYPE=en_US.utf8\n"
