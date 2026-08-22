@@ -97,7 +97,11 @@ class RustDeskPointerFixManager:
             "active",
             "activating",
             "reloading",
-        } and (updated_loaded_library or not runtime_loaded):
+        } and (
+            dropin_changed
+            or updated_loaded_library
+            or not runtime_loaded
+        ):
             self._systemctl("restart", SERVICE_NAME)
         elif restart and previous_state == "failed":
             self._systemctl("reset-failed", SERVICE_NAME)

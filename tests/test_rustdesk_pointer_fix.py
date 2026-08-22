@@ -126,16 +126,35 @@ class RustDeskPointerFixManagerTests(unittest.TestCase):
         self.assertIn(("restart", "rustdesk.service"), self.commands)
 
     def test_explicit_install_does_not_restart_when_runtime_is_current(self):
+        self.manager.install(restart=False)
         process = self.proc / str(self.main_pid)
         process.mkdir(parents=True)
         process.joinpath("maps").write_text(
             f"7f00-7f10 r-xp 0 00:00 0 {self.manager.source_library}\n",
             encoding="utf-8",
         )
+        self.commands.clear()
 
         self.manager.install(restart=True)
 
         self.assertNotIn(("restart", "rustdesk.service"), self.commands)
+
+    def test_explicit_install_restarts_when_dropin_changes(self):
+        process = self.proc / str(self.main_pid)
+        process.mkdir(parents=True)
+        process.joinpath("maps").write_text(
+            f"7f00-7f10 r-xp 0 00:00 0 {self.manager.source_library}\n",
+            encoding="utf-8",
+        )
+        self.manager.dropin_directory.mkdir(parents=True)
+        self.manager.dropin.write_text(
+            f"{self.manager._dropin_content()}Environment=\"STALE=1\"\n",
+            encoding="utf-8",
+        )
+
+        self.manager.install(restart=True)
+
+        self.assertIn(("restart", "rustdesk.service"), self.commands)
 
     def test_install_recovers_a_pending_systemd_daemon_reload(self):
         self.manager.install()
