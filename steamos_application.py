@@ -70,11 +70,16 @@ class SteamOsApplicationManager:
             return False
         if current == self._wrapper_contents():
             return False
-        previous_wrapper = self._wrapper_contents(
-            unset_steam_url_preference=False
-        )
+        previous_wrappers = {
+            self._wrapper_contents(unset_steam_url_preference=False),
+            self._wrapper_contents(force_pulse_notifications=False),
+            self._wrapper_contents(
+                unset_steam_url_preference=False,
+                force_pulse_notifications=False,
+            ),
+        }
         if (
-            current != previous_wrapper
+            current not in previous_wrappers
             and (
                 "KWIN_FORCE_SW_CURSOR=1" not in current
                 or str(self.nested_desktop) not in current
@@ -114,6 +119,7 @@ class SteamOsApplicationManager:
         self,
         *,
         unset_steam_url_preference: bool = True,
+        force_pulse_notifications: bool = True,
     ) -> str:
         launcher = shlex.quote(str(self.nested_desktop))
         url_environment = ""
@@ -121,6 +127,14 @@ class SteamOsApplicationManager:
             url_environment = (
                 "# Keep links in the nested desktop's default browser.\n"
                 "unset SRT_URLOPEN_PREFER_STEAM\n"
+                "\n"
+            )
+        notification_audio_environment = ""
+        if force_pulse_notifications:
+            notification_audio_environment = (
+                "# Keep Plasma notification sounds off the blocking ALSA "
+                "PipeWire path.\n"
+                "export CANBERRA_DRIVER=pulse\n"
                 "\n"
             )
         return (
@@ -134,6 +148,7 @@ class SteamOsApplicationManager:
             "export QT_IM_MODULE=ibus\n"
             "export XMODIFIERS=@im=ibus\n"
             "\n"
+            f"{notification_audio_environment}"
             f'exec {launcher} "$@"\n'
         )
 

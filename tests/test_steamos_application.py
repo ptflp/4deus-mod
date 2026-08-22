@@ -53,6 +53,7 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
         self.assertTrue(os.access(profile["wrapperPath"], os.X_OK))
         contents = Path(profile["wrapperPath"]).read_text(encoding="utf-8")
         self.assertIn("unset SRT_URLOPEN_PREFER_STEAM", contents)
+        self.assertIn("export CANBERRA_DRIVER=pulse", contents)
         self.assertIn(
             f'exec {self.launcher} "$@"',
             contents,
@@ -75,6 +76,23 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
         self.assertTrue(self.manager.refresh_installed_wrapper())
         self.assertIn(
             "unset SRT_URLOPEN_PREFER_STEAM",
+            self.manager.wrapper_path.read_text(encoding="utf-8"),
+        )
+        self.assertFalse(self.manager.refresh_installed_wrapper())
+
+    def test_refresh_adds_pulse_notification_driver_to_current_wrapper(self):
+        previous_wrapper = self.manager._wrapper_contents(
+            force_pulse_notifications=False
+        )
+        self.manager.wrapper_path.parent.mkdir(parents=True)
+        self.manager.wrapper_path.write_text(
+            previous_wrapper,
+            encoding="utf-8",
+        )
+
+        self.assertTrue(self.manager.refresh_installed_wrapper())
+        self.assertIn(
+            "export CANBERRA_DRIVER=pulse",
             self.manager.wrapper_path.read_text(encoding="utf-8"),
         )
         self.assertFalse(self.manager.refresh_installed_wrapper())
