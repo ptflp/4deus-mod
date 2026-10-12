@@ -143,17 +143,32 @@ def _find_steam_app_id(
     maximum_depth: int = 24,
 ) -> int | None:
     current_pid = pid
+    environment_app_id = None
+    visited = set()
     for _ in range(maximum_depth):
+        if current_pid <= 1 or current_pid in visited:
+            break
+        visited.add(current_pid)
         process_directory = proc_root / str(current_pid)
         for argument in _read_cmdline(process_directory / "cmdline"):
             match = re.fullmatch(r"AppId=(\d+)", argument)
             if match:
                 return int(match.group(1))
+        # Steam's launcher can exit while the desktop remains alive and is
+        # reparented to systemd. Its inherited AppID survives that transition.
+        if environment_app_id is None:
+            value = _read_environ(process_directory / "environ").get(
+                "SteamAppId", "",
+            )
+            if re.fullmatch(r"[0-9]+", value):
+                candidate = int(value)
+                if 0 < candidate <= 0xFFFFFFFF:
+                    environment_app_id = candidate
         parent_pid = _read_parent_pid(process_directory)
         if parent_pid is None or parent_pid <= 1 or parent_pid == current_pid:
-            return None
+            break
         current_pid = parent_pid
-    return None
+    return environment_app_id
 
 def _find_inherited_environment_value(
     pid: int,

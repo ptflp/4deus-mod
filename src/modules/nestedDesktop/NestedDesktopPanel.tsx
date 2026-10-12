@@ -60,7 +60,9 @@ export const NestedDesktopPanel = ({
     api.getSteamOsApplicationStatus()
       .then((nextSteamOsStatus) => {
         setSteamOsStatus(nextSteamOsStatus);
-        setShortcutAppId(findSteamOsShortcut()?.appid);
+        setShortcutAppId(findSteamOsShortcut(
+          undefined, nextSteamOsStatus.shortcutAppId,
+        )?.appid);
       })
       .catch((error) => setSteamOsMessage(
         error instanceof Error ? error.message : String(error),

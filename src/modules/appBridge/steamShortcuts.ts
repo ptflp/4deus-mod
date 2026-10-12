@@ -58,7 +58,11 @@ export const findShortcutByNames = (
 
 export const findSteamOsShortcut = (
   names: string[] = STEAMOS_SHORTCUT_NAMES,
+  preferredAppId?: number | null,
 ): ShortcutOverview | undefined => {
+  const preferred = shortcutById(preferredAppId ?? undefined);
+  if (preferred)
+    return preferred;
   for (const name of names) {
     const shortcut = findShortcutByName(name);
     if (shortcut)
@@ -148,5 +152,9 @@ export const ensureSteamOsShortcut = async (
 ): Promise<number> => {
   if (profile.error)
     throw new Error(profile.error);
-  return ensureShortcut(profile, findSteamOsShortcut(profile.aliases));
+  const existing = findSteamOsShortcut(profile.aliases, profile.shortcutAppId);
+  return ensureShortcut(
+    { ...profile, name: existing?.display_name ?? profile.name },
+    existing,
+  );
 };

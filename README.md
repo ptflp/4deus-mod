@@ -28,6 +28,7 @@ Install the latest release directly from Decky Loader using the
   behavior directly on four keyboard keys using either trackpad; the choice is
   saved.
 - Turns Steam's language key into Start while Fn is active.
+- Keeps Fn available with a single Steam keyboard layout.
 - Optionally maps View, L1, R1, L4, R4, L5, or R5 to common typing keys while
   the virtual keyboard is open.
 - Supports holding Ctrl, Alt, and Shift on separate Deck buttons for chords such as
@@ -52,6 +53,8 @@ Install the latest release directly from Decky Loader using the
   in Steam settings.
 - Localizes plugin settings for every language currently supported by Steam.
 - Provides optional keyboard diagnostics in the Decky plugin log.
+- Bounds keyboard visibility requests so a stalled request cannot permanently
+  block subsequent input-bridge pause and resume updates.
 
 Secondary labels are visual only. Steam remains responsible for the active
 layout and text input.
@@ -76,6 +79,8 @@ layout and text input.
   Steam cannot launch the wrong build or enable incompatible RustDesk fixes.
 - Updates existing shortcuts in place to preserve their Steam app ID,
   controller layout, and play history.
+- Detects SteamOS shortcuts by their launcher path and preserves a custom
+  shortcut name, including after Add / Repair.
 - Refreshes branded portrait, grid, hero, and logo artwork for Parsec and
   RustDesk whenever their Add / Fix actions run.
 
@@ -95,6 +100,8 @@ layout and text input.
   environment.
 - Updates an existing SteamOS shortcut in place to preserve its app ID,
   controller layout, and play history.
+- Detects SteamOS shortcuts by their launcher path and preserves a custom
+  shortcut name, including after Add / Repair.
 - Refreshes all four Steam artwork slots from the bundled branded SteamOS
   artwork whenever Add / Repair runs.
 - Shows a red warning and forces all RustDesk-specific switches off while the

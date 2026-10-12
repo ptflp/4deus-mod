@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
 import shlex
+import struct
 from typing import Any
 
 from steam_artwork import STEAM_ID64_BASE, SteamArtworkInstaller
+from fourdeus_backend.steam_shortcuts import read_shortcuts
 
 STEAMOS_APP_NAME = "Steam Os"
 STEAMOS_APP_ALIASES = (
@@ -44,7 +46,33 @@ class SteamOsApplicationManager:
             "icon": str(self._asset("icon.png") or ""),
             "wrapperInstalled": wrapper_installed,
             "wrapperPath": str(self.wrapper_path),
+            "shortcutAppId": self._shortcut_app_id(),
         }
+
+    def _shortcut_app_id(self) -> int | None:
+        config = self.artwork_installer._current_steam_config_directory()
+        if config is None:
+            return None
+        try:
+            shortcuts = read_shortcuts((config / "shortcuts.vdf").read_bytes())
+        except (OSError, ValueError, struct.error):
+            return None
+        launchers = {str(self.wrapper_path), str(self.nested_desktop)}
+        for shortcut in shortcuts:
+            executable = shortcut.get("exe", "")
+            if not isinstance(executable, str):
+                continue
+            try:
+                arguments = shlex.split(executable)
+            except ValueError:
+                continue
+            app_id = shortcut.get("appid")
+            if (
+                len(arguments) == 1 and arguments[0] in launchers
+                and isinstance(app_id, int) and 0 < app_id <= 0xFFFFFFFF
+            ):
+                return app_id
+        return None
 
     def prepare(self) -> dict[str, Any]:
         if not self.nested_desktop.is_file():

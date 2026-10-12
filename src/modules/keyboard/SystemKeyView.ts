@@ -1,6 +1,7 @@
 import {
   EMOJI_KEY,
   findKey,
+  findFunctionKeyTemplate,
   findNamedKey,
   KEY_SELECTOR,
   LAYOUT_KEY,
@@ -224,17 +225,17 @@ export class SystemKeyView {
     if (existing)
       return existing;
 
-    const layout = findNamedKey(keyboard, LAYOUT_KEY);
-    if (!layout?.parentElement)
+    const template = findFunctionKeyTemplate(keyboard);
+    if (!template?.parentElement)
       return null;
-    const functionKey = layout.cloneNode(true) as HTMLElement;
+    const functionKey = template.cloneNode(true) as HTMLElement;
     functionKey.dataset.key = SYNTHETIC_FUNCTION_KEY;
     functionKey.dataset.keyCol = "fn";
     functionKey.querySelectorAll<HTMLElement>("[data-key]").forEach((element) => {
       element.dataset.key = SYNTHETIC_FUNCTION_KEY;
       element.dataset.keyCol = "fn";
     });
-    layout.parentElement.insertBefore(functionKey, layout.nextSibling);
+    template.parentElement.insertBefore(functionKey, template.nextSibling);
     return functionKey;
   }
 

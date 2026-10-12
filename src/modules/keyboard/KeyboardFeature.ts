@@ -24,6 +24,7 @@ import type {
 import { isVirtualKeyboardVisible } from "./keyboardVisibility";
 import { shouldAutoSwapVisualLayer } from "./systemKeys";
 import { showKeyboardHelp } from "./KeyboardHelpModal";
+import { SystemInputQueue } from "./SystemInputQueue";
 
 const ACTIVE_WINDOW_POLL_MS = 500;
 const CHORD_NAVIGATION_DELAY_MS = 75;
@@ -81,7 +82,7 @@ export class KeyboardFeature implements ModModule {
   private refreshSystemLayer = false;
   private diagnosticTimer?: number;
   private keyboardVisible?: boolean;
-  private visibilityQueue = Promise.resolve();
+  private readonly visibilityQueue = new SystemInputQueue();
   private refreshCount = 0;
   private observedMutationCount = 0;
   private ignoredMutationCount = 0;
@@ -352,10 +353,15 @@ export class KeyboardFeature implements ModModule {
     if (visible === this.keyboardVisible)
       return;
     this.keyboardVisible = visible;
-    this.visibilityQueue = this.visibilityQueue
-      .catch(() => undefined)
-      .then(async () => {
-        await this.sendKeyboardVisibility(visible);
+    void this.visibilityQueue
+      .enqueue(() => {
+        if (visible !== this.keyboardVisible)
+          return Promise.resolve(true);
+        return this.sendKeyboardVisibility(visible);
+      })
+      .then((succeeded) => {
+        if (!succeeded && visible === this.keyboardVisible)
+          this.keyboardVisible = undefined;
       })
       .catch((error) => {
         console.warn(

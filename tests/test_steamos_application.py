@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import struct
+from unittest.mock import patch
 import unittest
 
 from steamos_application import (
@@ -36,6 +38,26 @@ class SteamOsApplicationManagerTests(unittest.TestCase):
             asset_directory=self.assets,
             artwork_directory=self.assets,
         )
+
+    def test_finds_renamed_shortcut_by_launcher_path(self):
+        config = self.home / "config"
+        config.mkdir()
+        launcher = str(self.home / ".local/bin/4deus-steamos-desktop")
+        data = (
+            b"\x00shortcuts\0\x000\0\x02appid\0"
+            + struct.pack("<I", 4005696846)
+            + b"\x01appname\0SteamOS Desktop\0\x01exe\0"
+            + f'"{launcher}"'.encode() + b"\0\x08\x08\x08"
+        )
+        (config / "shortcuts.vdf").write_bytes(data)
+        manager = SteamOsApplicationManager(self.home)
+        with patch.object(
+            manager.artwork_installer, "_current_steam_config_directory",
+            return_value=config,
+        ):
+            self.assertEqual(manager.status()["shortcutAppId"], 4005696846)
+            (config / "shortcuts.vdf").write_bytes(data[:-4])
+            self.assertIsNone(manager.status()["shortcutAppId"])
 
     def tearDown(self):
         self.temporary_directory.cleanup()

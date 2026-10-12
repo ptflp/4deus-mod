@@ -78,6 +78,7 @@ from fourdeus_backend.nested_desktop.clipboard_content import (
     encode_gnome_copied_files,
     parse_file_uri_list,
 )
+from fourdeus_backend.nested_desktop.discovery import _find_steam_app_id
 
 
 class NestedDesktopSupervisorTests(unittest.TestCase):
@@ -3602,6 +3603,51 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(session.dbus_address, dbus_address)
         self.assertEqual(session.wayland_display, "wayland-7")
         self.assertTrue(session.software_cursor_forced)
+
+    def test_discovers_reparented_nested_desktop_with_protected_kwin(self):
+        authority = self.root / "run/nested-desktop.test/xauth_test"
+        authority.parent.mkdir(parents=True)
+        authority.write_bytes(b"cookie")
+        self._process(100, 1, ["/usr/lib/systemd/systemd", "--user"])
+        self._process(
+            101, 100, ["/bin/sh", "steamos-nested-desktop"],
+            {"SteamAppId": "4005696846"},
+        )
+        # Protected KWin has no readable environment; its parent still does.
+        self._process(
+            102, 101,
+            ["/usr/bin/kwin_wayland", "--socket", "wayland-0",
+             "--xwayland-display", ":2", "--xwayland-xauthority",
+             str(authority)],
+        )
+        self._process(
+            103, 101, ["/usr/bin/plasmashell"],
+            {"XDG_RUNTIME_DIR": str(authority.parent),
+             "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/dbus-test,guid=test"},
+        )
+
+        session = find_nested_desktop_session(self.root / "proc")
+
+        self.assertIsNotNone(session)
+        self.assertEqual(session.app_id, 4005696846)
+        self.assertEqual(session.display, ":2")
+
+    def test_launcher_app_id_takes_priority_over_inherited_environment(self):
+        self._process(100, 1, ["reaper", "AppId=123456"])
+        self._process(101, 100, ["kwin_wayland"], {"SteamAppId": "654321"})
+
+        self.assertEqual(_find_steam_app_id(101, self.root / "proc"), 123456)
+
+    def test_rejects_invalid_environment_app_ids(self):
+        for value in ("", "0", "-1", "abc", "4294967296", " 123", "123\n"):
+            with self.subTest(value=value):
+                with tempfile.TemporaryDirectory() as directory:
+                    process = Path(directory) / "100"
+                    process.mkdir()
+                    (process / "environ").write_bytes(
+                        f"SteamAppId={value}\0SteamGameId=17204336951293902848\0".encode()
+                    )
+                    self.assertIsNone(_find_steam_app_id(100, Path(directory)))
 
     def test_detects_proton_from_wine_environment(self):
         self._process(

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  findFunctionKeyTemplate,
   isKeyNameVisibleInLayer,
   isKeyboardHelpKey,
   isShiftKey,
@@ -12,6 +13,35 @@ import {
   shouldAutoSwapVisualLayer,
   VISUAL_SWAP_ACTION,
 } from "../src/modules/keyboard/systemKeys.ts";
+
+test("Fn has a template with one layout and no layout-switch key", () => {
+  const emoji = {} as HTMLElement;
+  const keyboard = {
+    querySelector: (selector: string) =>
+      selector.includes('data-key="SwitchKeys_Steam"') ? emoji : null,
+  } as unknown as HTMLElement;
+  assert.equal(findFunctionKeyTemplate(keyboard), emoji);
+});
+
+test("Fn prefers the layout switch when multiple layouts are available", () => {
+  const layout = {} as HTMLElement;
+  const emoji = {} as HTMLElement;
+  const keyboard = {
+    querySelector: (selector: string) =>
+      selector.includes('data-key="SwitchKeys_Layout"') ? layout : emoji,
+  } as unknown as HTMLElement;
+  assert.equal(findFunctionKeyTemplate(keyboard), layout);
+});
+
+test("Fn avoids a hidden layout-switch template", () => {
+  const layout = { hidden: true } as HTMLElement;
+  const emoji = {} as HTMLElement;
+  const keyboard = {
+    querySelector: (selector: string) =>
+      selector.includes('data-key="SwitchKeys_Layout"') ? layout : emoji,
+  } as unknown as HTMLElement;
+  assert.equal(findFunctionKeyTemplate(keyboard), emoji);
+});
 import {
   getVariantLabel,
   isSecondaryLabelRow,

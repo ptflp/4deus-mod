@@ -160,7 +160,7 @@ test("SteamOS setup repairs a Nested Desktop shortcut in place", async () => {
 
   assert.equal(appId, 77);
   assert.deepEqual(calls, [
-    ["name", 77, "Steam Os"],
+    ["name", 77, "Nested Desktop"],
     ["exe", 77, "/home/deck/.local/bin/4deus-steamos-desktop"],
     ["directory", 77, "/home/deck/.local/bin"],
     ["options", 77, ""],
@@ -191,4 +191,27 @@ test("SteamOS setup creates a shortcut without launch options", async () => {
     "/home/deck/.local/bin",
     "",
   ]);
+});
+
+
+test("SteamOS repair preserves a renamed shortcut identified by launcher", async () => {
+  const { calls } = installWindowMock(false);
+  window.appStore.allApps.push({
+    appid: 77,
+    app_type: NON_STEAM_APP_TYPE,
+    display_name: "SteamOS Desktop",
+  });
+  assert.equal(findSteamOsShortcut(undefined, 77)?.appid, 77);
+  const appId = await ensureSteamOsShortcut({
+    aliases: ["Steam Os"], available: true, current: true,
+    icon: "", launchOptions: "",
+    launcherPath: "/home/deck/.local/bin/4deus-steamos-desktop",
+    name: "Steam Os", startDirectory: "/home/deck/.local/bin",
+    wrapperInstalled: true,
+    wrapperPath: "/home/deck/.local/bin/4deus-steamos-desktop",
+    shortcutAppId: 77,
+  });
+  assert.equal(appId, 77);
+  assert.deepEqual(calls[0], ["name", 77, "SteamOS Desktop"]);
+  assert.equal(calls.some(([operation]) => operation === "add"), false);
 });

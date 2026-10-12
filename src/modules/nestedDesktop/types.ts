@@ -19,6 +19,7 @@ export interface MangoHudApi {
 }
 
 export interface SteamOsApplicationStatus {
+  shortcutAppId?: number | null;
   available: boolean;
   current: boolean;
   error?: string;

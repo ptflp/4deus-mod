@@ -195,6 +195,21 @@ export const findNamedKey = (
 ): HTMLElement | null =>
   keyboard.querySelector(`${KEY_SELECTOR}[data-key="${name}"]`);
 
+export const findFunctionKeyTemplate = (
+  keyboard: HTMLElement,
+): HTMLElement | null => {
+  for (const name of [LAYOUT_KEY, EMOJI_KEY, "ArrowLeft"]) {
+    const key = findNamedKey(keyboard, name);
+    if (!key)
+      continue;
+    const style = key.ownerDocument?.defaultView?.getComputedStyle(key);
+    if (!key.hidden && style?.display !== "none"
+      && style?.visibility !== "hidden" && style?.visibility !== "collapse")
+      return key;
+  }
+  return null;
+};
+
 export const findKeyBySystemName = (
   keyboard: HTMLElement,
   keyName: string,

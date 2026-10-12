@@ -101,6 +101,7 @@ class RustDeskPointerFixManager:
             dropin_changed
             or updated_loaded_library
             or not runtime_loaded
+            or not self._service_input_available()
         ):
             self._systemctl("restart", SERVICE_NAME)
         elif restart and previous_state == "failed":
@@ -108,6 +109,19 @@ class RustDeskPointerFixManager:
             self._systemctl("restart", SERVICE_NAME)
 
         return self.status()
+
+    def _service_input_available(self):
+        # A live service can retain deleted Unix socket inodes after /tmp
+        # cleanup. Remote video still works, but new input clients cannot
+        # connect until the service recreates its endpoints.
+        directory = Path("/tmp/RustDesk-service")
+        return all(
+            (directory / name).is_socket()
+            for name in (
+                "ipc_service", "ipc_uinput_control",
+                "ipc_uinput_mouse", "ipc_uinput_keyboard",
+            )
+        )
 
     def remove(self):
         self._require_root()
